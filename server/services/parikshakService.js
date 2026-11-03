@@ -292,12 +292,23 @@ const invokeParikshak = async (submissionId, traceId, io) => {
                 // Phase 3: Next Task Runtime
                 console.log(`[PARIKSHAK] Phase 3: Creating next task for assignee ${task.assignee}`);
 
+                const nextTaskObj = (typeof response.canonical_next_task_packet === 'object' && response.canonical_next_task_packet)
+                    || (typeof response.next_task_details === 'object' && response.next_task_details)
+                    || (typeof response.next_task_proposal === 'object' && response.next_task_proposal)
+                    || (typeof response.next_task === 'object' && response.next_task)
+                    || null;
+
+                const masterPrompt = response.master_prompt 
+                    || nextTaskObj?.master_prompt 
+                    || nextTaskObj?.description 
+                    || "";
+
                 let nextTaskTitle = "";
                 let nextTaskDescription = "";
 
-                if (typeof response.next_task === 'object' && response.next_task !== null) {
-                    nextTaskTitle = response.next_task.title || response.next_task.name || response.next_task.objective || "";
-                    nextTaskDescription = response.next_task.description || response.next_task.objective || "";
+                if (nextTaskObj) {
+                    nextTaskTitle = nextTaskObj.title || nextTaskObj.name || "";
+                    nextTaskDescription = masterPrompt || nextTaskObj.description || nextTaskObj.objective || "";
                 } else if (typeof response.next_task === 'string' && response.next_task.trim()) {
                     const rawNext = response.next_task.trim();
                     if (/^T-[A-Z]{3}-\d+$/i.test(rawNext) || rawNext.toLowerCase().includes("test task") || rawNext.toLowerCase().startsWith("task-next")) {
@@ -306,6 +317,7 @@ const invokeParikshak = async (submissionId, traceId, io) => {
                     } else {
                         nextTaskTitle = rawNext;
                     }
+                    nextTaskDescription = masterPrompt || "";
                 }
 
                 if (!nextTaskTitle || /^T-[A-Z]{3}-\d+$/i.test(nextTaskTitle) || nextTaskTitle.toLowerCase().includes("test task")) {
@@ -314,7 +326,7 @@ const invokeParikshak = async (submissionId, traceId, io) => {
                 }
 
                 if (!nextTaskDescription) {
-                    nextTaskDescription = `Next production phase following successful evaluation of '${task.title}'.\n\nAutomated AI Review Summary:\n${doneWell}\n\nRecommended Guidelines:\n${recommendations}`;
+                    nextTaskDescription = masterPrompt || `Next production phase following successful evaluation of '${task.title}'.\n\nAutomated AI Review Summary:\n${doneWell}\n\nRecommended Guidelines:\n${recommendations}`;
                 }
 
                 const deptId = task.department?._id || task.department;
@@ -332,6 +344,7 @@ const invokeParikshak = async (submissionId, traceId, io) => {
                     const newTask = new Task({
                         title: nextTaskTitle,
                         description: nextTaskDescription,
+                        notes: masterPrompt || nextTaskDescription,
                         status: "Pending",
                         priority: task.priority || "Medium",
                         department: deptId,
@@ -554,9 +567,16 @@ const evaluateParikshakSubmission = async (submissionId, traceId) => {
         task_title: task.title || 'Untitled Task',
         description: combinedDescription,
         task_description: combinedDescription,
-        submitted_by: user.name || 'Candidate',
+        submitted_by: user.name || user._id.toString(),
         submission: submission.notes || '',
+        task_id: task._id ? task._id.toString() : '',
+        user_id: user._id ? user._id.toString() : '',
+        product_id: task.branch || 'default_tenant',
         repo_url: submission.githubLink || '',
+        commit_reference: submission.githubLink || '',
+        submission_evidence: submission.documentLink || '',
+        review_packet_ref: submission.notes && submission.notes.includes('REVIEW_PACKET') ? 'attached' : 'none',
+        code_packet_ref: submission.notes && submission.notes.includes('CODE_PACKET') ? 'attached' : 'none',
         github_repo_link: submission.githubLink || '',
         current_task_id: (task.task_id && task.task_id.startsWith("T-")) ? task.task_id : "T-GOV-001",
         previous_task_id: (task.task_id && task.task_id.startsWith("T-")) ? task.task_id : "T-GOV-001",
@@ -618,8 +638,8 @@ const evaluateParikshakSubmission = async (submissionId, traceId) => {
     const recommendations = response.review_details?.recommendations || (Array.isArray(response.improvement_hints) ? response.improvement_hints.join(' ') : "Follow standard development guidelines.");
     const readiness = response.review_details?.readiness || (isPass ? "Production Ready" : "Requires Revisions");
 
-    const nextTaskObj = (typeof response.next_task_details === 'object' && response.next_task_details)
-        || (typeof response.canonical_next_task_packet === 'object' && response.canonical_next_task_packet)
+    const nextTaskObj = (typeof response.canonical_next_task_packet === 'object' && response.canonical_next_task_packet)
+        || (typeof response.next_task_details === 'object' && response.next_task_details)
         || (typeof response.next_task_proposal === 'object' && response.next_task_proposal)
         || (typeof response.next_task === 'object' && response.next_task)
         || null;
@@ -632,14 +652,15 @@ const evaluateParikshakSubmission = async (submissionId, traceId) => {
 
     if (nextTaskObj) {
         nextTaskTitle = nextTaskObj.title || nextTaskObj.name || (typeof response.next_task === 'string' ? response.next_task : "");
-        nextTaskDesc = nextTaskObj.objective || nextTaskObj.description || "";
         if (!masterPrompt && nextTaskObj.master_prompt) {
             masterPrompt = nextTaskObj.master_prompt;
         }
+        nextTaskDesc = masterPrompt || nextTaskObj.description || nextTaskObj.objective || "";
         deliverables = Array.isArray(nextTaskObj.deliverables) ? nextTaskObj.deliverables : [];
         acceptanceCriteria = Array.isArray(nextTaskObj.acceptance_criteria) ? nextTaskObj.acceptance_criteria : [];
     } else if (typeof response.next_task === 'string' && response.next_task.trim()) {
         nextTaskTitle = response.next_task.trim();
+        nextTaskDesc = masterPrompt || "";
     }
 
     let pdfPrompt = masterPrompt || "";

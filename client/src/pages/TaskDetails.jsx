@@ -915,7 +915,6 @@ function TaskDetails() {
                           }
                         }
                         let cleanedDesc = lines.join("\n").trim() || rawDesc;
-                        cleanedDesc = cleanedDesc.split(/\n[ \t]*(?:Mission|Phase\s*\d+|Final Deliverable)/i)[0].trim();
                         return cleanedDesc;
                       })();
                       const parts = [];

@@ -331,7 +331,11 @@ Architecture verified. Test assertions passing.`);
                                     <SelectItem value="TANTRA">TANTRA</SelectItem>
                                     <SelectItem value="MDU">MDU</SelectItem>
                                     <SelectItem value="SETU">SETU</SelectItem>
+                                    <SelectItem value="SAARTHI">SAARTHI</SelectItem>
+                                    <SelectItem value="PRAVAH">PRAVAH</SelectItem>
                                     <SelectItem value="VAANI">VAANI</SelectItem>
+                                    <SelectItem value="AIAIC">AIAIC</SelectItem>
+                                    <SelectItem value="CYBER">CYBER</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>
@@ -528,7 +532,11 @@ Architecture verified. Test assertions passing.`);
                                             <SelectItem value="TANTRA">TANTRA</SelectItem>
                                             <SelectItem value="MDU">MDU</SelectItem>
                                             <SelectItem value="SETU">SETU</SelectItem>
+                                            <SelectItem value="SAARTHI">SAARTHI</SelectItem>
+                                            <SelectItem value="PRAVAH">PRAVAH</SelectItem>
                                             <SelectItem value="VAANI">VAANI</SelectItem>
+                                            <SelectItem value="AIAIC">AIAIC</SelectItem>
+                                            <SelectItem value="CYBER">CYBER</SelectItem>
                                         </SelectContent>
                                     </Select>
                                 </div>
