@@ -22,6 +22,13 @@ import {
   ListTodo,
   CheckSquare,
   Timer,
+  MessageSquarePlus,
+  ShieldAlert,
+  ShieldCheck,
+  Lock,
+  PlayCircle,
+  AlertTriangle,
+  MessageSquare,
 } from "lucide-react"
 import { useToast } from "../hooks/use-toast"
 import { useAuth } from "../context/auth-context"
@@ -29,6 +36,7 @@ import { API_URL } from "@/lib/api"
 import { formatDate } from "@/lib/dateFormat"
 import axios from "axios"
 import { TaskSubmissionDialog } from "../components/tasks/task-submission-dialog"
+import { TaskIntakeDialog } from "../components/tasks/TaskIntakeDialog"
 
 function MyTasks() {
   const navigate = useNavigate()
@@ -41,6 +49,8 @@ function MyTasks() {
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedTask, setSelectedTask] = useState(null)
   const [isSubmissionDialogOpen, setIsSubmissionDialogOpen] = useState(false)
+  const [isIntakeOpen, setIsIntakeOpen] = useState(false)
+  const [actionLoadingId, setActionLoadingId] = useState(null)
 
   useEffect(() => {
     fetchMyTasks()
@@ -96,10 +106,19 @@ function MyTasks() {
 
   const getStatusColor = (status) => {
     switch (status) {
-      case "Completed":
-        return "bg-green-500/10 text-green-500 border-green-500/20"
+      case "Pending Validation":
+        return "bg-amber-500/10 text-amber-500 border-amber-500/20"
+      case "Approved":
+        return "bg-cyan-500/10 text-cyan-400 border-cyan-500/20"
+      case "Returned":
+        return "bg-rose-500/10 text-rose-400 border-rose-500/20"
       case "In Progress":
         return "bg-blue-500/10 text-blue-500 border-blue-500/20"
+      case "Submitted for Review":
+        return "bg-purple-500/10 text-purple-400 border-purple-500/20"
+      case "Closed":
+      case "Completed":
+        return "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
       case "Pending":
         return "bg-amber-500/10 text-amber-500 border-amber-500/20"
       default:
@@ -110,6 +129,7 @@ function MyTasks() {
   const getPriorityColor = (priority) => {
     switch (priority) {
       case "High":
+      case "Urgent":
         return "bg-red-500/10 text-red-500 border-red-500/20"
       case "Medium":
         return "bg-amber-500/10 text-amber-500 border-amber-500/20"
@@ -121,11 +141,39 @@ function MyTasks() {
   }
 
   const getDaysRemaining = (dueDate) => {
+    if (!dueDate) return 0
     const today = new Date()
     const due = new Date(dueDate)
     const diffTime = due - today
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
     return diffDays
+  }
+
+  const handleStartExecution = async (task) => {
+    try {
+      setActionLoadingId(task._id)
+      const token = localStorage.getItem("WorkflowToken")
+      const response = await axios.put(
+        `${API_URL}/tasks/${task._id}`,
+        { status: "In Progress" },
+        { headers: { "x-auth-token": token } }
+      )
+      toast({
+        title: "Execution Started",
+        description: `Task '${task.title}' is now In Progress. Execution Gate unlocked.`,
+      })
+      fetchMyTasks()
+    } catch (error) {
+      console.error("Error starting execution:", error)
+      const msg = error.response?.data?.message || error.response?.data?.error || "Failed to start execution"
+      toast({
+        title: "Execution Gate Locked",
+        description: msg,
+        variant: "destructive",
+      })
+    } finally {
+      setActionLoadingId(null)
+    }
   }
 
   const handleSubmitTask = async (submissionData) => {
@@ -146,13 +194,13 @@ function MyTasks() {
         await axios.put(`${API_URL}/submissions/${existingSubmission._id}`, submissionData, config)
         toast({
           title: "Success",
-          description: "Your submission has been updated and resubmitted to admin for review",
+          description: "Your submission has been updated and resubmitted to Parikshak / Lead for review",
         })
       } else {
         await axios.post(`${API_URL}/submissions`, submissionData, config)
         toast({
           title: "Success",
-          description: "Your task has been submitted successfully",
+          description: "Your task has been submitted for review. Parikshak review initiated.",
         })
       }
 
@@ -176,20 +224,25 @@ function MyTasks() {
   // Filter tasks based on active tab
   const filteredTasks = tasks.filter((task) => {
     const hasSubmission = !!submissions[task._id]
-    const matchesSearch = task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      task.description?.toLowerCase().includes(searchQuery.toLowerCase())
+    const matchesSearch =
+      task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      task.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      task.task_id?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      task.originatingPerson?.toLowerCase().includes(searchQuery.toLowerCase())
 
     if (!matchesSearch) return false
 
     switch (activeTab) {
-      case "submitted":
-        return hasSubmission
-      case "pending":
-        return task.status === "Pending" && !hasSubmission
+      case "validation":
+        return task.status === "Pending Validation" || task.status === "Returned"
+      case "approved":
+        return task.status === "Approved"
       case "inprogress":
         return task.status === "In Progress"
+      case "submitted":
+        return task.status === "Submitted for Review" || hasSubmission
       case "completed":
-        return task.status === "Completed"
+        return task.status === "Completed" || task.status === "Closed"
       default:
         return true
     }
@@ -198,10 +251,11 @@ function MyTasks() {
   // Stats
   const stats = {
     total: tasks.length,
-    submitted: tasks.filter(t => submissions[t._id]).length,
-    pending: tasks.filter(t => t.status === "Pending" && !submissions[t._id]).length,
-    inProgress: tasks.filter(t => t.status === "In Progress").length,
-    completed: tasks.filter(t => t.status === "Completed").length,
+    validation: tasks.filter((t) => t.status === "Pending Validation" || t.status === "Returned").length,
+    approved: tasks.filter((t) => t.status === "Approved").length,
+    inProgress: tasks.filter((t) => t.status === "In Progress").length,
+    submitted: tasks.filter((t) => t.status === "Submitted for Review" || submissions[t._id]).length,
+    completed: tasks.filter((t) => t.status === "Completed" || t.status === "Closed").length,
   }
 
   if (isLoading) {
@@ -215,104 +269,151 @@ function MyTasks() {
   return (
     <div className="space-y-6 p-4 md:p-6 animate-in fade-in duration-500">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-6 rounded-2xl bg-gradient-to-r from-primary/10 via-primary/5 to-transparent border border-primary/10">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-6 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-primary/5 to-transparent border border-emerald-500/20 shadow-sm">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">My Tasks</h1>
-          <p className="text-muted-foreground mt-1">Manage and track all your assigned tasks</p>
+          <div className="flex items-center gap-2">
+            <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-emerald-400 to-primary bg-clip-text text-transparent">
+              My Tasks
+            </h1>
+            <Badge variant="outline" className="border-emerald-500/30 text-emerald-400 bg-emerald-500/10 text-xs">
+              Intake & Execution Gate
+            </Badge>
+          </div>
+          <p className="text-muted-foreground mt-1 text-sm">
+            Register assigned WhatsApp/Lead instructions, await authorization, execute, and submit for Parikshak review.
+          </p>
         </div>
-        <Button 
-          onClick={fetchMyTasks} 
-          variant="outline" 
-          size="sm"
-          className="group border-2 border-primary/20 hover:border-primary/40 hover:bg-primary/5 transition-all duration-300 rounded-xl px-4 py-2"
-        >
-          <RefreshCw className="h-4 w-4 mr-2 group-hover:rotate-180 transition-transform duration-500" />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button
+            onClick={() => setIsIntakeOpen(true)}
+            className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-xl px-4 py-2 shadow-lg shadow-emerald-900/30 transition-all duration-300 gap-2"
+          >
+            <MessageSquarePlus className="h-4 w-4" />
+            Register Task Intake (WhatsApp)
+          </Button>
+          <Button
+            onClick={fetchMyTasks}
+            variant="outline"
+            size="sm"
+            className="group border-2 border-primary/20 hover:border-primary/40 hover:bg-primary/5 transition-all duration-300 rounded-xl px-4 py-2"
+          >
+            <RefreshCw className="h-4 w-4 mr-2 group-hover:rotate-180 transition-transform duration-500" />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-5">
-        <Card 
-          className={`cursor-pointer transition-all duration-300 hover:shadow-lg hover:shadow-primary/10 hover:-translate-y-1 border-2 ${activeTab === 'all' ? 'border-primary bg-primary/5' : 'border-transparent hover:border-primary/30'}`}
+      <div className="grid gap-3 grid-cols-2 md:grid-cols-6">
+        <Card
+          className={`cursor-pointer transition-all duration-300 hover:shadow-lg border-2 ${
+            activeTab === "all" ? "border-primary bg-primary/5" : "border-transparent hover:border-primary/30"
+          }`}
           onClick={() => setActiveTab("all")}
         >
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-3 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 shadow-inner">
-                <ListTodo className="h-5 w-5 text-primary" />
+          <CardContent className="p-3">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-lg bg-primary/10">
+                <ListTodo className="h-4 w-4 text-primary" />
               </div>
               <div>
-                <p className="text-2xl font-bold bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">{stats.total}</p>
-                <p className="text-xs text-muted-foreground font-medium">Total Tasks</p>
+                <p className="text-xl font-bold text-foreground">{stats.total}</p>
+                <p className="text-[11px] text-muted-foreground font-medium">All Tasks</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card 
-          className={`cursor-pointer transition-all duration-300 hover:shadow-lg hover:shadow-amber-500/10 hover:-translate-y-1 border-2 ${activeTab === 'pending' ? 'border-amber-500 bg-amber-500/5' : 'border-transparent hover:border-amber-500/30'}`}
-          onClick={() => setActiveTab("pending")}
+        <Card
+          className={`cursor-pointer transition-all duration-300 hover:shadow-lg border-2 ${
+            activeTab === "validation" ? "border-amber-500 bg-amber-500/5" : "border-transparent hover:border-amber-500/30"
+          }`}
+          onClick={() => setActiveTab("validation")}
         >
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-3 rounded-xl bg-gradient-to-br from-amber-500/20 to-amber-500/5 shadow-inner">
-                <Clock className="h-5 w-5 text-amber-500" />
+          <CardContent className="p-3">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-lg bg-amber-500/10">
+                <Lock className="h-4 w-4 text-amber-500" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">{stats.pending}</p>
-                <p className="text-xs text-muted-foreground font-medium">Pending</p>
+                <p className="text-xl font-bold text-amber-500">{stats.validation}</p>
+                <p className="text-[11px] text-muted-foreground font-medium">Gate Pending</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card 
-          className={`cursor-pointer transition-all duration-300 hover:shadow-lg hover:shadow-blue-500/10 hover:-translate-y-1 border-2 ${activeTab === 'inprogress' ? 'border-blue-500 bg-blue-500/5' : 'border-transparent hover:border-blue-500/30'}`}
+        <Card
+          className={`cursor-pointer transition-all duration-300 hover:shadow-lg border-2 ${
+            activeTab === "approved" ? "border-cyan-500 bg-cyan-500/5" : "border-transparent hover:border-cyan-500/30"
+          }`}
+          onClick={() => setActiveTab("approved")}
+        >
+          <CardContent className="p-3">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-lg bg-cyan-500/10">
+                <ShieldCheck className="h-4 w-4 text-cyan-400" />
+              </div>
+              <div>
+                <p className="text-xl font-bold text-cyan-400">{stats.approved}</p>
+                <p className="text-[11px] text-muted-foreground font-medium">Approved</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card
+          className={`cursor-pointer transition-all duration-300 hover:shadow-lg border-2 ${
+            activeTab === "inprogress" ? "border-blue-500 bg-blue-500/5" : "border-transparent hover:border-blue-500/30"
+          }`}
           onClick={() => setActiveTab("inprogress")}
         >
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-3 rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-500/5 shadow-inner">
-                <Timer className="h-5 w-5 text-blue-500" />
+          <CardContent className="p-3">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-lg bg-blue-500/10">
+                <Timer className="h-4 w-4 text-blue-500" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{stats.inProgress}</p>
-                <p className="text-xs text-muted-foreground font-medium">In Progress</p>
+                <p className="text-xl font-bold text-blue-500">{stats.inProgress}</p>
+                <p className="text-[11px] text-muted-foreground font-medium">In Progress</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card 
-          className={`cursor-pointer transition-all duration-300 hover:shadow-lg hover:shadow-purple-500/10 hover:-translate-y-1 border-2 ${activeTab === 'submitted' ? 'border-purple-500 bg-purple-500/5' : 'border-transparent hover:border-purple-500/30'}`}
+        <Card
+          className={`cursor-pointer transition-all duration-300 hover:shadow-lg border-2 ${
+            activeTab === "submitted" ? "border-purple-500 bg-purple-500/5" : "border-transparent hover:border-purple-500/30"
+          }`}
           onClick={() => setActiveTab("submitted")}
         >
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-3 rounded-xl bg-gradient-to-br from-purple-500/20 to-purple-500/5 shadow-inner">
-                <CheckSquare className="h-5 w-5 text-purple-500" />
+          <CardContent className="p-3">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-lg bg-purple-500/10">
+                <CheckSquare className="h-4 w-4 text-purple-400" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">{stats.submitted}</p>
-                <p className="text-xs text-muted-foreground font-medium">Submitted</p>
+                <p className="text-xl font-bold text-purple-400">{stats.submitted}</p>
+                <p className="text-[11px] text-muted-foreground font-medium">Review</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card 
-          className={`cursor-pointer transition-all duration-300 hover:shadow-lg hover:shadow-green-500/10 hover:-translate-y-1 border-2 ${activeTab === 'completed' ? 'border-green-500 bg-green-500/5' : 'border-transparent hover:border-green-500/30'}`}
+        <Card
+          className={`cursor-pointer transition-all duration-300 hover:shadow-lg border-2 ${
+            activeTab === "completed" ? "border-emerald-500 bg-emerald-500/5" : "border-transparent hover:border-emerald-500/30"
+          }`}
           onClick={() => setActiveTab("completed")}
         >
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-3 rounded-xl bg-gradient-to-br from-green-500/20 to-green-500/5 shadow-inner">
-                <CheckCircle className="h-5 w-5 text-green-500" />
+          <CardContent className="p-3">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-lg bg-emerald-500/10">
+                <CheckCircle className="h-4 w-4 text-emerald-500" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-green-600 dark:text-green-400">{stats.completed}</p>
-                <p className="text-xs text-muted-foreground font-medium">Completed</p>
+                <p className="text-xl font-bold text-emerald-500">{stats.completed}</p>
+                <p className="text-[11px] text-muted-foreground font-medium">Closed</p>
               </div>
             </div>
           </CardContent>
@@ -324,22 +425,23 @@ function MyTasks() {
         <div className="relative flex-1">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search tasks..."
+            placeholder="Search by task ID, title, originator (e.g. WhatsApp, T-WHT-...)..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-11 h-12 rounded-xl border-2 border-muted hover:border-primary/30 focus:border-primary transition-all duration-300 bg-background/50 backdrop-blur-sm"
+            className="pl-11 h-11 rounded-xl border-2 border-muted hover:border-primary/30 focus:border-primary transition-all duration-300 bg-background/50"
           />
         </div>
       </div>
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-5 h-12 p-1 bg-muted/50 rounded-xl">
-          <TabsTrigger value="all" className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md transition-all duration-300 font-medium">All ({stats.total})</TabsTrigger>
-          <TabsTrigger value="pending" className="rounded-lg data-[state=active]:bg-amber-500 data-[state=active]:text-white data-[state=active]:shadow-md transition-all duration-300 font-medium">Pending ({stats.pending})</TabsTrigger>
-          <TabsTrigger value="inprogress" className="rounded-lg data-[state=active]:bg-blue-500 data-[state=active]:text-white data-[state=active]:shadow-md transition-all duration-300 font-medium">In Progress ({stats.inProgress})</TabsTrigger>
-          <TabsTrigger value="submitted" className="rounded-lg data-[state=active]:bg-purple-500 data-[state=active]:text-white data-[state=active]:shadow-md transition-all duration-300 font-medium">Submitted ({stats.submitted})</TabsTrigger>
-          <TabsTrigger value="completed" className="rounded-lg data-[state=active]:bg-green-500 data-[state=active]:text-white data-[state=active]:shadow-md transition-all duration-300 font-medium">Completed ({stats.completed})</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-6 h-11 p-1 bg-muted/50 rounded-xl text-xs">
+          <TabsTrigger value="all" className="rounded-lg font-medium">All ({stats.total})</TabsTrigger>
+          <TabsTrigger value="validation" className="rounded-lg font-medium text-amber-500">Gate Pending ({stats.validation})</TabsTrigger>
+          <TabsTrigger value="approved" className="rounded-lg font-medium text-cyan-400">Approved ({stats.approved})</TabsTrigger>
+          <TabsTrigger value="inprogress" className="rounded-lg font-medium text-blue-500">In Progress ({stats.inProgress})</TabsTrigger>
+          <TabsTrigger value="submitted" className="rounded-lg font-medium text-purple-400">Review ({stats.submitted})</TabsTrigger>
+          <TabsTrigger value="completed" className="rounded-lg font-medium text-emerald-500">Closed ({stats.completed})</TabsTrigger>
         </TabsList>
 
         <TabsContent value={activeTab} className="mt-6">
@@ -358,16 +460,39 @@ function MyTasks() {
               {filteredTasks.map((task) => {
                 const submission = submissions[task._id]
                 const daysRemaining = getDaysRemaining(task.dueDate)
+                const isValidationPending = task.status === "Pending Validation"
+                const isReturned = task.status === "Returned"
+                const isApproved = task.status === "Approved"
+                const isInProgress = task.status === "In Progress"
+                const isClosed = task.status === "Closed" || task.status === "Completed"
+                const isReview = task.status === "Submitted for Review"
 
                 return (
-                  <Card key={task._id} className="group hover:shadow-xl hover:shadow-primary/5 transition-all duration-300 border-2 border-transparent hover:border-primary/20 rounded-xl overflow-hidden">
+                  <Card
+                    key={task._id}
+                    className="group hover:shadow-xl hover:shadow-primary/5 transition-all duration-300 border-2 border-transparent hover:border-primary/20 rounded-xl overflow-hidden"
+                  >
                     <CardContent className="p-6 bg-gradient-to-br from-background to-muted/20">
                       <div className="flex flex-col lg:flex-row lg:items-start gap-4">
                         {/* Task Info */}
                         <div className="flex-1 space-y-3">
                           <div className="flex items-start justify-between gap-2">
                             <div>
-                              <h3 className="font-semibold text-lg">{task.title}</h3>
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                {task.task_id && (
+                                  <Badge variant="outline" className="font-mono text-xs border-emerald-500/30 text-emerald-400 bg-emerald-500/5">
+                                    {task.task_id}
+                                  </Badge>
+                                )}
+                                {task.sourceType && (
+                                  <Badge variant="secondary" className="text-[11px] font-normal gap-1">
+                                    <MessageSquare className="h-3 w-3 text-emerald-400" />
+                                    {task.sourceType}
+                                    {task.originatingPerson && ` by ${task.originatingPerson}`}
+                                  </Badge>
+                                )}
+                              </div>
+                              <h3 className="font-semibold text-lg text-foreground">{task.title}</h3>
                               <p className="text-sm text-muted-foreground line-clamp-2 mt-1">
                                 {task.description}
                               </p>
@@ -378,73 +503,118 @@ function MyTasks() {
                             </div>
                           </div>
 
+                          {/* Gate Status Banners */}
+                          {isValidationPending && (
+                            <div className="p-3 rounded-lg bg-amber-950/30 border border-amber-500/30 flex items-center justify-between gap-3 text-xs text-amber-200">
+                              <div className="flex items-center gap-2">
+                                <Lock className="h-4 w-4 text-amber-400 shrink-0" />
+                                <span>
+                                  <strong>Authorisation Gate Active:</strong> Task is pending review by Project Lead. Execution is blocked until approved.
+                                </span>
+                              </div>
+                              <Badge variant="outline" className="border-amber-400/40 text-amber-300 bg-amber-500/10 text-[10px]">
+                                Gate Locked
+                              </Badge>
+                            </div>
+                          )}
+
+                          {isReturned && (
+                            <div className="p-3 rounded-lg bg-rose-950/30 border border-rose-500/30 flex items-start gap-2.5 text-xs text-rose-200">
+                              <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
+                              <div>
+                                <strong>Task Returned by Lead:</strong> {task.returnedFeedback || "Clarification needed before authorization."}
+                              </div>
+                            </div>
+                          )}
+
+                          {isApproved && (
+                            <div className="p-3 rounded-lg bg-cyan-950/30 border border-cyan-500/30 flex items-center justify-between gap-3 text-xs text-cyan-200">
+                              <div className="flex items-center gap-2">
+                                <ShieldCheck className="h-4 w-4 text-cyan-400 shrink-0" />
+                                <span>
+                                  <strong>Gate Passed:</strong> Task authorized by Lead. You can now start execution.
+                                </span>
+                              </div>
+                              <Badge variant="outline" className="border-cyan-400/40 text-cyan-300 bg-cyan-500/10 text-[10px]">
+                                Ready to Execute
+                              </Badge>
+                            </div>
+                          )}
+
                           {/* Progress */}
                           <div className="space-y-1">
                             <div className="flex items-center justify-between text-sm">
-                              <span className="text-muted-foreground">Progress</span>
-                              <span className="font-medium">{task.progress || 0}%</span>
+                              <span className="text-muted-foreground text-xs">Progress</span>
+                              <span className="font-medium text-xs">{task.progress || 0}%</span>
                             </div>
                             <Progress value={task.progress || 0} className="h-2" />
                           </div>
 
                           {/* Meta Info */}
-                          <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
-                            <div className="flex items-center gap-1">
-                              <Calendar className="h-4 w-4" />
-                              <span>Due: {formatDate(task.dueDate)}</span>
-                              {daysRemaining <= 2 && daysRemaining >= 0 && (
-                                <Badge variant="destructive" className="ml-1 text-xs">
-                                  {daysRemaining === 0 ? "Due Today" : `${daysRemaining}d left`}
-                                </Badge>
-                              )}
-                              {daysRemaining < 0 && (
-                                <Badge variant="destructive" className="ml-1 text-xs">Overdue</Badge>
-                              )}
-                            </div>
+                          <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+                            {task.dueDate && (
+                              <div className="flex items-center gap-1">
+                                <Calendar className="h-3.5 w-3.5" />
+                                <span>Due: {formatDate(task.dueDate)}</span>
+                                {daysRemaining <= 2 && daysRemaining >= 0 && (
+                                  <Badge variant="destructive" className="ml-1 text-[10px]">
+                                    {daysRemaining === 0 ? "Due Today" : `${daysRemaining}d left`}
+                                  </Badge>
+                                )}
+                                {daysRemaining < 0 && (
+                                  <Badge variant="destructive" className="ml-1 text-[10px]">Overdue</Badge>
+                                )}
+                              </div>
+                            )}
                             {task.department && (
                               <div className="flex items-center gap-1">
                                 <span>Dept: {task.department.name}</span>
+                              </div>
+                            )}
+                            {task.sourceReference && (
+                              <div className="flex items-center gap-1 text-slate-400">
+                                <span>Ref: {task.sourceReference}</span>
                               </div>
                             )}
                           </div>
 
                           {/* Submission Info */}
                           {submission && (
-                            <div className="mt-4 p-4 bg-gradient-to-r from-green-500/10 via-green-500/5 to-transparent rounded-xl border border-green-500/20">
-                              <div className="flex items-center gap-2 mb-3">
-                                <div className="p-1.5 rounded-lg bg-green-500/20">
-                                  <CheckSquare className="h-4 w-4 text-green-500" />
+                            <div className="mt-3 p-3 bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-transparent rounded-xl border border-emerald-500/20">
+                              <div className="flex items-center gap-2 mb-2">
+                                <div className="p-1 rounded-md bg-emerald-500/20">
+                                  <CheckSquare className="h-3.5 w-3.5 text-emerald-400" />
                                 </div>
-                                <span className="text-sm font-semibold text-green-600 dark:text-green-400">Submitted</span>
+                                <span className="text-xs font-semibold text-emerald-400">Parikshak Review Packet Submitted</span>
                                 {submission.status && (
-                                  <Badge className={`ml-auto ${submission.status === "Approved" ? "bg-green-500 text-white" : submission.status === "Rejected" ? "bg-red-500 text-white" : "bg-amber-500 text-white"}`}>
+                                  <Badge className={`ml-auto text-[10px] ${
+                                    submission.status === "Approved"
+                                      ? "bg-emerald-600 text-white"
+                                      : submission.status === "Rejected"
+                                      ? "bg-red-600 text-white"
+                                      : "bg-amber-600 text-white"
+                                  }`}>
                                     {submission.status}
                                   </Badge>
                                 )}
                               </div>
-                              <div className="flex flex-wrap gap-3 text-sm">
+                              <div className="flex flex-wrap gap-2 text-xs">
                                 {submission.githubLink && (
                                   <a
                                     href={submission.githubLink}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 transition-colors font-medium"
+                                    className="flex items-center gap-1 px-2.5 py-1 rounded bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-colors"
                                   >
-                                    <Github className="h-3.5 w-3.5" />
-                                    Repository
-                                    <ExternalLink className="h-3 w-3" />
+                                    <Github className="h-3 w-3" />
+                                    Repository / PR
+                                    <ExternalLink className="h-2.5 w-2.5" />
                                   </a>
-                                )}
-                                {submission.documentLink && (
-                                  <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-muted text-muted-foreground font-medium">
-                                    <FileText className="h-3.5 w-3.5" />
-                                    Document attached
-                                  </span>
                                 )}
                               </div>
                               {submission.feedback && (
-                                <div className="mt-3 p-3 bg-background/80 rounded-lg border text-sm">
-                                  <span className="font-semibold text-foreground">Feedback: </span>
+                                <div className="mt-2 p-2 bg-background/80 rounded border text-xs">
+                                  <span className="font-semibold text-foreground">Review Outcome: </span>
                                   <span className="text-muted-foreground">{submission.feedback}</span>
                                 </div>
                               )}
@@ -452,34 +622,89 @@ function MyTasks() {
                           )}
                         </div>
 
-                        {/* Actions */}
-                        <div className="flex lg:flex-col gap-3 lg:w-36">
+                        {/* Actions column */}
+                        <div className="flex lg:flex-col gap-2 lg:w-44 shrink-0">
                           <Button
                             variant="outline"
                             size="sm"
-                            className="flex-1 h-10 rounded-xl border-2 border-muted hover:border-primary/50 hover:bg-primary/5 transition-all duration-300 font-medium group/btn"
+                            className="flex-1 h-9 rounded-xl border-muted hover:border-primary/50 text-xs font-medium"
                             onClick={() => navigate(`/tasks/${task._id}`)}
                           >
-                            <Eye className="h-4 w-4 mr-2 group-hover/btn:scale-110 transition-transform" />
+                            <Eye className="h-3.5 w-3.5 mr-1.5" />
                             View Details
                           </Button>
-                          <Button
-                            size="sm"
-                            className={`flex-1 h-10 rounded-xl font-semibold transition-all duration-300 shadow-md hover:shadow-lg group/btn ${submission ? 'bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white' : 'bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary text-primary-foreground'}`}
-                            onClick={() => openSubmissionDialog(task)}
-                          >
-                            {submission ? (
-                              <>
-                                <RefreshCw className="h-4 w-4 mr-2 group-hover/btn:rotate-180 transition-transform duration-500" />
-                                Update
-                              </>
-                            ) : (
-                              <>
-                                <CheckSquare className="h-4 w-4 mr-2 group-hover/btn:scale-110 transition-transform" />
-                                Submit
-                              </>
-                            )}
-                          </Button>
+
+                          {/* State-dependent Execution Gate actions */}
+                          {isValidationPending && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled
+                              className="flex-1 h-9 rounded-xl border-amber-500/30 bg-amber-500/5 text-amber-400 cursor-not-allowed opacity-80 font-medium text-xs"
+                              title="Authorisation Gate: Awaiting Lead approval"
+                            >
+                              <Lock className="h-3.5 w-3.5 mr-1.5 text-amber-400" />
+                              Gate Locked
+                            </Button>
+                          )}
+
+                          {isReturned && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => navigate(`/tasks/${task._id}`)}
+                              className="flex-1 h-9 rounded-xl border-rose-500/30 bg-rose-500/5 text-rose-400 font-medium text-xs hover:bg-rose-500/10"
+                            >
+                              <AlertTriangle className="h-3.5 w-3.5 mr-1.5 text-rose-400" />
+                              See Lead Feedback
+                            </Button>
+                          )}
+
+                          {isApproved && (
+                            <Button
+                              size="sm"
+                              disabled={actionLoadingId === task._id}
+                              className="flex-1 h-9 rounded-xl font-semibold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md text-xs gap-1.5"
+                              onClick={() => handleStartExecution(task)}
+                            >
+                              {actionLoadingId === task._id ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <PlayCircle className="h-3.5 w-3.5" />
+                              )}
+                              Start Execution
+                            </Button>
+                          )}
+
+                          {isInProgress && (
+                            <Button
+                              size="sm"
+                              className="flex-1 h-9 rounded-xl font-semibold bg-blue-600 hover:bg-blue-500 text-white shadow-md text-xs gap-1.5"
+                              onClick={() => openSubmissionDialog(task)}
+                            >
+                              <CheckSquare className="h-3.5 w-3.5" />
+                              Submit Work
+                            </Button>
+                          )}
+
+                          {isReview && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="flex-1 h-9 rounded-xl border-purple-500/40 text-purple-400 hover:bg-purple-500/10 text-xs gap-1.5"
+                              onClick={() => openSubmissionDialog(task)}
+                            >
+                              <RefreshCw className="h-3.5 w-3.5" />
+                              Update Submission
+                            </Button>
+                          )}
+
+                          {isClosed && (
+                            <Badge className="h-9 px-3 flex items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold text-xs gap-1">
+                              <CheckCircle className="h-3.5 w-3.5" />
+                              Closed & Verified
+                            </Badge>
+                          )}
                         </div>
                       </div>
                     </CardContent>
@@ -490,6 +715,13 @@ function MyTasks() {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Task Intake Dialog */}
+      <TaskIntakeDialog
+        open={isIntakeOpen}
+        onOpenChange={setIsIntakeOpen}
+        onTaskRegistered={fetchMyTasks}
+      />
 
       {/* Submission Dialog */}
       {selectedTask && (

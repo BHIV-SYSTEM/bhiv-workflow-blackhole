@@ -648,17 +648,242 @@ router.post("/", auth, upload.single("document"), async (req, res) => {
   }
 });
 
+// Register a self-assigned task intake (e.g. from WhatsApp, meeting, direct lead instruction)
+router.post("/register-intake", auth, async (req, res) => {
+  try {
+    const {
+      sourceType = "WHATSAPP",
+      originatingPerson,
+      sourceReference,
+      originalInstruction,
+      title,
+      description,
+      department,
+      branch,
+      priority = "Medium",
+      dueDate,
+      scope,
+      expectedOutcome,
+      acceptanceCriteria,
+      attachments = []
+    } = req.body;
+
+    if (!originalInstruction || !originalInstruction.trim()) {
+      return res.status(400).json({ error: "Original task instruction (e.g. pasted WhatsApp message) is required." });
+    }
+
+    const userId = req.user.id || req.user._id;
+    const candidateUser = await User.findById(userId);
+    if (!candidateUser) {
+      return res.status(401).json({ error: "Authenticated user not found." });
+    }
+
+    // Determine department
+    let targetDept = department || candidateUser.department;
+    if (!targetDept) {
+      const defaultDept = await Department.findOne();
+      targetDept = defaultDept ? defaultDept._id : null;
+    }
+
+    if (!targetDept) {
+      return res.status(400).json({ error: "Department is required." });
+    }
+
+    // Determine Title
+    let taskTitle = title;
+    if (!taskTitle || !taskTitle.trim()) {
+      const firstLine = originalInstruction.trim().split("\n")[0].replace(/^[\*\-\#\s]+/, "").trim();
+      taskTitle = firstLine.length > 80 ? firstLine.substring(0, 77) + "..." : (firstLine || "WhatsApp Registered Task");
+    }
+
+    // Generate unique task_id: e.g. T-WHT-<TIMESTAMP_HEX>
+    const randSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+    const prefix = sourceType === "WHATSAPP" ? "T-WHT" : (sourceType === "LEAD_INSTRUCTION" ? "T-DIR" : "T-INT");
+    const generatedTaskId = `${prefix}-${Date.now().toString(36).toUpperCase()}-${randSuffix}`;
+
+    const taskDescription = description || originalInstruction;
+
+    const newTask = new Task({
+      title: taskTitle,
+      description: taskDescription,
+      task_id: generatedTaskId,
+      sourceType: sourceType.toUpperCase(),
+      originatingPerson: originatingPerson || "Project Lead",
+      sourceReference: sourceReference || "WhatsApp / External Communication",
+      originalInstruction: originalInstruction,
+      scope: scope || "Execution as instructed in task provenance.",
+      expectedOutcome: expectedOutcome || "Satisfy deliverables and submit REVIEW_PACKET to Parikshak.",
+      acceptanceCriteria: Array.isArray(acceptanceCriteria) ? acceptanceCriteria : [
+        "Complete source code implementation matching specification",
+        "Comprehensive automated test suite passing (100%)",
+        "Deliver verified REVIEW_PACKET.md and CODE_PACKET.md"
+      ],
+      intakeAttachments: Array.isArray(attachments) ? attachments : [],
+      status: "Pending Validation",
+      priority: priority || "Medium",
+      department: targetDept,
+      assignee: candidateUser._id,
+      dueDate: dueDate ? new Date(dueDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      branch: branch || req.headers["x-branch"] || candidateUser.branch || "blackhole_mumbai",
+      progress: 0,
+      notes: `[TASK INTAKE REGISTERED]\nSource: ${sourceType}\nOriginator: ${originatingPerson || 'Lead'}\nReference: ${sourceReference || 'N/A'}\nUnique ID: ${generatedTaskId}\nRegistered At: ${new Date().toISOString()}`
+    });
+
+    await newTask.save();
+
+    // Notify project leads and managers about new pending task
+    try {
+      const leads = await User.find({
+        role: { $in: ["Admin", "Manager", "Lead", "Governor"] },
+        stillExist: 1
+      }).select("_id");
+
+      for (const lead of leads) {
+        await Notification.create({
+          recipient: lead._id,
+          type: "task_assigned",
+          title: "New Task Registration Pending Validation",
+          message: `${candidateUser.name} registered a new task from ${sourceType}: '${newTask.title}'. Approval required before execution begins.`,
+          task: newTask._id
+        });
+      }
+    } catch (notifErr) {
+      console.warn("Non-fatal notification warning on task intake:", notifErr.message);
+    }
+
+    if (req.io) {
+      req.io.emit("task:created", newTask);
+    }
+
+    res.status(201).json({
+      ok: true,
+      message: "Task successfully registered and queued for lead validation. Execution locked until approved.",
+      task: newTask
+    });
+  } catch (error) {
+    console.error("Error registering task intake:", error);
+    res.status(500).json({ error: error.message || "Server error registering task intake" });
+  }
+});
+
+// Authorize or Return a self-registered task (Lead / Manager / Admin)
+router.post("/:id/authorize", auth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { action, notes, priority, scope, expectedOutcome } = req.body;
+
+    const isLeadOrAdmin = req.user && (
+      req.user.role === "Admin" ||
+      req.user.role === "Manager" ||
+      req.user.role === "Lead" ||
+      req.user.role === "Governor" ||
+      req.user.isAdmin
+    );
+
+    if (!isLeadOrAdmin) {
+      return res.status(403).json({ error: "Access denied. Only Project Leads, Managers, or Admins can authorize tasks." });
+    }
+
+    const task = await Task.findById(id).populate("assignee", "name email");
+    if (!task) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+
+    if (action === "APPROVE") {
+      task.status = "Approved";
+      task.authorizedBy = req.user.id || req.user._id;
+      task.authorizedAt = new Date();
+      if (notes) task.authorizationNotes = notes;
+      if (priority) task.priority = priority;
+      if (scope) task.scope = scope;
+      if (expectedOutcome) task.expectedOutcome = expectedOutcome;
+
+      await task.save();
+
+      if (task.assignee) {
+        await Notification.create({
+          recipient: task.assignee._id || task.assignee,
+          type: "task_assigned",
+          title: "Task Authorized to Begin Execution",
+          message: `Your task '${task.title}' has been authorized by ${req.user.name || 'Lead'}. You may now start execution.`,
+          task: task._id
+        });
+      }
+
+      if (req.io) {
+        req.io.emit("task:updated", task);
+      }
+
+      return res.json({
+        ok: true,
+        message: "Task successfully authorized. Status updated to 'Approved'. Execution unlocked.",
+        task
+      });
+    } else if (action === "RETURN") {
+      task.status = "Returned";
+      task.returnedFeedback = notes || "Clarification required from lead before task can be authorized.";
+      await task.save();
+
+      if (task.assignee) {
+        await Notification.create({
+          recipient: task.assignee._id || task.assignee,
+          type: "task_assigned",
+          title: "Task Returned for Clarification",
+          message: `Your submitted task '${task.title}' was returned: ${task.returnedFeedback}`,
+          task: task._id
+        });
+      }
+
+      if (req.io) {
+        req.io.emit("task:updated", task);
+      }
+
+      return res.json({
+        ok: true,
+        message: "Task returned for clarification.",
+        task
+      });
+    } else {
+      return res.status(400).json({ error: "Invalid action. Must be 'APPROVE' or 'RETURN'." });
+    }
+  } catch (error) {
+    console.error("Error authorizing task:", error);
+    res.status(500).json({ error: error.message || "Server error" });
+  }
+});
+
 // Update task — reassign only to active users in the task’s branch
 router.put("/:id", auth, async (req, res) => {
   try {
     const { id } = req.params
     const updates = req.body
 
-    if (updates.assignee) {
-      const existing = await Task.findById(id).select("branch")
-      if (!existing) {
-        return res.status(404).json({ error: "Task not found" })
+    const existing = await Task.findById(id)
+    if (!existing) {
+      return res.status(404).json({ error: "Task not found" })
+    }
+
+    // Authorisation Gate: Only authorised tasks can enter In Progress
+    if (updates.status === "In Progress" && existing.status !== "In Progress") {
+      const allowedPriorStates = ["Approved", "Pending"]
+      if (!allowedPriorStates.includes(existing.status)) {
+        return res.status(403).json({
+          error: "AUTHORIZATION_GATE_LOCKED",
+          message: `Execution blocked: Task '${existing.title}' cannot enter 'In Progress' until authorized by a project lead. Current status is '${existing.status}'.`
+        })
       }
+      updates.executionStartedAt = new Date()
+    }
+
+    if (updates.status === "Submitted for Review") {
+      updates.submittedForReviewAt = new Date()
+    }
+
+    if (updates.status === "Closed" || updates.status === "Completed") {
+      updates.closedAt = new Date()
+    }
+
+    if (updates.assignee) {
       const branchForAssignee = req.headers['x-branch'] || req.query.branch || existing.branch || 'blackhole_mumbai'
       const assigneeFilter = { _id: updates.assignee, stillExist: 1 }
       if (branchForAssignee && branchForAssignee !== 'all') {

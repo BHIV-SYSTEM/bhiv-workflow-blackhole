@@ -247,20 +247,17 @@ router.post("/", auth, upload.single("document"), async (req, res) => {
 
     // 🔄 AUTO STATUS UPDATE: Update task status based on submission type
     if (!originalSubmission) {
-      // Original submission - mark as Completed
-      if (task.status !== "Completed") {
-        task.status = "Completed"
-        task.progress = 100
-        console.log(`✅ Task ${taskId} marked as Completed (Submission received)`);
-        await task.save()
-      }
+      task.status = "Submitted for Review"
+      task.submittedForReviewAt = new Date()
+      task.progress = 100
+      console.log(`✅ Task ${taskId} marked as Submitted for Review`);
+      await task.save()
     } else {
-      // Revision submission - if task was Pending, mark as In Progress
-      if (task.status === "Pending") {
-        task.status = "In Progress"
-        console.log(`✅ Auto-updated task ${taskId} status: Pending → In Progress (Revision submitted)`);
-        await task.save()
-      }
+      // Revision submission - mark as Submitted for Review as well
+      task.status = "Submitted for Review"
+      task.submittedForReviewAt = new Date()
+      console.log(`✅ Auto-updated task ${taskId} status: → Submitted for Review (Revision submitted)`);
+      await task.save()
     }
 
     // Emit execution event with trace propagation
@@ -567,9 +564,10 @@ router.post("/:id/approve-and-assign-next", auth, async (req, res) => {
     };
     await submission.save();
 
-    // 2. Update Current Task to Completed
-    if (currentTask && currentTask.status !== "Completed") {
-      currentTask.status = "Completed";
+    // 2. Update Current Task to Closed & Completed
+    if (currentTask && currentTask.status !== "Closed") {
+      currentTask.status = "Closed";
+      currentTask.closedAt = new Date();
       currentTask.progress = 100;
       await currentTask.save();
     }

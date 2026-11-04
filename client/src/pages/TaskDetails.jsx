@@ -583,6 +583,13 @@ import {
   FileCode,
   Layers,
   RefreshCw,
+  Lock,
+  ShieldCheck,
+  ShieldAlert,
+  PlayCircle,
+  MessageSquare,
+  Check,
+  XCircle,
 } from "lucide-react"
 import { Button } from "../components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../components/ui/card"
@@ -592,6 +599,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs"
 import { Avatar, AvatarFallback, AvatarImage } from "../components/ui/avatar"
 import { TaskSubmissionDialog } from "../components/tasks/task-submission-dialog"
 import { Skeleton } from "../components/ui/skeleton"
+import { Textarea } from "../components/ui/textarea"
 import { API_URL } from "@/lib/api"
 import { formatDate } from "@/lib/dateFormat"
 
@@ -604,6 +612,67 @@ function TaskDetails() {
   const [isLoading, setIsLoading] = useState(true)
   const [isSubmissionDialogOpen, setIsSubmissionDialogOpen] = useState(false)
   const [submission, setSubmission] = useState(null)
+  const [authNotes, setAuthNotes] = useState("")
+  const [isAuthorizing, setIsAuthorizing] = useState(false)
+
+  const handleAuthorize = async (action) => {
+    try {
+      setIsAuthorizing(true)
+      const token = localStorage.getItem("WorkflowToken")
+      const response = await axios.post(
+        `${API_URL}/tasks/${id}/authorize`,
+        { action, notes: authNotes },
+        { headers: { "x-auth-token": token } }
+      )
+      toast({
+        title: action === "APPROVE" ? "Task Authorized" : "Task Returned",
+        description: response.data.message || (action === "APPROVE" ? "Task authorized for execution" : "Task returned to candidate"),
+      })
+      const taskResponse = await axios.get(`${API_URL}/tasks/${id}`, {
+        headers: { "x-auth-token": token },
+      })
+      setTask(taskResponse.data)
+      setAuthNotes("")
+    } catch (error) {
+      console.error("Authorization error:", error)
+      toast({
+        title: "Action Failed",
+        description: error.response?.data?.error || "Failed to update authorization status",
+        variant: "destructive",
+      })
+    } finally {
+      setIsAuthorizing(false)
+    }
+  }
+
+  const handleStartExecution = async () => {
+    try {
+      setIsAuthorizing(true)
+      const token = localStorage.getItem("WorkflowToken")
+      await axios.put(
+        `${API_URL}/tasks/${id}`,
+        { status: "In Progress" },
+        { headers: { "x-auth-token": token } }
+      )
+      toast({
+        title: "Execution Started",
+        description: "Task is now In Progress. Execution Gate unlocked.",
+      })
+      const taskResponse = await axios.get(`${API_URL}/tasks/${id}`, {
+        headers: { "x-auth-token": token },
+      })
+      setTask(taskResponse.data)
+    } catch (error) {
+      console.error("Error starting execution:", error)
+      toast({
+        title: "Execution Gate Locked",
+        description: error.response?.data?.message || error.response?.data?.error || "Failed to start execution",
+        variant: "destructive",
+      })
+    } finally {
+      setIsAuthorizing(false)
+    }
+  }
 
   useEffect(() => {
     const fetchTaskDetails = async () => {
@@ -644,10 +713,19 @@ function TaskDetails() {
 
   const getStatusColor = (status) => {
     switch (status) {
-      case "Completed":
-        return "bg-green-500/10 text-green-500 hover:bg-green-500/20"
+      case "Pending Validation":
+        return "bg-amber-500/10 text-amber-500 border border-amber-500/20"
+      case "Approved":
+        return "bg-cyan-500/10 text-cyan-400 border border-cyan-500/20"
+      case "Returned":
+        return "bg-rose-500/10 text-rose-400 border border-rose-500/20"
       case "In Progress":
         return "bg-blue-500/10 text-blue-500 hover:bg-blue-500/20"
+      case "Submitted for Review":
+        return "bg-purple-500/10 text-purple-400 border border-purple-500/20"
+      case "Closed":
+      case "Completed":
+        return "bg-green-500/10 text-green-500 hover:bg-green-500/20"
       case "Pending":
         return "bg-amber-500/10 text-amber-500 hover:bg-amber-500/20"
       default:
@@ -827,7 +905,14 @@ function TaskDetails() {
 
   const dueDateStatus = getDueDateStatus(task.dueDate)
   const storedUser = JSON.parse(localStorage.getItem("WorkflowUser"))
-  const isAssignedToCurrentUser = storedUser?.id === task.assignee?._id
+  const isAssignedToCurrentUser = (storedUser?.id === task.assignee?._id) || (storedUser?._id === task.assignee?._id)
+  const isLeadOrAdmin = storedUser && (
+    storedUser.role === "Admin" ||
+    storedUser.role === "Manager" ||
+    storedUser.role === "Lead" ||
+    storedUser.role === "Governor" ||
+    storedUser.isAdmin
+  )
   const documents = getDocumentDetails(task.notes, task.fileType)
   const displayTitle = task.title || "Task Details";
 
@@ -841,6 +926,11 @@ function TaskDetails() {
           <h1 className="text-2xl font-bold tracking-tight">{displayTitle}</h1>
         </div>
         <div className="flex items-center gap-2">
+          {task.task_id && (
+            <Badge variant="outline" className="font-mono text-xs border-emerald-500/30 text-emerald-400 bg-emerald-500/5">
+              {task.task_id}
+            </Badge>
+          )}
           <Badge className={getStatusColor(task.status)}>{task.status}</Badge>
           <Badge className={getPriorityColor(task.priority)}>{task.priority}</Badge>
           {task.department && (
@@ -851,6 +941,131 @@ function TaskDetails() {
         </div>
       </div>
 
+      {/* BHIV Execution Gate Banner */}
+      {task.status === "Pending Validation" && (
+        <Card className="border-2 border-amber-500/40 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent">
+          <CardContent className="p-5 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400">
+                  <Lock className="h-6 w-6" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-amber-300">
+                    Execution Gate Locked: Awaiting Lead Authorisation
+                  </h3>
+                  <p className="text-xs text-amber-200/80">
+                    {task.sourceType || "WhatsApp"} task submitted by {task.originatingPerson || "Candidate"}. Work cannot begin until authorized.
+                  </p>
+                </div>
+              </div>
+              <Badge variant="outline" className="border-amber-400/50 text-amber-300 bg-amber-500/10 text-xs self-start sm:self-auto">
+                Pending Validation Gate
+              </Badge>
+            </div>
+
+            {isLeadOrAdmin ? (
+              <div className="pt-3 border-t border-amber-500/20 space-y-3">
+                <div className="text-xs font-medium text-amber-200">
+                  Authorised Project Lead Action: Review scope and approve or return for revision.
+                </div>
+                <Textarea
+                  placeholder="Optional approval notes or reason for returning..."
+                  value={authNotes}
+                  onChange={(e) => setAuthNotes(e.target.value)}
+                  className="bg-slate-900/80 border-amber-500/30 text-xs text-slate-100 placeholder:text-slate-500"
+                  rows={2}
+                />
+                <div className="flex items-center gap-3">
+                  <Button
+                    size="sm"
+                    disabled={isAuthorizing}
+                    onClick={() => handleAuthorize("APPROVE")}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs gap-1.5 shadow-md shadow-emerald-950/40"
+                  >
+                    <ShieldCheck className="h-4 w-4" />
+                    Authorize Task Execution
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={isAuthorizing}
+                    onClick={() => handleAuthorize("RETURN")}
+                    className="border-rose-500/40 text-rose-400 hover:bg-rose-500/10 text-xs gap-1.5"
+                  >
+                    <XCircle className="h-4 w-4" />
+                    Return for Clarification
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-amber-300/70 italic">
+                You are assigned to this task. Please wait for an authorized Project Lead or Manager to review and approve your submission before starting work.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {task.status === "Approved" && (
+        <Card className="border-2 border-cyan-500/30 bg-gradient-to-r from-cyan-500/10 via-cyan-500/5 to-transparent">
+          <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-cyan-500/20 text-cyan-400">
+                <ShieldCheck className="h-5 w-5" />
+              </div>
+              <div>
+                <h4 className="font-semibold text-sm text-cyan-300">
+                  Execution Gate Passed: Task Authorized by Lead
+                </h4>
+                <p className="text-xs text-cyan-200/70">
+                  {task.authorizedAt ? `Approved on ${formatDate(task.authorizedAt)}.` : ""} Ready to transition to In Progress.
+                </p>
+              </div>
+            </div>
+            {isAssignedToCurrentUser && (
+              <Button
+                size="sm"
+                disabled={isAuthorizing}
+                onClick={handleStartExecution}
+                className="bg-cyan-600 hover:bg-cyan-500 text-white font-medium text-xs gap-1.5 shadow-md self-start sm:self-auto"
+              >
+                <PlayCircle className="h-4 w-4" />
+                Start Execution (Move to In Progress)
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {task.status === "Returned" && (
+        <Card className="border-2 border-rose-500/30 bg-rose-950/20">
+          <CardContent className="p-4 flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-rose-400 shrink-0 mt-0.5" />
+            <div className="text-xs text-rose-200">
+              <span className="font-semibold text-rose-300">Task Returned for Clarification: </span>
+              {task.returnedFeedback || "Please contact your lead or revise the task details."}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {task.status === "Closed" && (
+        <Card className="border-2 border-emerald-500/30 bg-emerald-950/20">
+          <CardContent className="p-4 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 text-xs text-emerald-200">
+              <CheckCircle className="h-5 w-5 text-emerald-400 shrink-0" />
+              <span>
+                <strong>Parikshak Review Passed:</strong> Task deliverables verified and task closed in Niyantran.
+              </span>
+            </div>
+            <Badge className="bg-emerald-600 text-white text-xs">
+              Closed & Verified
+            </Badge>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid gap-6 md:grid-cols-3">
         <Card className="md:col-span-2">
           <CardHeader>
@@ -858,9 +1073,10 @@ function TaskDetails() {
             <CardDescription>Complete information about this task</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            <Tabs defaultValue="description">
-              <TabsList className="grid w-full grid-cols-3">
+            <Tabs defaultValue={task.originalInstruction ? "provenance" : "description"}>
+              <TabsList className="grid w-full grid-cols-4">
                 <TabsTrigger value="description">Description</TabsTrigger>
+                <TabsTrigger value="provenance">Provenance & Gate</TabsTrigger>
                 <TabsTrigger value="dependencies">Dependencies</TabsTrigger>
                 <TabsTrigger value="submission">Submission</TabsTrigger>
               </TabsList>
@@ -1026,6 +1242,86 @@ function TaskDetails() {
                     ))}
                   </div>
                 )}
+              </TabsContent>
+              <TabsContent value="provenance" className="space-y-4 pt-4">
+                <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
+                        <MessageSquare className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-white">Immutable Provenance & Intake Record</h3>
+                        <p className="text-xs text-slate-400">Preserved source instruction, originator, and authorization trail</p>
+                      </div>
+                    </div>
+                    {task.task_id && (
+                      <Badge variant="outline" className="font-mono text-xs border-emerald-500/30 text-emerald-400 bg-emerald-500/5">
+                        {task.task_id}
+                      </Badge>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                    <div className="p-3 rounded-lg bg-slate-950/80 border border-slate-800">
+                      <span className="text-slate-500 block mb-0.5">Task Origin</span>
+                      <span className="font-semibold text-slate-200">{task.sourceType || "WhatsApp / Direct"}</span>
+                    </div>
+                    <div className="p-3 rounded-lg bg-slate-950/80 border border-slate-800">
+                      <span className="text-slate-500 block mb-0.5">Originating Person</span>
+                      <span className="font-semibold text-slate-200">{task.originatingPerson || "Project Lead"}</span>
+                    </div>
+                    <div className="p-3 rounded-lg bg-slate-950/80 border border-slate-800">
+                      <span className="text-slate-500 block mb-0.5">Source Reference</span>
+                      <span className="font-semibold text-slate-200">{task.sourceReference || "Direct Directive"}</span>
+                    </div>
+                  </div>
+
+                  {task.originalInstruction && (
+                    <div>
+                      <span className="text-xs font-semibold text-slate-300 block mb-1.5">
+                        Raw Original Instruction (Verbatim Preserved):
+                      </span>
+                      <pre className="p-3.5 rounded-lg bg-slate-950 border border-slate-800 text-xs font-mono text-emerald-300 whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">
+                        {task.originalInstruction}
+                      </pre>
+                    </div>
+                  )}
+
+                  {task.scope && (
+                    <div>
+                      <span className="text-xs font-semibold text-slate-300 block mb-1">Defined Scope of Work:</span>
+                      <p className="text-xs text-slate-300 p-3 rounded-lg bg-slate-950/80 border border-slate-800 leading-relaxed whitespace-pre-wrap">
+                        {task.scope}
+                      </p>
+                    </div>
+                  )}
+
+                  {task.acceptanceCriteria && (
+                    <div>
+                      <span className="text-xs font-semibold text-slate-300 block mb-1">Acceptance Criteria & Parikshak Verification:</span>
+                      <p className="text-xs text-slate-300 p-3 rounded-lg bg-slate-950/80 border border-slate-800 leading-relaxed whitespace-pre-wrap">
+                        {task.acceptanceCriteria}
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 text-xs">
+                    {task.authorizedAt && (
+                      <div className="p-3 rounded-lg bg-cyan-950/30 border border-cyan-500/20 text-cyan-200">
+                        <span className="font-semibold block mb-0.5">Authorisation Audit:</span>
+                        Approved on {formatDate(task.authorizedAt)}
+                        {task.authorizationNotes && <p className="mt-1 text-slate-300 italic">"{task.authorizationNotes}"</p>}
+                      </div>
+                    )}
+                    {task.executionStartedAt && (
+                      <div className="p-3 rounded-lg bg-blue-950/30 border border-blue-500/20 text-blue-200">
+                        <span className="font-semibold block mb-0.5">Execution Started:</span>
+                        {formatDate(task.executionStartedAt)}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </TabsContent>
               <TabsContent value="dependencies" className="pt-4">
                 {task.dependencies && task.dependencies.length > 0 ? (

@@ -2,11 +2,13 @@
 
 import { useState } from "react"
 import { Button } from "../ui/button"
-import { Plus, CheckSquare } from "lucide-react"
+import { Plus, CheckSquare, MessageSquarePlus } from "lucide-react"
 import { CreateTaskDialog } from "./create-task-dialog"
+import { TaskIntakeDialog } from "./TaskIntakeDialog"
 
 export function TasksHeader({ onTaskCreated }) {
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false)
+  const [isIntakeOpen, setIsIntakeOpen] = useState(false)
 
   return (
     <div className="space-y-2">
@@ -20,19 +22,35 @@ export function TasksHeader({ onTaskCreated }) {
             <p className="text-muted-foreground">Manage and track tasks across all departments</p>
           </div>
         </div>
-        <Button 
-          onClick={() => setIsCreateTaskOpen(true)}
-          className="bg-green-500 hover:bg-green-600 text-white"
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          New Task
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={() => setIsIntakeOpen(true)}
+            variant="outline"
+            className="border-emerald-600/50 text-emerald-400 hover:bg-emerald-950/40 hover:text-emerald-300 font-medium"
+          >
+            <MessageSquarePlus className="mr-2 h-4 w-4 text-emerald-400" />
+            Register Task Intake (WhatsApp)
+          </Button>
+          <Button 
+            onClick={() => setIsCreateTaskOpen(true)}
+            className="bg-green-500 hover:bg-green-600 text-white"
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            New Task
+          </Button>
+        </div>
       </div>
 
       <CreateTaskDialog
         open={isCreateTaskOpen}
         onOpenChange={setIsCreateTaskOpen}
         onTaskCreated={onTaskCreated}
+      />
+
+      <TaskIntakeDialog
+        open={isIntakeOpen}
+        onOpenChange={setIsIntakeOpen}
+        onTaskRegistered={onTaskCreated}
       />
     </div>
   )

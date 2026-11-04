@@ -77,8 +77,83 @@ const TaskSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ["Pending", "In Progress", "Completed"],
-    default: "Pending",
+    enum: [
+      "Submitted",
+      "Pending Validation",
+      "Approved",
+      "Returned",
+      "Pending",
+      "In Progress",
+      "Submitted for Review",
+      "Completed",
+      "Closed"
+    ],
+    default: "Pending Validation",
+  },
+  task_id: {
+    type: String,
+    trim: true,
+    index: true,
+  },
+  sourceType: {
+    type: String,
+    enum: ["WHATSAPP", "LEAD_INSTRUCTION", "MEETING", "AUTONOMOUS", "OTHER"],
+    default: "WHATSAPP",
+  },
+  originatingPerson: {
+    type: String,
+    trim: true,
+  },
+  sourceReference: {
+    type: String,
+    trim: true,
+  },
+  originalInstruction: {
+    type: String,
+  },
+  intakeAttachments: [
+    {
+      filename: String,
+      url: String,
+      mimeType: String,
+      uploadedAt: { type: Date, default: Date.now }
+    }
+  ],
+  scope: {
+    type: String,
+  },
+  expectedOutcome: {
+    type: String,
+  },
+  acceptanceCriteria: [
+    {
+      type: String,
+    }
+  ],
+  authorizedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+  },
+  authorizedAt: {
+    type: Date,
+  },
+  authorizationNotes: {
+    type: String,
+  },
+  returnedFeedback: {
+    type: String,
+  },
+  parikshakReviewId: {
+    type: String,
+  },
+  executionStartedAt: {
+    type: Date,
+  },
+  submittedForReviewAt: {
+    type: Date,
+  },
+  closedAt: {
+    type: Date,
   },
   priority: {
     type: String,

@@ -152,6 +152,18 @@ const tasks = {
     }),
 
   deleteTask: (id) => fetchAPI(`/tasks/${id}`, { method: "DELETE" }),
+
+  registerIntake: (intakeData) =>
+    fetchAPI("/tasks/register-intake", {
+      method: "POST",
+      body: JSON.stringify(intakeData),
+    }),
+
+  authorizeTask: (id, authData) =>
+    fetchAPI(`/tasks/${id}/authorize`, {
+      method: "POST",
+      body: JSON.stringify(authData),
+    }),
 };
 
 
