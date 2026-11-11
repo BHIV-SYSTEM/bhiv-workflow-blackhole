@@ -19,6 +19,7 @@ import { TaskDetailsDialog } from "./task-details-dialog"
 import { useToast } from "../../hooks/use-toast"
 import { api } from "../../lib/api"
 import { formatDate } from "../../lib/dateFormat"
+import { formatEmployeeId } from "../../lib/employeeId"
 import {
   Dialog,
   DialogContent,
@@ -472,7 +473,18 @@ export function TasksList({ filters, newTask }) {
                             )}
                           </div>
                         </TableCell>
-                        <TableCell className="py-4 font-medium">{task.assignee?.name || <span className="text-muted-foreground italic">Unassigned</span>}</TableCell>
+                        <TableCell className="py-4 font-medium">
+                          {task.assignee ? (
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span>{task.assignee.name}</span>
+                              <Badge variant="outline" className="font-mono text-[10px] text-primary border-primary/20 bg-primary/5 font-bold">
+                                {task.assignee.employeeId || formatEmployeeId(task.assignee.email)}
+                              </Badge>
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground italic">Unassigned</span>
+                          )}
+                        </TableCell>
                         <TableCell className="py-4"><Badge className={`${getStatusColor(task.status)} font-semibold`}>{task.status}</Badge></TableCell>
                         <TableCell className="py-4"><Badge className={`${getPriorityColor(task.priority)} font-semibold`}>{task.priority}</Badge></TableCell>
                         <TableCell className="py-4 font-medium">

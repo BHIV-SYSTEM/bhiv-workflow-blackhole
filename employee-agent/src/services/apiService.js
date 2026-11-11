@@ -55,7 +55,15 @@ class ApiService {
         const envContent = fs.readFileSync(envPath, 'utf-8');
         const match = envContent.match(/AGENT_API_BASE_URL=(.+)/);
         if (match && match[1]) {
-          const url = match[1].trim();
+          let url = match[1].trim();
+          // Remove trailing slashes
+          url = url.replace(/\/+$/, '');
+          // Remove trailing /api (since all API endpoints already start with /api)
+          url = url.replace(/\/api$/, '');
+          // Prefer HTTPS for secure domains
+          if (url.startsWith('http://niyantran.')) {
+            url = url.replace('http://', 'https://');
+          }
           console.log('✓ Loaded backend URL from .env:', url);
           return url;
         }

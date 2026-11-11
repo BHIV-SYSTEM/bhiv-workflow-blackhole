@@ -10,6 +10,7 @@ const DailyAttendance = require("../models/DailyAttendance")
 const TaskEvaluation = require("../models/TaskEvaluation")
 const auth = require("../middleware/auth")
 const { branchFilter } = require("../middleware/branchMiddleware")
+const { formatEmployeeId } = require("../utils/employeeId")
 
 // Helper to get branch filter from request
 const getBranchQuery = (req) => {
@@ -483,7 +484,7 @@ router.get("/admin-report", auth, async (req, res) => {
     // Optimized: bulk aim query instead of N×findOne calls
     const users = await User.find({ stillExist: 1, ...branchQuery })
       .populate("department", "name")
-      .select("name email role department branch")
+      .select("name email role department branch employeeId")
       .lean(); // ✅ Added lean
 
     const userIdsList = users.map(u => u._id);
@@ -497,6 +498,7 @@ router.get("/admin-report", auth, async (req, res) => {
       const aim = aimsMap.get(user._id.toString()) || null;
       return {
         userId: user._id,
+        employeeId: user.employeeId || formatEmployeeId(user.email),
         name: user.name,
         email: user.email,
         role: user.role,
@@ -523,6 +525,7 @@ router.get("/admin-report", auth, async (req, res) => {
     const userTaskCountMap = new Map(activeTaskByUserAgg.map(t => [t._id.toString(), t.count]));
     const usersWithTaskCounts = users.map(user => ({
       userId: user._id,
+      employeeId: user.employeeId || formatEmployeeId(user.email),
       name: user.name,
       email: user.email,
       role: user.role,
@@ -542,7 +545,7 @@ router.get("/admin-report", auth, async (req, res) => {
       },
       user: { $in: userIdsList }
     })
-      .populate("user", "name email role branch")
+      .populate("user", "name email role branch employeeId")
       .populate("task", "title status")
       .sort({ createdAt: -1 })
       .lean(); // ✅ Added lean
@@ -554,6 +557,7 @@ router.get("/admin-report", auth, async (req, res) => {
       .map((progress) => ({
         id: progress._id,
         userId: progress.user?._id,
+        employeeId: progress.user?.employeeId || formatEmployeeId(progress.user?.email),
         userName: progress.user?.name || "Unknown User",
         userEmail: progress.user?.email || "",
         taskId: progress.task?._id || null,
@@ -579,7 +583,7 @@ router.get("/admin-report", auth, async (req, res) => {
       startDayTime: { $exists: true },
       user: { $in: branchUserIds }
     })
-      .populate("user", "name email role department branch")
+      .populate("user", "name email role department branch employeeId")
       .sort({ startDayTime: 1 })
       .lean(); // ✅ Added lean
     } else {
@@ -589,7 +593,7 @@ router.get("/admin-report", auth, async (req, res) => {
         startDayTime: { $exists: true },
         user: { $in: branchUserIds }
       })
-        .populate("user", "name email role department branch")
+        .populate("user", "name email role department branch employeeId")
         .sort({ startDayTime: -1 }) // Sort descending to get most recent first
         .limit(1000) // ✅ Limit to 1000 most recent records for lifetime view
         .lean(); // ✅ Added lean
@@ -609,6 +613,7 @@ router.get("/admin-report", auth, async (req, res) => {
         const userId = user._id.toString();
         userHoursMap.set(userId, {
           userId: user._id,
+          employeeId: user.employeeId || formatEmployeeId(user.email),
           userName: user.name,
           userEmail: user.email,
           userRole: user.role,
@@ -636,6 +641,7 @@ router.get("/admin-report", auth, async (req, res) => {
         .filter((attendance) => attendance.user) // skip records with missing user
         .map((attendance) => ({
           userId: attendance.user._id,
+          employeeId: attendance.user.employeeId || formatEmployeeId(attendance.user.email),
           userName: attendance.user.name,
           userEmail: attendance.user.email,
           userRole: attendance.user.role,

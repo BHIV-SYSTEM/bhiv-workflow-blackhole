@@ -47,6 +47,7 @@ import {
 import { useToast } from "../../hooks/use-toast"
 import { api } from "../../lib/api"
 import { format } from "date-fns"
+import { formatEmployeeId } from "../../lib/employeeId"
 
 export function UserManagement() {
   const { toast } = useToast()
@@ -92,12 +93,16 @@ export function UserManagement() {
     // Filter by search query
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase()
-      filtered = filtered.filter(user =>
-        user.name.toLowerCase().includes(query) ||
-        user.email.toLowerCase().includes(query) ||
-        user.role.toLowerCase().includes(query) ||
-        user.department?.name?.toLowerCase().includes(query)
-      )
+      filtered = filtered.filter(user => {
+        const empId = (user.employeeId || formatEmployeeId(user.email) || "").toLowerCase()
+        return (
+          user.name.toLowerCase().includes(query) ||
+          user.email.toLowerCase().includes(query) ||
+          user.role.toLowerCase().includes(query) ||
+          user.department?.name?.toLowerCase().includes(query) ||
+          empId.includes(query)
+        )
+      })
     }
 
     setFilteredUsers(filtered)
@@ -490,6 +495,7 @@ export function UserManagement() {
                         className="rounded border-gray-300"
                       />
                     </TableHead>
+                    <TableHead>Employee ID</TableHead>
                     <TableHead>Name</TableHead>
                     <TableHead>Email</TableHead>
                     <TableHead>Role</TableHead>
@@ -509,6 +515,9 @@ export function UserManagement() {
                           onChange={(e) => handleUserSelect(user._id, e.target.checked)}
                           className="rounded border-gray-300"
                         />
+                      </TableCell>
+                      <TableCell className="font-mono font-bold text-xs text-primary whitespace-nowrap">
+                        {user.employeeId || formatEmployeeId(user.email)}
                       </TableCell>
                       <TableCell className="font-medium">{user.name}</TableCell>
                       <TableCell>{user.email}</TableCell>

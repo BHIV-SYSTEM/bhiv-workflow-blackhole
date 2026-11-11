@@ -26,6 +26,7 @@ import {
 import { api } from "../../lib/api"
 import { useToast } from "../../hooks/use-toast"
 import { format } from "date-fns"
+import { formatEmployeeId } from "../../lib/employeeId"
 
 export function AdminReportDialog({ open, onOpenChange }) {
   const { toast } = useToast()
@@ -251,7 +252,12 @@ export function AdminReportDialog({ open, onOpenChange }) {
                         >
                           <div className="flex items-start justify-between mb-2">
                             <div>
-                              <h3 className="font-semibold">{user.name}</h3>
+                              <div className="flex items-center gap-2">
+                                <h3 className="font-semibold">{user.name}</h3>
+                                <Badge variant="outline" className="text-xs font-mono font-bold text-primary">
+                                  {user.employeeId || formatEmployeeId(user.email)}
+                                </Badge>
+                              </div>
                               <p className="text-sm text-muted-foreground">
                                 {user.email} • {user.department} • {user.role}
                               </p>
@@ -328,7 +334,12 @@ export function AdminReportDialog({ open, onOpenChange }) {
                             className="p-4 rounded-lg border-2 border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/20 hover:bg-amber-100 dark:hover:bg-amber-950/30 transition-colors"
                           >
                             <div className="flex items-center justify-between mb-2">
-                              <h3 className="font-semibold">{emp.name}</h3>
+                              <div className="flex items-center gap-2">
+                                <h3 className="font-semibold">{emp.name}</h3>
+                                <Badge variant="outline" className="text-xs font-mono font-bold text-primary">
+                                  {emp.employeeId || formatEmployeeId(emp.email)}
+                                </Badge>
+                              </div>
                               <Badge variant="destructive">0 Tasks</Badge>
                             </div>
                             <p className="text-sm text-muted-foreground mb-2">
@@ -372,7 +383,12 @@ export function AdminReportDialog({ open, onOpenChange }) {
                           >
                             <div className="flex items-start justify-between mb-2">
                               <div>
-                                <h3 className="font-semibold">{progress.userName}</h3>
+                                <div className="flex items-center gap-2">
+                                  <h3 className="font-semibold">{progress.userName}</h3>
+                                  <Badge variant="outline" className="text-xs font-mono font-bold text-primary">
+                                    {progress.employeeId || formatEmployeeId(progress.userEmail)}
+                                  </Badge>
+                                </div>
                                 <p className="text-sm text-muted-foreground">
                                   {progress.userEmail} • {progress.taskTitle}
                                 </p>
@@ -431,7 +447,12 @@ export function AdminReportDialog({ open, onOpenChange }) {
                           >
                             <div className="flex items-start justify-between mb-2">
                               <div>
-                                <h3 className="font-semibold">{user.userName}</h3>
+                                <div className="flex items-center gap-2">
+                                  <h3 className="font-semibold">{user.userName}</h3>
+                                  <Badge variant="outline" className="text-xs font-mono font-bold text-primary">
+                                    {user.employeeId || formatEmployeeId(user.userEmail)}
+                                  </Badge>
+                                </div>
                                 <p className="text-sm text-muted-foreground">
                                   {user.userEmail} • {user.department} • {user.userRole}
                                 </p>

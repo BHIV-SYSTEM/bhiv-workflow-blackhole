@@ -41,6 +41,7 @@ const engine = require('../services/trinetraEngine');
 // Loaded as a model, not just a side-effect import: department names are joined
 // by hand below (see attachDepartments).
 const Department = require('../models/Department');
+const { formatEmployeeId } = require('../utils/employeeId');
 
 const router = express.Router();
 
@@ -888,6 +889,7 @@ async function buildProductivityRows(settings, users, start, end) {
 
     return {
       employee_id: key,
+      employeeId: user.employeeId || formatEmployeeId(user.email),
       name: user.name,
       email: user.email,
       department: user.department && user.department.name ? user.department.name : null,
@@ -1862,13 +1864,14 @@ router.get('/report/export', auth, requireAdmin, async (req, res) => {
 
     const users = await attachDepartments(
       await User.find({ stillExist: 1, role: { $nin: ['Admin'] } })
-        .select('name email role department stillExist monitoringPaused')
+        .select('name email role department stillExist monitoringPaused employeeId')
         .lean()
     );
 
     const rows = await buildProductivityRows(settings, users, start, end);
 
     const header = [
+      'Employee ID',
       'Employee',
       'Email',
       'Department',
@@ -1892,6 +1895,7 @@ router.get('/report/export', auth, requireAdmin, async (req, res) => {
     for (const row of rows) {
       lines.push(
         [
+          csvEscape(row.employeeId || formatEmployeeId(row.email)),
           csvEscape(row.name),
           csvEscape(row.email),
           csvEscape(row.department || ''),

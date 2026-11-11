@@ -1,4 +1,5 @@
 const mongoose = require("mongoose")
+const { formatEmployeeId } = require("../utils/employeeId")
 
 const UserSchema = new mongoose.Schema({
   name: {
@@ -104,9 +105,20 @@ const UserSchema = new mongoose.Schema({
 UserSchema.index({ stillExist: 1, role: 1 })
 UserSchema.index({ department: 1, stillExist: 1 })
 
-// Update the updatedAt field before saving
+// Virtual for formatted employee ID
+UserSchema.virtual("formattedEmployeeId").get(function () {
+  return formatEmployeeId(this.email, this.employeeId)
+})
+
+// Update the updatedAt field and ensure formatted employeeId before saving
 UserSchema.pre("save", function (next) {
   this.updatedAt = Date.now()
+  if (!this.employeeId || this.isModified("email")) {
+    const formatted = formatEmployeeId(this.email, this.employeeId)
+    if (formatted && formatted !== "N/A") {
+      this.employeeId = formatted
+    }
+  }
   next()
 })
 

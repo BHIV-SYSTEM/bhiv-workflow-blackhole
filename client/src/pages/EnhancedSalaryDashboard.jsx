@@ -23,6 +23,7 @@ import { Alert, AlertDescription } from '../components/ui/alert';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
+import { formatEmployeeId } from '../lib/employeeId';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
 
@@ -110,7 +111,7 @@ const EnhancedSalaryDashboard = () => {
     if (!dashboardData || !dashboardData.employees) return;
 
     const exportData = dashboardData.employees.map(emp => ({
-      'Employee ID': emp.user.employeeId,
+      'Employee ID': emp.user.employeeId || formatEmployeeId(emp.user.email),
       'Name': emp.user.name,
       'Email': emp.user.email,
       'Department': emp.user.department,

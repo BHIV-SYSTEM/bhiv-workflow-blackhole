@@ -8,6 +8,7 @@ const multer = require("multer")
 const { uploadToCloudinary } = require("../utils/cloudinary")
 const Notification = require("../models/Notification")
 const { isValidOrgEmail, ORG_EMAIL_ERROR } = require("../utils/orgEmail")
+const { formatEmployeeId } = require("../utils/employeeId")
 const mongoose = require("mongoose")
 const { signalTaskCreated, signalTaskCompleted } = require("../services/karmaClient")
 const { executeConstitutionalPipeline } = require("../services/setuConvergenceService")
@@ -76,7 +77,7 @@ router.get("/:id/pdf", async (req, res) => {
     // 2. Otherwise generate structured PDF brief for system/Parikshak tasks without uploaded document
     let assigneeUser = null;
     if (task.assignee) {
-      assigneeUser = await User.findById(task.assignee).select("name email");
+      assigneeUser = await User.findById(task.assignee).select("name email employeeId");
     }
 
     const { generateTaskBriefPdfStream } = require('../services/pdfGenerator');
@@ -161,7 +162,7 @@ router.get("/overdue", auth, async (req, res) => {
         return taskObj
       }
 
-      const actualUser = await User.findById(task.assignee).select("name avatar email stillExist")
+      const actualUser = await User.findById(task.assignee).select("name avatar email stillExist employeeId")
       
       if (!actualUser) {
         taskObj.assignee = null
@@ -176,6 +177,7 @@ router.get("/overdue", auth, async (req, res) => {
         name: actualUser.name,
         avatar: actualUser.avatar,
         email: actualUser.email,
+        employeeId: actualUser.employeeId || formatEmployeeId(actualUser.email),
         stillExist: actualUser.stillExist,
         isActive,
         isBlackhole,
@@ -446,7 +448,7 @@ router.get('/:id', auth, async (req, res) => {
     const taskObj = task.toObject()
     
     if (task.assignee) {
-      const actualUser = await User.findById(task.assignee).select("name avatar email stillExist")
+      const actualUser = await User.findById(task.assignee).select("name avatar email stillExist employeeId")
       
       if (actualUser) {
         const isActive = actualUser.stillExist === 1
@@ -457,6 +459,7 @@ router.get('/:id', auth, async (req, res) => {
           name: actualUser.name,
           avatar: actualUser.avatar,
           email: actualUser.email,
+          employeeId: actualUser.employeeId || formatEmployeeId(actualUser.email),
           stillExist: actualUser.stillExist,
           isActive,
           isBlackhole,
@@ -784,7 +787,7 @@ router.post("/:id/authorize", auth, async (req, res) => {
       return res.status(403).json({ error: "Access denied. Only Project Leads, Managers, or Admins can authorize tasks." });
     }
 
-    const task = await Task.findById(id).populate("assignee", "name email");
+    const task = await Task.findById(id).populate("assignee", "name email employeeId");
     if (!task) {
       return res.status(404).json({ error: "Task not found" });
     }
@@ -911,7 +914,7 @@ router.put("/:id", auth, async (req, res) => {
     const taskObj = task.toObject()
     
     if (task.assignee) {
-      const actualUser = await User.findById(task.assignee).select("name avatar email stillExist")
+      const actualUser = await User.findById(task.assignee).select("name avatar email stillExist employeeId")
       
       if (actualUser) {
         const isActive = actualUser.stillExist === 1
@@ -922,6 +925,7 @@ router.put("/:id", auth, async (req, res) => {
           name: actualUser.name,
           avatar: actualUser.avatar,
           email: actualUser.email,
+          employeeId: actualUser.employeeId || formatEmployeeId(actualUser.email),
           stillExist: actualUser.stillExist,
           isActive,
           isBlackhole,
@@ -993,7 +997,7 @@ router.get("/:id/dependencies", auth, async (req, res) => {
       const depObj = dep.toObject()
       
       if (dep.assignee) {
-        const actualUser = await User.findById(dep.assignee).select("name avatar email stillExist")
+        const actualUser = await User.findById(dep.assignee).select("name avatar email stillExist employeeId")
         
         if (actualUser) {
           const isActive = actualUser.stillExist === 1
@@ -1004,6 +1008,7 @@ router.get("/:id/dependencies", auth, async (req, res) => {
             name: actualUser.name,
             avatar: actualUser.avatar,
             email: actualUser.email,
+            employeeId: actualUser.employeeId || formatEmployeeId(actualUser.email),
             stillExist: actualUser.stillExist,
             isActive,
             isBlackhole,

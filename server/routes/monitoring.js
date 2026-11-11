@@ -16,6 +16,7 @@ const groqAIService = require('../services/groqAIService');
 const ocrAnalysisService = require('../services/ocrAnalysisService');
 const { KeystrokeAnalyticsService } = require('../services/keystrokeAnalytics');
 const reportGenerator = require('../services/reportGenerator');
+const { formatEmployeeId } = require('../utils/employeeId');
 const fs = require('fs').promises;
 const { getViolationScreenshots, generateOptimizedScreenshotUrl } = require('../utils/cloudinary');
 
@@ -1100,6 +1101,7 @@ router.get('/reports/:employeeId', async (req, res) => {
         _id: employee._id,
         name: employee.name,
         email: employee.email,
+        employeeId: employee.employeeId || formatEmployeeId(employee.email),
         department: employee.department?.name || 'General',
         stillExist: employee.stillExist
       },

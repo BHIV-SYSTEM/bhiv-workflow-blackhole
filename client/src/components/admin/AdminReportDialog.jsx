@@ -37,6 +37,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { CreateTaskDialog } from "../tasks/create-task-dialog"
 import { Calendar } from "../ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover"
+import { formatEmployeeId } from "../../lib/employeeId"
 
 export function AdminReportDialog({ open, onOpenChange }) {
   const { toast } = useToast()
@@ -230,10 +231,11 @@ export function AdminReportDialog({ open, onOpenChange }) {
     
     // Present Users (Users with Start Day)
     csvContent += "PRESENT USERS\n"
-    csvContent += "Name,Email,Start Time,End Time,Hours Worked,Work Location\n"
+    csvContent += "Employee ID,Name,Email,Start Time,End Time,Hours Worked,Work Location\n"
     reportData.usersWithStartDay?.forEach(user => {
       const hours = formatHours(getTotalHours(user))
-      csvContent += `${user.userName},${user.userEmail},${user.startDayTime ? formatTime(user.startDayTime) : "N/A"},${user.endDayTime ? formatTime(user.endDayTime) : "Active"},${hours},${user.workLocationType || "N/A"}\n`
+      const empId = user.employeeId || formatEmployeeId(user.userEmail)
+      csvContent += `${empId},${user.userName},${user.userEmail},${user.startDayTime ? formatTime(user.startDayTime) : "N/A"},${user.endDayTime ? formatTime(user.endDayTime) : "Active"},${hours},${user.workLocationType || "N/A"}\n`
     })
     csvContent += "\n"
     
@@ -241,26 +243,29 @@ export function AdminReportDialog({ open, onOpenChange }) {
     const presentUserIds = new Set(reportData.usersWithStartDay?.map(u => u.userId) || [])
     const absentUsers = reportData.usersWithAims?.filter(u => !presentUserIds.has(u.userId)) || []
     csvContent += "ABSENT USERS\n"
-    csvContent += "Name,Email,Role,Department\n"
+    csvContent += "Employee ID,Name,Email,Role,Department\n"
     absentUsers.forEach(user => {
-      csvContent += `${user.name},${user.email},${user.role},${user.department}\n`
+      const empId = user.employeeId || formatEmployeeId(user.email)
+      csvContent += `${empId},${user.name},${user.email},${user.role},${user.department}\n`
     })
     csvContent += "\n"
     
     // Zero Task Employees
     csvContent += "EMPLOYEES WITH ZERO TASKS\n"
-    csvContent += "Name,Email,Role,Department\n"
+    csvContent += "Employee ID,Name,Email,Role,Department\n"
     reportData.zeroTaskEmployees?.forEach(emp => {
-      csvContent += `${emp.name},${emp.email},${emp.role},${emp.department}\n`
+      const empId = emp.employeeId || formatEmployeeId(emp.email)
+      csvContent += `${empId},${emp.name},${emp.email},${emp.role},${emp.department}\n`
     })
     csvContent += "\n"
     
     // Progress Updates
     csvContent += "PROGRESS UPDATES\n"
-    csvContent += "User,Email,Task,Progress %,Notes,Time\n"
+    csvContent += "Employee ID,User,Email,Task,Progress %,Notes,Time\n"
     reportData.userProgressUpdates?.forEach(progress => {
+      const empId = progress.employeeId || formatEmployeeId(progress.userEmail)
       const notes = progress.notes ? progress.notes.replace(/,/g, ";").replace(/\n/g, " ") : ""
-      csvContent += `${progress.userName},${progress.userEmail},${progress.taskTitle},${progress.progressPercentage}%,"${notes}",${format(new Date(progress.createdAt), "h:mm a")}\n`
+      csvContent += `${empId},${progress.userName},${progress.userEmail},${progress.taskTitle},${progress.progressPercentage}%,"${notes}",${format(new Date(progress.createdAt), "h:mm a")}\n`
     })
     
     // Create download link
@@ -371,6 +376,7 @@ export function AdminReportDialog({ open, onOpenChange }) {
         <table>
           <thead>
             <tr>
+              <th>Employee ID</th>
               <th>Name</th>
               <th>Email</th>
               <th>Start Time</th>
@@ -382,6 +388,7 @@ export function AdminReportDialog({ open, onOpenChange }) {
           <tbody>
             ${reportData.usersWithStartDay?.map(user => `
               <tr>
+                <td><strong>${user.employeeId || formatEmployeeId(user.userEmail)}</strong></td>
                 <td>${user.userName}</td>
                 <td>${user.userEmail}</td>
                 <td>${user.startDayTime ? formatTime(user.startDayTime) : "N/A"}</td>
@@ -389,7 +396,7 @@ export function AdminReportDialog({ open, onOpenChange }) {
                 <td>${formatHours(getTotalHours(user))}</td>
                 <td><span class="badge badge-blue">${user.workLocationType === "Home" || user.workLocationType === "Remote" ? "WFH" : "Office"}</span></td>
               </tr>
-            `).join("") || "<tr><td colspan='6'>No users present</td></tr>"}
+            `).join("") || "<tr><td colspan='7'>No users present</td></tr>"}
           </tbody>
         </table>
         
@@ -397,6 +404,7 @@ export function AdminReportDialog({ open, onOpenChange }) {
         <table>
           <thead>
             <tr>
+              <th>Employee ID</th>
               <th>Name</th>
               <th>Email</th>
               <th>Role</th>
@@ -410,13 +418,14 @@ export function AdminReportDialog({ open, onOpenChange }) {
               return absent.length > 0 
                 ? absent.map(user => `
                     <tr>
+                      <td><strong>${user.employeeId || formatEmployeeId(user.email)}</strong></td>
                       <td>${user.name}</td>
                       <td>${user.email}</td>
                       <td>${user.role}</td>
                       <td>${user.department}</td>
                     </tr>
                   `).join("")
-                : "<tr><td colspan='4'>All users present</td></tr>"
+                : "<tr><td colspan='5'>All users present</td></tr>"
             })()}
           </tbody>
         </table>
@@ -425,6 +434,7 @@ export function AdminReportDialog({ open, onOpenChange }) {
         <table>
           <thead>
             <tr>
+              <th>Employee ID</th>
               <th>Name</th>
               <th>Email</th>
               <th>Role</th>
@@ -435,13 +445,14 @@ export function AdminReportDialog({ open, onOpenChange }) {
             ${reportData.zeroTaskEmployees?.length > 0 
               ? reportData.zeroTaskEmployees.map(emp => `
                   <tr>
+                    <td><strong>${emp.employeeId || formatEmployeeId(emp.email)}</strong></td>
                     <td>${emp.name}</td>
                     <td>${emp.email}</td>
                     <td>${emp.role}</td>
                     <td>${emp.department}</td>
                   </tr>
                 `).join("")
-              : "<tr><td colspan='4'>All employees have tasks</td></tr>"
+              : "<tr><td colspan='5'>All employees have tasks</td></tr>"
             }
           </tbody>
         </table>
@@ -450,6 +461,7 @@ export function AdminReportDialog({ open, onOpenChange }) {
         <table>
           <thead>
             <tr>
+              <th>Employee ID</th>
               <th>User</th>
               <th>Task</th>
               <th>Progress</th>
@@ -461,6 +473,7 @@ export function AdminReportDialog({ open, onOpenChange }) {
             ${reportData.userProgressUpdates?.length > 0
               ? reportData.userProgressUpdates.map(progress => `
                   <tr>
+                    <td><strong>${progress.employeeId || formatEmployeeId(progress.userEmail)}</strong></td>
                     <td>${progress.userName}</td>
                     <td>${progress.taskTitle}</td>
                     <td>${progress.progressPercentage}%</td>
@@ -468,7 +481,7 @@ export function AdminReportDialog({ open, onOpenChange }) {
                     <td>${format(new Date(progress.createdAt), "h:mm a")}</td>
                   </tr>
                 `).join("")
-              : "<tr><td colspan='5'>No progress updates</td></tr>"
+              : "<tr><td colspan='6'>No progress updates</td></tr>"
             }
           </tbody>
         </table>
@@ -866,6 +879,7 @@ export function AdminReportDialog({ open, onOpenChange }) {
                                     background: 'rgba(40, 40, 40, 0.6)'
                                   }}
                                 >
+                                  <TableHead className="text-white font-semibold">Employee ID</TableHead>
                                   <TableHead className="text-white font-semibold">Name</TableHead>
                                   <TableHead className="text-white font-semibold">Aims</TableHead>
                                   <TableHead className="text-white font-semibold">Start Time</TableHead>
@@ -886,6 +900,9 @@ export function AdminReportDialog({ open, onOpenChange }) {
                                         background: 'rgba(50, 50, 50, 0.4)'
                                       }}
                                     >
+                                      <TableCell className="font-mono font-bold text-xs text-primary whitespace-nowrap">
+                                        {user.employeeId || formatEmployeeId(user.userEmail)}
+                                      </TableCell>
                                       <TableCell className="font-medium text-gray-100">{user.userName}</TableCell>
                                       <TableCell>
                                         <div className="max-w-xs">
@@ -974,6 +991,7 @@ export function AdminReportDialog({ open, onOpenChange }) {
                                     background: 'rgba(40, 40, 40, 0.6)'
                                   }}
                                 >
+                                  <TableHead className="text-white font-semibold">Employee ID</TableHead>
                                   <TableHead className="text-white font-semibold">Name</TableHead>
                                   <TableHead className="text-white font-semibold">Email</TableHead>
                                   <TableHead className="text-white font-semibold">Start Time</TableHead>
@@ -990,6 +1008,9 @@ export function AdminReportDialog({ open, onOpenChange }) {
                                       background: 'rgba(50, 50, 50, 0.4)'
                                     }}
                                   >
+                                    <TableCell className="font-mono font-bold text-xs text-primary whitespace-nowrap">
+                                      {user.employeeId || formatEmployeeId(user.userEmail)}
+                                    </TableCell>
                                     <TableCell className="font-medium text-gray-100">{user.userName}</TableCell>
                                     <TableCell className="text-gray-300">{user.userEmail}</TableCell>
                                     <TableCell>
@@ -1078,7 +1099,8 @@ export function AdminReportDialog({ open, onOpenChange }) {
                                         background: 'rgba(40, 40, 40, 0.6)'
                                       }}
                                     >
-                                      <TableHead className="text-white font-semibold">Name</TableHead>
+                                      <TableHead className="text-white font-semibold">Employee ID</TableHead>
+                                  <TableHead className="text-white font-semibold">Name</TableHead>
                                       <TableHead className="text-white font-semibold">Email</TableHead>
                                       <TableHead className="text-white font-semibold">Role</TableHead>
                                       <TableHead className="text-white font-semibold">Department</TableHead>
@@ -1094,6 +1116,9 @@ export function AdminReportDialog({ open, onOpenChange }) {
                                           background: 'rgba(50, 50, 50, 0.4)'
                                         }}
                                       >
+                                        <TableCell className="font-mono font-bold text-xs text-primary whitespace-nowrap">
+                                          {user.employeeId || formatEmployeeId(user.email)}
+                                        </TableCell>
                                         <TableCell className="font-medium text-gray-100">{user.name}</TableCell>
                                         <TableCell className="text-gray-300">{user.email}</TableCell>
                                         <TableCell>
@@ -1170,6 +1195,7 @@ export function AdminReportDialog({ open, onOpenChange }) {
                                     background: 'rgba(40, 40, 40, 0.6)'
                                   }}
                                 >
+                                  <TableHead className="text-white font-semibold">Employee ID</TableHead>
                                   <TableHead className="text-white font-semibold">Name</TableHead>
                                   <TableHead className="text-white font-semibold">Email</TableHead>
                                   <TableHead className="text-white font-semibold">Role</TableHead>
@@ -1186,6 +1212,9 @@ export function AdminReportDialog({ open, onOpenChange }) {
                                       background: 'rgba(50, 50, 50, 0.4)'
                                     }}
                                   >
+                                    <TableCell className="font-mono font-bold text-xs text-primary whitespace-nowrap">
+                                      {emp.employeeId || formatEmployeeId(emp.email)}
+                                    </TableCell>
                                     <TableCell className="font-medium text-gray-100">{emp.name}</TableCell>
                                     <TableCell className="text-gray-300">{emp.email}</TableCell>
                                     <TableCell>
@@ -1267,6 +1296,12 @@ export function AdminReportDialog({ open, onOpenChange }) {
                                     <div className="flex-1">
                                       <div className="flex items-center gap-2 mb-2">
                                         <span className="font-semibold text-white">{progress.userName}</span>
+                                        <Badge 
+                                          variant="outline" 
+                                          className="text-primary border-primary/30 font-mono font-bold text-xs"
+                                        >
+                                          {progress.employeeId || formatEmployeeId(progress.userEmail)}
+                                        </Badge>
                                         <Badge 
                                           variant="outline" 
                                           className="text-gray-300 border-white/10"

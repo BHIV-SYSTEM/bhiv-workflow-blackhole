@@ -9,6 +9,7 @@ const ScreenCapture = require('../models/ScreenCapture');
 const EmployeeActivity = require('../models/EmployeeActivity');
 const MonitoringAlert = require('../models/MonitoringAlert');
 const Attendance = require('../models/Attendance');
+const { formatEmployeeId } = require('../utils/employeeId');
 
 function formatActiveTime(seconds) {
   if (!seconds || seconds <= 0) return '0h 0m';
@@ -178,11 +179,12 @@ class ReportGenerator {
   async getEmployeeInfo(employeeId) {
     const emp = await User.findById(employeeId).populate('department', 'name').lean();
     if (!emp) {
-      return { name: 'Employee', email: '', department: 'General', stillExist: 1 };
+      return { name: 'Employee', email: '', employeeId: 'N/A', department: 'General', stillExist: 1 };
     }
     return {
       name: emp.name || 'Employee',
       email: emp.email || '',
+      employeeId: emp.employeeId || formatEmployeeId(emp.email),
       department: emp.department?.name || emp.department || 'General',
       stillExist: emp.stillExist
     };
@@ -217,13 +219,14 @@ class ReportGenerator {
     const deptName = typeof employee.department === 'object' ? (employee.department?.name || 'General') : (employee.department || 'General');
     const startStr = new Date(startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     const endStr = new Date(endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const empIdStr = employee.employeeId || formatEmployeeId(employee.email);
 
     doc.fontSize(9)
        .fillColor('#e2e8f0')
        .font('Helvetica-Bold')
        .text(`Employee: `, 40, 68, { continued: true })
        .font('Helvetica')
-       .text(`${employee.name} (${employee.email || 'N/A'})`, { continued: true })
+       .text(`${employee.name} (${empIdStr} • ${employee.email || 'N/A'})`, { continued: true })
        .font('Helvetica-Bold')
        .text(`   •   Department: `, { continued: true })
        .font('Helvetica')
@@ -962,6 +965,7 @@ class ReportGenerator {
 
       let csv = 'NIYANTRAN WORKFLOW - EMPLOYEE PERFORMANCE REPORT\n';
       csv += `Employee Name,${employee.name}\n`;
+      csv += `Employee ID,${employee.employeeId || formatEmployeeId(employee.email)}\n`;
       csv += `Email,${employee.email}\n`;
       csv += `Department,${employee.department}\n`;
       csv += `Status,${employee.stillExist === 0 ? 'Exited' : 'Active'}\n`;
@@ -1019,7 +1023,7 @@ class ReportGenerator {
     }
 
     const employees = await User.find(userQuery)
-      .select('name email department stillExist role')
+      .select('name email department stillExist role employeeId')
       .populate('department', 'name')
       .lean();
 
@@ -1314,6 +1318,7 @@ class ReportGenerator {
         id: idStr,
         name: emp.name || 'Employee',
         email: emp.email || '',
+        employeeId: emp.employeeId || formatEmployeeId(emp.email),
         department: typeof emp.department === 'object' ? (emp.department?.name || 'General') : (emp.department || 'General'),
         stillExist: emp.stillExist,
         totalActivities: s.totalActivities,
@@ -1464,18 +1469,19 @@ class ReportGenerator {
       const tableWidth = 515;
       let currentY = doc.y;
 
-      // Table Header Function: Name | Date | Activities | Productivity | Active Hour | Key Strokes | Mouse Score | Efficiency
+      // Table Header Function: Emp ID | Name | Date | Activities | Productivity | Active Hour | Key Strokes | Mouse Score | Efficiency
       const printTableHeader = (yPos) => {
         doc.rect(tableX, yPos, tableWidth, 22).fill('#1e293b');
-        doc.fillColor('#ffffff').fontSize(8).font('Helvetica-Bold');
-        doc.text('Name', tableX + 8, yPos + 6, { width: 110 });
-        doc.text('Date', tableX + 120, yPos + 6, { width: 55, align: 'center' });
-        doc.text('Activities', tableX + 180, yPos + 6, { width: 48, align: 'center' });
-        doc.text('Productivity', tableX + 232, yPos + 6, { width: 58, align: 'center' });
-        doc.text('Active Hour', tableX + 294, yPos + 6, { width: 52, align: 'center' });
-        doc.text('Key Strokes', tableX + 350, yPos + 6, { width: 54, align: 'center' });
-        doc.text('Mouse Score', tableX + 408, yPos + 6, { width: 55, align: 'center' });
-        doc.text('Efficiency', tableX + 465, yPos + 6, { width: 45, align: 'right' });
+        doc.fillColor('#ffffff').fontSize(7.5).font('Helvetica-Bold');
+        doc.text('Emp ID', tableX + 5, yPos + 6, { width: 52 });
+        doc.text('Name', tableX + 60, yPos + 6, { width: 85 });
+        doc.text('Date', tableX + 148, yPos + 6, { width: 48, align: 'center' });
+        doc.text('Activities', tableX + 200, yPos + 6, { width: 44, align: 'center' });
+        doc.text('Productivity', tableX + 248, yPos + 6, { width: 50, align: 'center' });
+        doc.text('Active Hour', tableX + 302, yPos + 6, { width: 48, align: 'center' });
+        doc.text('Key Strokes', tableX + 354, yPos + 6, { width: 50, align: 'center' });
+        doc.text('Mouse Score', tableX + 408, yPos + 6, { width: 52, align: 'center' });
+        doc.text('Efficiency', tableX + 464, yPos + 6, { width: 46, align: 'right' });
         return yPos + 22;
       };
 
@@ -1497,31 +1503,34 @@ class ReportGenerator {
 
         doc.fontSize(7.5).font('Helvetica');
 
+        // 0. Emp ID
+        doc.fillColor('#6366f1').font('Helvetica-Bold').text(m.employeeId || 'N/A', tableX + 5, currentY + 5, { width: 52, ellipsis: true });
+
         // 1. Name
-        doc.fillColor('#0f172a').font('Helvetica-Bold').text(m.name, tableX + 8, currentY + 5, { width: 110, ellipsis: true });
+        doc.fillColor('#0f172a').font('Helvetica-Bold').text(m.name, tableX + 60, currentY + 5, { width: 85, ellipsis: true });
 
         // 2. Date (Respected Date e.g. 24/10 or range 24/10 - 26/10)
-        doc.fillColor('#475569').font('Helvetica').text(dateDisplay, tableX + 120, currentY + 5, { width: 55, align: 'center' });
+        doc.fillColor('#475569').font('Helvetica').text(dateDisplay, tableX + 148, currentY + 5, { width: 48, align: 'center' });
 
         // 3. Activities
-        doc.fillColor('#475569').text(m.totalActivities > 0 ? m.totalActivities.toString() : '-', tableX + 180, currentY + 5, { width: 48, align: 'center' });
+        doc.fillColor('#475569').text(m.totalActivities > 0 ? m.totalActivities.toString() : '-', tableX + 200, currentY + 5, { width: 44, align: 'center' });
 
         // 4. Productivity
         doc.fillColor(m.totalActivities > 0 ? m.effColor : '#94a3b8').font(m.totalActivities > 0 ? 'Helvetica-Bold' : 'Helvetica')
-           .text(m.totalActivities > 0 ? `${m.avgProductivity}%` : '-', tableX + 232, currentY + 5, { width: 58, align: 'center' });
+           .text(m.totalActivities > 0 ? `${m.avgProductivity}%` : '-', tableX + 248, currentY + 5, { width: 50, align: 'center' });
 
         // 5. Active Hour
         const activeText = (m.totalActivities > 0 || m.activeSeconds > 0) ? (m.activeHoursFormatted || `${m.activeHours}h`) : '-';
-        doc.fillColor('#0f172a').font('Helvetica').text(activeText, tableX + 294, currentY + 5, { width: 52, align: 'center' });
+        doc.fillColor('#0f172a').font('Helvetica').text(activeText, tableX + 302, currentY + 5, { width: 48, align: 'center' });
 
         // 6. Key Strokes
-        doc.fillColor('#475569').text(m.totalKeystrokes > 0 ? m.totalKeystrokes.toLocaleString() : '-', tableX + 350, currentY + 5, { width: 54, align: 'center' });
+        doc.fillColor('#475569').text(m.totalKeystrokes > 0 ? m.totalKeystrokes.toLocaleString() : '-', tableX + 354, currentY + 5, { width: 50, align: 'center' });
 
         // 7. Mouse Score
-        doc.fillColor('#475569').text(m.totalActivities > 0 ? `${m.avgMouse}%` : '-', tableX + 408, currentY + 5, { width: 55, align: 'center' });
+        doc.fillColor('#475569').text(m.totalActivities > 0 ? `${m.avgMouse}%` : '-', tableX + 408, currentY + 5, { width: 52, align: 'center' });
 
         // 8. Efficiency Rating
-        doc.fillColor(m.effColor).font('Helvetica-Bold').text(m.efficiency === 'No Activity' ? '-' : m.efficiency, tableX + 465, currentY + 5, { width: 45, align: 'right' });
+        doc.fillColor(m.effColor).font('Helvetica-Bold').text(m.efficiency === 'No Activity' ? '-' : m.efficiency, tableX + 464, currentY + 5, { width: 46, align: 'right' });
 
         currentY += rowHeight;
       });
@@ -1659,11 +1668,12 @@ class ReportGenerator {
       const eMonth = String(eDate.getMonth() + 1).padStart(2, '0');
       const dateDisplay = isSameDay ? `${sDay}/${sMonth}` : `${sDay}/${sMonth} - ${eDay}/${eMonth}`;
 
-      // Exact 8 Columns matching handwritten specification:
-      // Name, Date, Activities, Productivity, Active Hour, Key Strokes, Mouse Score, Efficiency
-      let csv = 'Name,Date,Activities,Productivity,Active Hour,Key Strokes,Mouse Score,Efficiency\n';
+      // Exact Columns matching specification with Employee ID:
+      // Employee ID, Name, Date, Activities, Productivity, Active Hour, Key Strokes, Mouse Score, Efficiency
+      let csv = 'Employee ID,Name,Date,Activities,Productivity,Active Hour,Key Strokes,Mouse Score,Efficiency\n';
 
       data.members.forEach(m => {
+        const empId = (m.employeeId || 'N/A').replace(/"/g, '""');
         const name = (m.name || 'Employee').replace(/"/g, '""');
         const acts = m.totalActivities > 0 ? m.totalActivities : '-';
         const prod = m.totalActivities > 0 ? `${m.avgProductivity}%` : '-';
@@ -1671,7 +1681,7 @@ class ReportGenerator {
         const keys = m.totalKeystrokes > 0 ? m.totalKeystrokes : '-';
         const mouse = m.totalActivities > 0 ? `${m.avgMouse}%` : '-';
         const eff = m.efficiency === 'No Activity' ? '-' : m.efficiency;
-        csv += `"${name}","${dateDisplay}",${acts},"${prod}","${hours}","${keys}","${mouse}","${eff}"\n`;
+        csv += `"${empId}","${name}","${dateDisplay}",${acts},"${prod}","${hours}","${keys}","${mouse}","${eff}"\n`;
       });
 
       const filename = `team_export_${Date.now()}.csv`;

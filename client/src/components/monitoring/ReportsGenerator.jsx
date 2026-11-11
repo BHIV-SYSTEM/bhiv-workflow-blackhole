@@ -36,6 +36,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import axios from 'axios';
 import { API_URL } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
+import { formatEmployeeId } from '@/lib/employeeId';
 
 export function ReportsGenerator({
   employee: propEmployee,
@@ -290,7 +291,8 @@ export function ReportsGenerator({
       const name = (emp.name || '').toLowerCase();
       const email = (emp.email || '').toLowerCase();
       const dept = typeof emp.department === 'object' ? (emp.department?.name || '') : (emp.department || '');
-      return name.includes(q) || email.includes(q) || dept.toLowerCase().includes(q);
+      const empIdStr = (emp.employeeId || formatEmployeeId(emp.email) || '').toLowerCase();
+      return name.includes(q) || email.includes(q) || dept.toLowerCase().includes(q) || empIdStr.includes(q);
     });
   }, [internalEmployees, employeeSearch]);
 
@@ -303,7 +305,8 @@ export function ReportsGenerator({
       const name = (m.name || '').toLowerCase();
       const email = (m.email || '').toLowerCase();
       const dept = (m.department || '').toLowerCase();
-      return name.includes(q) || email.includes(q) || dept.includes(q);
+      const empIdStr = (m.employeeId || formatEmployeeId(m.email) || '').toLowerCase();
+      return name.includes(q) || email.includes(q) || dept.includes(q) || empIdStr.includes(q);
     });
   }, [teamReportData?.members, teamTableSearch]);
 
@@ -334,6 +337,7 @@ export function ReportsGenerator({
       let csv = '';
       csv += 'NIYANTRAN WORKFLOW - EMPLOYEE PERFORMANCE REPORT\n';
       csv += `Employee Name,${empName}\n`;
+      csv += `Employee ID,${activeEmployee.employeeId || formatEmployeeId(activeEmployee.email)}\n`;
       csv += `Email,${activeEmployee.email || 'N/A'}\n`;
       csv += `Department,${deptName}\n`;
       csv += `Status,${activeEmployee.stillExist === 0 ? 'Exited' : 'Active'}\n`;
@@ -595,11 +599,12 @@ export function ReportsGenerator({
         }
       }
 
-      // Exact 8 columns matching handwritten specification:
-      // Name, Date, Activities, Productivity, Active Hour, Key Strokes, Mouse Score, Efficiency
-      let csv = 'Name,Date,Activities,Productivity,Active Hour,Key Strokes,Mouse Score,Efficiency\n';
+      // Exact columns matching specification with Employee ID:
+      // Employee ID, Name, Date, Activities, Productivity, Active Hour, Key Strokes, Mouse Score, Efficiency
+      let csv = 'Employee ID,Name,Date,Activities,Productivity,Active Hour,Key Strokes,Mouse Score,Efficiency\n';
 
       (members || []).forEach(m => {
+        const empId = (m.employeeId || formatEmployeeId(m.email) || 'N/A').replace(/"/g, '""');
         const name = (m.name || 'Employee').replace(/"/g, '""');
         const acts = m.totalActivities > 0 ? m.totalActivities : '-';
         const prod = m.totalActivities > 0 ? `${m.avgProductivity}%` : '-';
@@ -607,7 +612,7 @@ export function ReportsGenerator({
         const keys = m.totalKeystrokes > 0 ? m.totalKeystrokes : '-';
         const mouse = m.totalActivities > 0 ? `${m.avgMouse}%` : '-';
         const eff = m.efficiency === 'No Activity' ? '-' : m.efficiency;
-        csv += `"${name}","${dateDisplay}",${acts},"${prod}","${hours}","${keys}","${mouse}","${eff}"\n`;
+        csv += `"${empId}","${name}","${dateDisplay}",${acts},"${prod}","${hours}","${keys}","${mouse}","${eff}"\n`;
       });
 
       const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
@@ -736,6 +741,9 @@ export function ReportsGenerator({
                     <h3 className="font-extrabold text-base text-foreground truncate">
                       {activeEmployee?.name || 'Select An Employee'}
                     </h3>
+                    <Badge variant="secondary" className="text-[10px] font-mono font-bold bg-muted text-foreground border border-border">
+                      {activeEmployee?.employeeId || formatEmployeeId(activeEmployee?.email)}
+                    </Badge>
                     {activeEmployee?.stillExist === 0 ? (
                       <Badge variant="outline" className="text-[10px] text-rose-400 border-rose-500/30 bg-rose-500/10">
                         Exited
@@ -1362,6 +1370,7 @@ export function ReportsGenerator({
                 <table className="w-full text-xs text-left">
                   <thead className="bg-muted/50 border-b border-border text-muted-foreground uppercase font-bold text-[11px]">
                     <tr>
+                      <th className="p-3.5">Employee ID</th>
                       <th className="p-3.5">Name</th>
                       <th className="p-3.5 text-center">Date</th>
                       <th className="p-3.5 text-center">Activities</th>
@@ -1376,7 +1385,7 @@ export function ReportsGenerator({
                   <tbody className="divide-y divide-border">
                     {filteredTeamMembers.length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="p-8 text-center text-muted-foreground">
+                        <td colSpan={10} className="p-8 text-center text-muted-foreground">
                           No active team members match "{teamTableSearch}"
                         </td>
                       </tr>
@@ -1390,9 +1399,15 @@ export function ReportsGenerator({
                         const eDay = String(eDate.getDate()).padStart(2, '0');
                         const eMonth = String(eDate.getMonth() + 1).padStart(2, '0');
                         const dateText = isSame ? `${sDay}/${sMonth}` : `${sDay}/${sMonth} - ${eDay}/${eMonth}`;
+                        const empIdText = m.employeeId || formatEmployeeId(m.email);
 
                         return (
                           <tr key={m.id} className="hover:bg-muted/30 transition-colors">
+                            {/* 0. Employee ID */}
+                            <td className="p-3.5 font-bold font-mono text-primary text-xs whitespace-nowrap">
+                              {empIdText}
+                            </td>
+
                             {/* 1. Name */}
                             <td className="p-3.5">
                               <div className="font-bold text-foreground">{m.name}</div>

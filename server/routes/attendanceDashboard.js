@@ -9,6 +9,7 @@ const Department = require('../models/Department');
 const auth = require('../middleware/auth');
 const adminAuth = require('../middleware/adminAuth');
 const { forceSyncAttendanceRange } = require('../services/attendanceCronJobs');
+const { formatEmployeeId } = require('../utils/employeeId');
 
 // Helper to get branch filter from request headers
 const getBranchQuery = (req) => {
@@ -829,7 +830,8 @@ router.get('/export/start-times', auth, adminAuth, async (req, res) => {
       const location = record.workLocationType || 'Office';
       const address = record.startDayLocation?.address || 'N/A';
       
-      return `"${emp?.employeeId || 'N/A'}","${emp?.name || 'Unknown'}","${emp?.email || 'N/A'}","${dept}","${startTime}","${location}","${address}"`;
+      const empId = emp?.employeeId || formatEmployeeId(emp?.email);
+      return `"${empId}","${emp?.name || 'Unknown'}","${emp?.email || 'N/A'}","${dept}","${startTime}","${location}","${address}"`;
     }).join('\n');
 
     const csv = csvHeader + csvRows;
