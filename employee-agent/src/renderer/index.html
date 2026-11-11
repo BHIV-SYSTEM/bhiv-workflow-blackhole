@@ -195,6 +195,69 @@
       text-transform: uppercase;
     }
 
+    .task-box {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-bottom: 12px;
+    }
+
+    .task-box label {
+      font-size: 12px;
+      text-transform: uppercase;
+      color: #64748b;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .task-box select {
+      width: 100%;
+      padding: 9px 10px;
+      border: 2px solid #e0e0e0;
+      border-radius: 6px;
+      font-size: 13px;
+      background: white;
+      color: #1e293b;
+    }
+
+    .task-box select:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    .capture-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 10px;
+      font-size: 11px;
+      color: #64748b;
+      gap: 8px;
+    }
+
+    .capture-status {
+      font-weight: 600;
+      color: #475569;
+    }
+
+    .capture-dot {
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #cbd5e1;
+      margin-right: 5px;
+    }
+
+    .capture-dot.on {
+      background: #22c55e;
+    }
+
+    .capture-dot.off {
+      background: #f59e0b;
+    }
+
     .user-info {
       background: #f8fafc;
       border: 1px solid #e2e8f0;
@@ -292,18 +355,22 @@
         <ul class="consent-list">
           <li>Mouse event counts (not positions)</li>
           <li>Keyboard event counts (not actual keystrokes)</li>
-          <li>Active application names</li>
+          <li>Active application name and window title</li>
           <li>Idle/active time</li>
+          <li>Periodic work-screen snapshots while your workday is active</li>
+          <li>The task you select, so tracked time can be attributed to it</li>
         </ul>
       </div>
 
       <p><strong>What we DO NOT track:</strong></p>
       <ul class="consent-list">
-        <li>Screenshots or screen content</li>
-        <li>Actual keystroke content</li>
-        <li>Personal data or files</li>
-        <li>Activity outside work hours</li>
+        <li>Actual keystroke content or passwords</li>
+        <li>Personal files or personal browsing outside work hours</li>
+        <li>Activity while your workday is ended or monitoring is paused</li>
+        <li>Windows matching the privacy blocklist configured by your admin</li>
       </ul>
+
+      <p>Snapshots are skipped when your screen has not changed, and are retained only for the period set by company policy.</p>
 
       <p>Tracking begins only after you click "Start Day" and stops immediately when you click "End Day" or close this application.</p>
 
@@ -374,6 +441,20 @@
         <div class="stat-card">
           <div class="stat-value" id="idleTime">0s</div>
           <div class="stat-label">Idle Time</div>
+        </div>
+      </div>
+
+      <div class="task-box" id="taskBox" style="display: none;">
+        <label for="activeTaskSelect">Current Task</label>
+        <select id="activeTaskSelect">
+          <option value="">— Not attributed to a task —</option>
+        </select>
+        <div class="capture-row">
+          <span class="capture-status">
+            <span id="captureDot" class="capture-dot"></span>
+            <span id="captureStatus">Capture: waiting</span>
+          </span>
+          <span id="captureNext"></span>
         </div>
       </div>
 

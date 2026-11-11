@@ -34,7 +34,7 @@ export default function AuthCallback() {
 
         // Redirect based on role
         if (user.role === 'Admin') {
-          navigate('/admin-dashboard');
+          navigate('/admindashboard');
         } else if (user.role === 'Manager') {
           navigate('/dashboard');
         } else if (user.role === 'Procurement Agent') {

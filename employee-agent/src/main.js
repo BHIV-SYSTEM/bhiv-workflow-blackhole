@@ -4,6 +4,7 @@ const fs = require('fs');
 const Store = require('electron-store');
 const ActivityTracker = require('./managers/activityTracker');
 const AttendanceStatusPoller = require('./managers/attendancePoller');
+const ScreenshotEngine = require('./managers/screenshotEngine');
 const ApiService = require('./services/apiService');
 
 // Initialize store for persistent data
@@ -34,6 +35,9 @@ let mainWindow = null;
 let activityTracker = null;
 let attendancePoller = null;
 let apiService = null;
+let screenshotEngine = null;
+let assignedTasks = [];
+let assignedAims = [];
 
 // App state
 let appState = {
@@ -155,6 +159,61 @@ function updateTrayMenu() {
   tray.setToolTip(`Employee Agent - ${status}`);
 }
 
+function sendToRenderer(channel, payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(channel, payload);
+  }
+}
+
+/**
+ * Start both collectors for an open workday. Kept in one place so attendance,
+ * activity and screenshot capture can never drift out of sync.
+ */
+async function beginTracking(attendanceId) {
+  if (!attendanceId) return;
+
+  if (activityTracker) {
+    activityTracker.start(attendanceId);
+  }
+
+  // Restore the task the employee had selected before the app restarted.
+  const storedTaskId = store.get('activeTaskId');
+  if (storedTaskId) {
+    if (activityTracker) activityTracker.setActiveTask(storedTaskId);
+    if (screenshotEngine) screenshotEngine.setActiveTask(storedTaskId);
+  }
+
+  if (screenshotEngine) {
+    try {
+      await screenshotEngine.start(attendanceId);
+    } catch (error) {
+      console.warn('Screenshot engine failed to start:', error.message);
+    }
+  }
+
+  refreshTasks().catch(() => {});
+}
+
+function endTracking() {
+  if (activityTracker) {
+    activityTracker.stop();
+  }
+  if (screenshotEngine) {
+    screenshotEngine.stop();
+  }
+}
+
+async function refreshTasks() {
+  if (!apiService) return { success: false, tasks: [], aims: [] };
+  const result = await apiService.fetchMyTasks();
+  if (result.success) {
+    assignedTasks = result.tasks || [];
+    assignedAims = result.aims || [];
+    sendToRenderer('tasks-updated', { tasks: assignedTasks, aims: assignedAims });
+  }
+  return result;
+}
+
 // IPC Handlers
 ipcMain.handle('get-consent-status', () => {
   return appState.consentGiven;
@@ -184,9 +243,7 @@ ipcMain.handle('login', async (event, credentials) => {
       if (currentStatus.dayStarted && !appState.isDayStarted) {
         console.log('🟢 Day already started on backend! Syncing...');
         appState.isDayStarted = true;
-        if (activityTracker && currentStatus.attendanceId) {
-          activityTracker.start(currentStatus.attendanceId);
-        }
+        await beginTracking(currentStatus.attendanceId);
       }
       
       updateTrayMenu();
@@ -211,7 +268,7 @@ ipcMain.handle('logout', () => {
   }
   
   if (appState.isDayStarted) {
-    activityTracker.stop();
+    endTracking();
     appState.isDayStarted = false;
   }
   
@@ -230,7 +287,7 @@ ipcMain.handle('start-day', async () => {
     const result = await apiService.startDay();
     if (result.success) {
       appState.isDayStarted = true;
-      activityTracker.start(result.attendanceId);
+      await beginTracking(result.attendanceId);
       updateTrayMenu();
     }
     return result;
@@ -244,7 +301,7 @@ ipcMain.handle('end-day', async () => {
     const result = await apiService.endDay();
     if (result.success) {
       appState.isDayStarted = false;
-      activityTracker.stop();
+      endTracking();
       updateTrayMenu();
     }
     return result;
@@ -304,6 +361,35 @@ ipcMain.handle('get-tracking-stats', () => {
   return null;
 });
 
+ipcMain.handle('get-tasks', async () => {
+  if (assignedTasks.length === 0) {
+    await refreshTasks().catch(() => {});
+  }
+  return { tasks: assignedTasks, aims: assignedAims };
+});
+
+ipcMain.handle('set-active-task', (event, taskId) => {
+  if (activityTracker) {
+    activityTracker.setActiveTask(taskId);
+  }
+  if (screenshotEngine) {
+    screenshotEngine.setActiveTask(taskId);
+  }
+  store.set('activeTaskId', taskId || null);
+  return { success: true, activeTaskId: taskId || null };
+});
+
+ipcMain.handle('get-screenshot-status', () => {
+  return screenshotEngine ? screenshotEngine.getStatus() : null;
+});
+
+ipcMain.handle('capture-now', async () => {
+  if (!screenshotEngine || !appState.isDayStarted) {
+    return { captured: false, reason: 'day_not_active' };
+  }
+  return screenshotEngine.captureOnce('manual');
+});
+
 // App lifecycle
 app.whenReady().then(async () => {
   // 1. Setup auto-start with Windows on PC boot
@@ -322,6 +408,10 @@ app.whenReady().then(async () => {
   // 2. Initialize services
   apiService = new ApiService();
   activityTracker = new ActivityTracker(apiService);
+
+  // TRINETRA periodic capture engine (starts/stops with the workday)
+  screenshotEngine = new ScreenshotEngine(apiService);
+  screenshotEngine.on('status', (status) => sendToRenderer('screenshot-status', status));
 
   // 3. Mark consent as automatically given
   store.set('consentGiven', true);
@@ -357,7 +447,7 @@ app.whenReady().then(async () => {
       if (status.dayStarted) {
         console.log('🟢 Workday is active! Starting tracking automatically...');
         appState.isDayStarted = true;
-        activityTracker.start(status.attendanceId);
+        await beginTracking(status.attendanceId);
       }
     } catch (err) {
       console.log('⚠️ Saved token expired, attempting automatic re-login...');
@@ -384,7 +474,7 @@ app.whenReady().then(async () => {
         if (status.dayStarted) {
           console.log('🟢 Workday is active! Starting tracking automatically...');
           appState.isDayStarted = true;
-          activityTracker.start(status.attendanceId);
+          await beginTracking(status.attendanceId);
         }
       }
     } catch (err) {
@@ -407,9 +497,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
-  if (activityTracker) {
-    activityTracker.stop();
-  }
+  endTracking();
   if (attendancePoller) {
     attendancePoller.stop();
   }
@@ -427,9 +515,9 @@ function startAttendancePoller() {
         appState.user = { ...(appState.user || {}), name: data.userName, email: data.userEmail || appState.user?.email };
       }
       
-      if (activityTracker) {
-        activityTracker.start(data.attendanceId);
-      }
+      beginTracking(data.attendanceId).catch((error) =>
+        console.warn('Failed to start tracking:', error.message)
+      );
       
       updateTrayMenu();
       
@@ -447,9 +535,7 @@ function startAttendancePoller() {
       appState.isDayStarted = false;
       appState.startTime = null;
       
-      if (activityTracker) {
-        activityTracker.stop();
-      }
+      endTracking();
       
       updateTrayMenu();
       

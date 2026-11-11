@@ -16,6 +16,7 @@
 
 const FLUSH_INTERVAL_MS = 10_000; // send batch every 10 s
 const HEARTBEAT_INTERVAL_MS = 30_000; // session heartbeat every 30 s
+const TRINETRA_INTERVAL_MS = 5_000; // live browser sample → /agent/activity/ingest
 
 class MonitoringService {
   constructor() {
@@ -43,6 +44,34 @@ class MonitoringService {
       this._pushSignal('browser_hidden', hidden, { visibilityState: document.visibilityState });
     };
     this._onBeforeUnload = () => this._flush(true);
+
+    // TRINETRA feed — browser input counters → /agent/activity/ingest
+    this._trinetraTimer = null;
+    this._tKeys = 0;
+    this._tMouse = 0;
+    this._tMouseCountedAt = 0;
+    this._tLastInputAt = Date.now();
+    this._tAttendanceId = null;
+    this._tFeedEnabled = true;
+    this._tBackoffUntil = 0;
+    this._onCountKey = () => {
+      this._tKeys += 1;
+      this._tLastInputAt = Date.now();
+    };
+    this._onCountMove = () => {
+      const now = Date.now();
+      this._tLastInputAt = now;
+      // Throttle to 10 moves/s (600/min ceiling) so the server-side mouse
+      // score scales identically to the desktop agent's event stream.
+      if (now - this._tMouseCountedAt >= 100) {
+        this._tMouseCountedAt = now;
+        this._tMouse += 1;
+      }
+    };
+    this._onCountMouseAction = () => {
+      this._tMouse += 1;
+      this._tLastInputAt = Date.now();
+    };
   }
 
   // ─── Public API ────────────────────────────────────────────────────────────
@@ -61,11 +90,20 @@ class MonitoringService {
       window.__monitoringServiceActive = true;
     }
 
+    this._tKeys = 0;
+    this._tMouse = 0;
+    this._tLastInputAt = Date.now();
+    this._tAttendanceId = null;
+    this._tFeedEnabled = true;
+    this._tBackoffUntil = 0;
+
     this._attachBrowserListeners();
     this._attachPranaListener();
     this._startUrlTracking();
     this._startFlushTimer();
     this._startHeartbeat();
+    this._attachInputCounters();
+    this._startTrinetraFeed();
 
     // Init session on server
     this._post('/ems-signals/signals/init', {
@@ -98,8 +136,10 @@ class MonitoringService {
     this._detachBrowserListeners();
     this._detachPranaListener();
     this._stopUrlTracking();
+    this._detachInputCounters();
     clearInterval(this._flushTimer);
     clearInterval(this._heartbeatTimer);
+    clearInterval(this._trinetraTimer);
 
     console.log('[Monitor] Stopped for', this._employeeId,
       '| duration:', Math.round((Date.now() - this._sessionStart) / 1000), 's');
@@ -111,6 +151,11 @@ class MonitoringService {
     this._signalBuffer = [];
     this._prevKeystrokes = 0;
     this._prevMouseEvents = 0;
+    this._tKeys = 0;
+    this._tMouse = 0;
+    this._tAttendanceId = null;
+    this._tFeedEnabled = true;
+    this._tBackoffUntil = 0;
     if (typeof window !== 'undefined') {
       window.__monitoringServiceActive = false;
     }
@@ -230,6 +275,88 @@ class MonitoringService {
     window.removeEventListener('blur', this._onBlur);
     document.removeEventListener('visibilitychange', this._onVisibility);
     window.removeEventListener('beforeunload', this._onBeforeUnload);
+  }
+
+  // ─── TRINETRA feed (browser input → /agent/activity/ingest) ───────────────
+
+  _attachInputCounters() {
+    document.addEventListener('keydown', this._onCountKey, { passive: true });
+    document.addEventListener('mousemove', this._onCountMove, { passive: true });
+    document.addEventListener('mousedown', this._onCountMouseAction, { passive: true });
+    document.addEventListener('wheel', this._onCountMouseAction, { passive: true });
+  }
+
+  _detachInputCounters() {
+    document.removeEventListener('keydown', this._onCountKey);
+    document.removeEventListener('mousemove', this._onCountMove);
+    document.removeEventListener('mousedown', this._onCountMouseAction);
+    document.removeEventListener('wheel', this._onCountMouseAction);
+  }
+
+  _startTrinetraFeed() {
+    this._trinetraTimer = setInterval(() => this._sendTrinetraSample(), TRINETRA_INTERVAL_MS);
+  }
+
+  async _ensureAttendanceId() {
+    if (this._tAttendanceId) return true;
+    try {
+      const res = await fetch(`${this._apiBase}/attendance/status`, {
+        headers: this._token ? { 'x-auth-token': this._token } : {}
+      });
+      if (!res.ok) return false;
+      const data = await res.json();
+      if (data.dayStarted && data.attendanceId) {
+        this._tAttendanceId = data.attendanceId;
+        return true;
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  async _sendTrinetraSample() {
+    if (!this._employeeId || !this._tFeedEnabled || Date.now() < this._tBackoffUntil) return;
+
+    const keyboardEvents = this._tKeys;
+    const mouseEvents = this._tMouse;
+    this._tKeys = 0;
+    this._tMouse = 0;
+    const idleSeconds = Math.max(0, Math.round((Date.now() - this._tLastInputAt) / 1000));
+
+    try {
+      const hasDay = await this._ensureAttendanceId();
+      if (!hasDay) return;
+
+      const res = await this._post('/agent/activity/ingest', {
+        attendanceId: this._tAttendanceId,
+        timestamp: new Date().toISOString(),
+        mouseEvents,
+        keyboardEvents,
+        idleSeconds,
+        activeApp: document.title || window.location.hostname,
+        activeAppTitle: document.title || window.location.href,
+        intervalDuration: TRINETRA_INTERVAL_MS / 1000
+      });
+
+      if (!res.ok) {
+        let body = {};
+        try {
+          body = await res.json();
+        } catch (_) {}
+        if (res.status === 403) {
+          if (body.code === 'DAY_NOT_ACTIVE') {
+            this._tAttendanceId = null;
+            this._tBackoffUntil = Date.now() + 60_000;
+          } else if (body.code === 'MONITORING_PAUSED' || body.code === 'CONSENT_DENIED') {
+            this._tFeedEnabled = false;
+            this._detachInputCounters();
+          }
+        }
+      }
+    } catch (_) {
+      // Network failure — the next tick retries with fresh counters.
+    }
   }
 
   // ─── URL / active window tracking ─────────────────────────────────────────

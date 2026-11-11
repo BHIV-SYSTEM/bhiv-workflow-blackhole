@@ -17,6 +17,7 @@ async function init() {
     if (appState.isDayStarted) {
       startStatsUpdate();
     }
+    loadTasks();
   }
 
   setupEventListeners();
@@ -169,6 +170,19 @@ function setupEventListeners() {
       passwordInput.value = '';
     });
   }
+
+  // Task attribution selector (TRINETRA)
+  const activeTaskSelect = document.getElementById('activeTaskSelect');
+  if (activeTaskSelect) {
+    activeTaskSelect.addEventListener('change', async (event) => {
+      const taskId = event.target.value || null;
+      try {
+        await window.electronAPI.setActiveTask(taskId);
+      } catch (error) {
+        console.warn('Could not set active task:', error.message);
+      }
+    });
+  }
 }
 
 // Active session start time tracker
@@ -233,6 +247,85 @@ function updateDashboard(appState) {
   if (statsContainer) {
     statsContainer.style.display = appState.isDayStarted ? 'grid' : 'none';
   }
+
+  const taskBox = document.getElementById('taskBox');
+  if (taskBox) {
+    taskBox.style.display = appState.isDayStarted ? 'block' : 'none';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// TRINETRA: task attribution + capture telemetry
+// ---------------------------------------------------------------------------
+
+let captureInterval = null;
+
+async function loadTasks() {
+  try {
+    const result = await window.electronAPI.getTasks();
+    renderTasks(result?.tasks || []);
+  } catch (error) {
+    console.warn('Could not load assigned tasks:', error.message);
+  }
+}
+
+function renderTasks(tasks) {
+  const select = document.getElementById('activeTaskSelect');
+  if (!select) return;
+
+  const previous = select.value;
+  select.innerHTML = '<option value="">— Not attributed to a task —</option>';
+
+  tasks.forEach((task) => {
+    const option = document.createElement('option');
+    option.value = task.task_id || task.id;
+    option.textContent = task.title;
+    option.title = `${task.status}${task.due_date ? ' · due ' + new Date(task.due_date).toLocaleDateString() : ''}`;
+    select.appendChild(option);
+  });
+
+  if (previous && Array.from(select.options).some((option) => option.value === previous)) {
+    select.value = previous;
+  }
+}
+
+async function updateCaptureStatus() {
+  const statusText = document.getElementById('captureStatus');
+  const nextText = document.getElementById('captureNext');
+  const dot = document.getElementById('captureDot');
+  if (!statusText || !dot) return;
+
+  try {
+    const status = await window.electronAPI.getScreenshotStatus();
+
+    if (!status || !status.running) {
+      dot.className = 'capture-dot';
+      statusText.textContent = 'Capture: stopped';
+      if (nextText) nextText.textContent = '';
+      return;
+    }
+
+    if (!status.periodic_enabled) {
+      dot.className = 'capture-dot off';
+      statusText.textContent = 'Capture: policy (no periodic)';
+      if (nextText) nextText.textContent = '';
+      return;
+    }
+
+    dot.className = 'capture-dot on';
+    const last = status.last_capture_at ? new Date(status.last_capture_at) : null;
+    statusText.textContent = last
+      ? `Capture: last ${last.toLocaleTimeString()}`
+      : 'Capture: armed';
+
+    if (nextText) {
+      nextText.textContent = status.next_capture_at
+        ? `next ~${new Date(status.next_capture_at).toLocaleTimeString()}`
+        : '';
+    }
+  } catch (error) {
+    // Non-fatal: capture status is informational only.
+  }
 }
 
 async function updateStats() {
@@ -273,6 +366,10 @@ function startStatsUpdate() {
   // Update stats every 1 second for live feedback
   updateInterval = setInterval(updateStats, 1000);
   updateStats(); // Initial update
+
+  if (captureInterval) clearInterval(captureInterval);
+  captureInterval = setInterval(updateCaptureStatus, 5000);
+  updateCaptureStatus();
 }
 
 function stopStatsUpdate() {
@@ -280,9 +377,23 @@ function stopStatsUpdate() {
     clearInterval(updateInterval);
     updateInterval = null;
   }
+  if (captureInterval) {
+    clearInterval(captureInterval);
+    captureInterval = null;
+  }
 }
 
 // Listen for IPC events
+window.electronAPI.onTasksUpdated((data) => {
+  renderTasks(data?.tasks || []);
+});
+
+window.electronAPI.onScreenshotStatus((status) => {
+  if (currentScreen === 'dashboard') {
+    updateCaptureStatus();
+  }
+});
+
 window.electronAPI.onShowConsent(() => {
   showScreen('consent');
 });
@@ -326,6 +437,7 @@ window.electronAPI.onDayStatusChanged(async (data) => {
     
     if (appState.isDayStarted) {
       startStatsUpdate();
+      loadTasks();
     } else {
       stopStatsUpdate();
     }

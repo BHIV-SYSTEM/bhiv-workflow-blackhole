@@ -14,6 +14,11 @@ const { powerMonitor } = require('electron');
 const { uIOhook } = require('uiohook-napi');
 const activeAppWatcher = require('../utils/activeAppWatcher');
 
+// Live telemetry cadence. The admin console polls at the same 5 s and the server
+// normalises every stored counter to a per-minute rate, so shortening this window
+// changes freshness only, not the scale of the scores.
+const SEND_INTERVAL_MS = 5_000;
+
 class ActivityTracker {
   constructor(apiService) {
     this.apiService = apiService;
@@ -36,7 +41,11 @@ class ActivityTracker {
     };
     
     this.sendInterval = null;
-    
+
+    // Task the employee selected in the agent UI; stamped onto each telemetry sample
+    // so TRINETRA can attribute tracked time to that task.
+    this.activeTaskId = null;
+
     this.offlineBuffer = [];
     this.MAX_BUFFER_SIZE = 50;
     
@@ -48,6 +57,11 @@ class ActivityTracker {
     this.handleMouseMove = this.handleMouseMove.bind(this);
     this.handleWheel = this.handleWheel.bind(this);
     this._lastMouseMove = 0;
+  }
+
+  setActiveTask(taskId) {
+    this.activeTaskId = taskId ? String(taskId) : null;
+    console.log(this.activeTaskId ? `🎯 Active task set: ${this.activeTaskId}` : '🎯 Active task cleared');
   }
 
   handleKeyDown(event) {
@@ -174,14 +188,14 @@ class ActivityTracker {
   }
 
   /**
-   * Start sending data to backend every 30 seconds
+   * Start sending data to the backend every 5 seconds (live monitoring).
    */
   startDataTransmission() {
     this.sendActivityData();
-    
+
     this.sendInterval = setInterval(() => {
       this.sendActivityData();
-    }, 30000); // 30 seconds
+    }, SEND_INTERVAL_MS);
   }
 
   /**
@@ -210,9 +224,12 @@ class ActivityTracker {
         keyboardEvents: this.stats.keyboardEvents,
         idleSeconds: idleSeconds,
         activeApp: currentApp,
+        // Window title enables website/app attribution; no keystroke content is sent.
+        activeAppTitle: activeAppWatcher.getCurrentTitle() || currentApp,
+        activeTaskId: this.activeTaskId,
         productivePercentage: Math.round(productivePercentage),
         trackingMode: 'UIOHOOK_NAPI', // Using uiohook-napi
-        intervalDuration: 30
+        intervalDuration: SEND_INTERVAL_MS / 1000
       };
 
       console.log(`📤 Sending activity [${payload.trackingMode}]:`, {
@@ -244,14 +261,24 @@ class ActivityTracker {
 
     } catch (error) {
       console.error('❌ Failed to send activity data:', error.message);
-      
-      if (error.response?.status !== 403) {
-        this.bufferActivityData();
-      } else {
-        console.log('🛑 Day not started on server, stopping tracking');
+
+      const status = error.response?.status;
+      const code = error.response?.data?.code;
+
+      if (status === 403 && (code === 'MONITORING_PAUSED' || code === 'CONSENT_DENIED')) {
+        // Explicit opt-out: stop collecting entirely until re-enabled.
+        console.log('🛑 Monitoring paused or consent denied, stopping tracking');
         this.stop();
+      } else if (status === 403 && code === 'DAY_NOT_ACTIVE') {
+        // Day not started yet (agent boots before the employee starts their day).
+        // Discard this interval and keep tracking so telemetry flows once the day opens.
+        console.log('⏸ Workday not started yet; discarding interval and retrying next tick');
+        this.resetStats();
+      } else {
+        // Network/5xx/400: keep the interval in the offline buffer for a later flush.
+        this.bufferActivityData();
       }
-      
+
       this.eventEmitter.emit('activity-error', error);
     }
   }
@@ -260,16 +287,22 @@ class ActivityTracker {
    * Buffer activity data when offline
    */
   bufferActivityData() {
+    // Must mirror the normal send payload exactly (top-level fields). The
+    // previous nested stats:{...} shape was rejected by the ingest endpoint
+    // with a 400, creating an endless buffer->flush->400 loop while offline.
+    const idleSeconds = this.stats.idleSeconds || 0;
     const bufferedData = {
       attendanceId: this.attendanceId,
       timestamp: new Date().toISOString(),
-      stats: {
-        mouseEvents: this.stats.mouseEvents,
-        keyboardEvents: this.stats.keyboardEvents,
-        idleSeconds: this.stats.idleSeconds,
-        activeApp: this.stats.activeApp || 'Unknown',
-        productivePercentage: Math.round(100 - (this.stats.idleSeconds / 300 * 100))
-      }
+      mouseEvents: this.stats.mouseEvents || 0,
+      keyboardEvents: this.stats.keyboardEvents || 0,
+      idleSeconds,
+      activeApp: this.stats.activeApp || 'Unknown',
+      activeAppTitle: this.stats.activeAppTitle || this.stats.activeApp || 'Unknown',
+      activeTaskId: this.activeTaskId,
+      productivePercentage: Math.max(0, Math.min(100, Math.round(100 - ((idleSeconds / 300) * 100)))),
+      trackingMode: 'UIOHOOK_NAPI',
+      intervalDuration: SEND_INTERVAL_MS / 1000
     };
     
     if (this.offlineBuffer.length < this.MAX_BUFFER_SIZE) {

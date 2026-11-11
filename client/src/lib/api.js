@@ -747,6 +747,39 @@ const tester = {
 };
 
 //-----------------------------------------------------
+// TRINETRA API (additive monitoring intelligence layer)
+//-----------------------------------------------------
+const trinetra = {
+  getConfig: () => fetchAPI("/trinetra/config"),
+  updateConfig: (patch) =>
+    fetchAPI("/trinetra/config", {
+      method: "PUT",
+      body: JSON.stringify(patch),
+    }),
+
+  getLive: (params = {}) => fetchAPI("/trinetra/telemetry/live", { params }),
+  getStatus: () => fetchAPI("/trinetra/status"),
+
+  getProductivitySummary: (params = {}) => fetchAPI("/trinetra/productivity/summary", { params }),
+  getEmployeeProductivity: (employeeId, params = {}) =>
+    fetchAPI(`/trinetra/productivity/employee/${employeeId}`, { params }),
+  getTimeline: (employeeId, params = {}) => fetchAPI(`/trinetra/timeline/${employeeId}`, { params }),
+
+  getScreenshots: (params = {}) => fetchAPI("/trinetra/screenshots", { params }),
+  getVerificationMatrix: (params = {}) => fetchAPI("/trinetra/verification/matrix", { params }),
+
+  getAlerts: (params = {}) => fetchAPI("/trinetra/alerts", { params }),
+  evaluateAlerts: () => fetchAPI("/trinetra/alerts/evaluate", { method: "POST", body: "{}" }),
+  acknowledgeAlert: (alertId) =>
+    fetchAPI(`/trinetra/alerts/${alertId}/acknowledge`, { method: "PUT", body: "{}" }),
+  resolveAlert: (alertId) =>
+    fetchAPI(`/trinetra/alerts/${alertId}/resolve`, { method: "PUT", body: "{}" }),
+
+  // Desktop agent helpers (also used by the employee timeline view)
+  getAgentTasks: () => fetchAPI("/trinetra/agent/tasks"),
+};
+
+//-----------------------------------------------------
 // Combine All API Modules
 //-----------------------------------------------------
 export const api = {
@@ -767,6 +800,7 @@ export const api = {
   branches,
   projects,
   tester,
+  trinetra,
 };
 
 export default api;

@@ -49,6 +49,7 @@ import { BulkMonitoringControls } from '@/components/monitoring/BulkMonitoringCo
 import { AIInsightsPanel } from '@/components/monitoring/AIInsightsPanel';
 import { WhitelistManager } from '@/components/monitoring/WhitelistManager';
 import { ProductionDashboard } from '@/components/monitoring/ProductionDashboard';
+import { TrinetraConsole } from '@/components/monitoring/TrinetraConsole';
 
 export function EmployeeMonitoring() {
   const { user } = useAuth();
@@ -444,6 +445,14 @@ export function EmployeeMonitoring() {
           </TabsTrigger>
 
           <TabsTrigger
+            value="trinetra"
+            className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-zinc-400 hover:text-white bg-transparent data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-indigo-900/40 data-[state=active]:border data-[state=active]:border-indigo-400 ring-2 ring-transparent data-[state=active]:ring-indigo-500/30"
+          >
+            <Eye className="h-3.5 w-3.5" />
+            TRINETRA AI
+          </TabsTrigger>
+
+          <TabsTrigger
             value="reports"
             className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-zinc-400 hover:text-white bg-transparent data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-blue-900/40 data-[state=active]:border data-[state=active]:border-blue-400 ring-2 ring-transparent data-[state=active]:ring-blue-500/30"
           >
@@ -618,6 +627,10 @@ export function EmployeeMonitoring() {
 
         <TabsContent value="production" className="mt-6">
           <ProductionDashboard employee={selectedEmployee || teamSummaryData.employees[0]} />
+        </TabsContent>
+
+        <TabsContent value="trinetra" className="mt-6">
+          <TrinetraConsole />
         </TabsContent>
 
         <TabsContent value="reports" className="mt-6">

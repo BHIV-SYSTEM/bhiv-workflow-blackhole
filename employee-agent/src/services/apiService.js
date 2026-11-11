@@ -66,8 +66,8 @@ class ApiService {
       console.error('Error loading .env file:', error);
     }
 
-    // Fallback to default or environment variable
-    const fallbackUrl = process.env.AGENT_API_BASE_URL || 'http://127.0.0.1:5001';
+    // Fallback to default or environment variable (Niyantran server listens on 5000)
+    const fallbackUrl = process.env.AGENT_API_BASE_URL || 'http://127.0.0.1:5000';
     console.log('Using fallback backend URL:', fallbackUrl);
     return fallbackUrl;
   }
@@ -300,17 +300,93 @@ class ApiService {
         };
       }
 
+      // Non-success responses must throw so the activity tracker's catch path
+      // runs (403 => stop tracking, otherwise buffer for retry). Returning
+      // {success:false} here silently skipped every offline-buffer/retry path.
+      const failure = new Error(response.data?.error || response.data?.message || 'Failed to ingest activity');
+      failure.response = response;
+      throw failure;
+    } catch (error) {
+      if (error.response) {
+        // Server rejection (403 day-not-active/paused, 400 validation, 500...)
+        console.error('Activity ingestion failed:', error.response.data?.error || error.message);
+        if (!error.response.data) {
+          error.response.data = {};
+        }
+        if (!error.response.data.error) {
+          error.response.data.error = error.message;
+        }
+        throw error;
+      }
+      // Network-level failure: also throw so the caller buffers instead of dropping.
+      console.error('Activity ingestion failed:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * TRINETRA capture policy for this device.
+   * @returns {Promise<Object|null>}
+   */
+  async fetchAgentConfig() {
+    try {
+      const response = await this.client.get('/api/trinetra/agent/config');
+      return response.data || null;
+    } catch (error) {
+      console.warn('Failed to fetch capture policy:', error.response?.data?.error || error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Tasks assigned to the signed-in employee (for the active-task selector).
+   * @returns {Promise<Object>} - { success, tasks, aims }
+   */
+  async fetchMyTasks() {
+    try {
+      const response = await this.client.get('/api/trinetra/agent/tasks');
       return {
-        success: false,
-        error: response.data?.error || response.data?.message || 'Failed to ingest activity'
+        success: true,
+        tasks: response.data?.tasks || [],
+        aims: response.data?.aims || []
       };
     } catch (error) {
-      // If the server rejects activity (e.g., day not started), log but don't crash
-      console.error('Activity ingestion failed:', error.response?.data?.error || error.message);
-      
       return {
         success: false,
-        error: error.response?.data?.error || error.response?.data?.message || error.message || 'Failed to ingest activity'
+        tasks: [],
+        aims: [],
+        error: error.response?.data?.error || error.message
+      };
+    }
+  }
+
+  /**
+   * Upload a periodic screen capture.
+   * @param {Object} payload - { image(base64), signature, capturedAt, ... }
+   * @returns {Promise<Object>} - { success, stored, skipped, error }
+   */
+  async uploadScreenshot(payload) {
+    try {
+      const response = await this.client.post('/api/trinetra/agent/screenshot', payload, {
+        // Screenshots are larger than telemetry; allow more time on slow links.
+        timeout: 60000,
+        maxBodyLength: 10 * 1024 * 1024,
+        maxContentLength: 10 * 1024 * 1024
+      });
+      return {
+        success: response.data?.success !== false,
+        stored: !!response.data?.stored,
+        skipped: response.data?.skipped || null,
+        screenshotId: response.data?.screenshot_id || null
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error.response?.data?.error ||
+          error.response?.data?.message ||
+          error.message ||
+          'Failed to upload screenshot'
       };
     }
   }

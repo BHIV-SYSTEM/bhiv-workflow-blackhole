@@ -21,14 +21,47 @@ const employeeActivitySchema = new mongoose.Schema({
     min: 0,
     max: 100
   },
+  // Raw cursor/click/wheel events in this interval. The score alone saturates
+  // and cannot show actual movement, so TRINETRA keeps the count too.
+  mouse_event_count: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  // Mouse events per minute for this interval (companion to keystroke_cadence).
+  mouse_cadence: {
+    type: Number,
+    default: undefined
+  },
   idle_duration: {
     type: Number, // in seconds
     default: 0
+  },
+  // Duration this sample represents. Without it, "time per app" cannot be derived
+  // from 30s telemetry, so TRINETRA reads it (falls back to 30 when absent).
+  interval_seconds: {
+    type: Number,
+    default: 30,
+    min: 1
   },
   active_application: {
     name: String,
     title: String,
     url: String
+  },
+  // TRINETRA attribution (optional on legacy rows).
+  task_id: {
+    type: String,
+    index: true
+  },
+  app_category: {
+    type: String,
+    enum: ['FOCUS', 'DOCUMENTATION', 'COMMUNICATION', 'SUPPORT', 'DISTRACTION', 'NEUTRAL', 'SYSTEM'],
+    default: undefined
+  },
+  keystroke_cadence: {
+    type: Number, // keystrokes per minute for this interval
+    default: undefined
   },
   productivity_score: {
     type: Number,
@@ -58,6 +91,7 @@ const employeeActivitySchema = new mongoose.Schema({
 // Compound indexes for efficient queries
 employeeActivitySchema.index({ employee: 1, timestamp: -1 });
 employeeActivitySchema.index({ employee: 1, session_id: 1 });
+employeeActivitySchema.index({ employee: 1, task_id: 1, timestamp: -1 });
 employeeActivitySchema.index({ timestamp: 1 }, { expireAfterSeconds: 7776000 }); // 90 days retention
 
 // Virtual for date grouping

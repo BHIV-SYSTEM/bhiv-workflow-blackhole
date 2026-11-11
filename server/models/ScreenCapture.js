@@ -71,6 +71,12 @@ const screenCaptureSchema = new mongoose.Schema({
     violation_session_id: String,
     screenshot_sequence: Number,
     max_screenshots: Number,
+    // TRINETRA periodic-capture provenance (additive; absent on legacy captures)
+    trinetra_mode: String,
+    screen_signature: String,
+    client_signature: String,
+    app_category: String,
+    requested_trigger: String,
     ai_analysis: {
       activityType: String,
       activityDescription: String,

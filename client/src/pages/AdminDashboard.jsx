@@ -57,13 +57,19 @@ const roleOptions = [
 ]
 
 const AdminDashboard = () => {
-  const { token, user: currentUser } = useAuth()
+  // NOTE: auth-context does not expose a `token` field — use getToken(),
+  // otherwise `token` is undefined, no auth header is ever set, and every
+  // request fails with 401 "No token, authorization denied".
+  const { user: currentUser, getToken } = useAuth()
   const { toast } = useToast()
   const [users, setUsers] = useState([])
   const [departments, setDepartments] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
-  const [setActiveTab] = useState("departments")
+  // NOTE: this MUST destructure both value and setter — `const [setActiveTab]`
+  // captured the state VALUE ("departments" string), which was then passed to
+  // Radix <Tabs onValueChange>, crashing the page ("_a.call is not a function").
+  const [activeTab, setActiveTab] = useState("departments")
   
   // Check if user is Admin or Manager
   const isAdminOrManager = currentUser && (currentUser.role === "Admin" || currentUser.role === "Manager")
@@ -110,12 +116,14 @@ const AdminDashboard = () => {
   const [showOverdueTasksDialog, setShowOverdueTasksDialog] = useState(false)
   const [testedTaskRows, setTestedTaskRows] = useState([])
 
-  // Set auth header for all requests
+  // Set auth header for all requests. This effect is declared before the
+  // fetch effect below, so the header is in place before the first API call.
   useEffect(() => {
-    if (token) {
-      api.defaults.headers.common["Authorization"] = `Bearer ${token}`
+    const authToken = getToken()
+    if (authToken) {
+      api.defaults.headers.common["Authorization"] = `Bearer ${authToken}`
     }
-  }, [token])
+  }, [getToken])
 
   useEffect(() => {
     Promise.all([fetchUsers(), fetchDepartments(), fetchTestedTasksFeed()])
@@ -721,7 +729,7 @@ const AdminDashboard = () => {
       </Card>
 
       {/* Premium Tabs */}
-      <Tabs defaultValue="departments" className="w-full" onValueChange={setActiveTab}>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className={`w-full mx-auto ${isAdminOrManager ? 'max-w-6xl grid-cols-5' : 'max-w-md grid-cols-2'} grid bg-muted/50 p-1 rounded-lg`}>
           <TabsTrigger value="departments" className="text-sm font-medium rounded-md data-[state=active]:gradient-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-lg transition-all duration-300">
             <Building2 className="mr-2 h-4 w-4" /> Departments

@@ -200,6 +200,7 @@ const setuConvergenceRoutes = require('./routes/setuConvergence'); // SETU EOS C
 const group2ContextRoutes = require('./routes/group2Context'); // Group 2 Science Context & SANSKAR layer
 const knowledgeAdminRoutes = require('./routes/knowledgeAdmin'); // Knowledge Administration routes
 const { startAttendancePersistenceCron, syncExistingAttendance } = require('./services/attendanceCronJobs'); // Attendance persistence cron
+const { router: trinetraRouter, startTrinetraScheduler } = require('./routes/trinetra'); // TRINETRA AI layer
 // Middleware imports
 const auth = require('./middleware/auth');
 const adminAuth = require('./middleware/adminAuth');
@@ -376,7 +377,9 @@ app.use((req, res, next) => {
 // Enable gzip/deflate compression for all HTTP responses
 app.use(compression());
 
-app.use(express.json());
+// TRINETRA screenshot ingest posts a compressed JPEG as base64, so the global body
+// limit is raised from Express' 100kb default. Everything else is unchanged.
+app.use(express.json({ limit: process.env.REQUEST_BODY_LIMIT || '8mb' }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use(express.urlencoded({ extended: true }));
 
@@ -600,6 +603,7 @@ app.use("/api/attendance", attendanceRoutes); // Attendance management routes
 app.use("/api/enhanced-attendance", enhancedAttendanceRoutes); // Enhanced attendance routes
 app.use("/api/attendance", attendanceStatusRoutes); // Electron agent polling endpoint (/api/attendance/status)
 app.use("/api/agent", agentActivityRoutes); // Desktop agent activity ingestion
+app.use("/api/trinetra", trinetraRouter); // TRINETRA AI layer (additive: telemetry, scoring, verification, alerts)
 app.use("/api/attendance-dashboard", require("./routes/attendanceDashboard")); // Live attendance dashboard routes
 app.use("/api/leave", leaveRoutes); // Leave management routes
 app.use("/api/enhanced-salary", enhancedSalaryRoutes); // Enhanced salary with live attendance and WFH tracking
@@ -759,6 +763,9 @@ async function startServer() {
       // Start attendance persistence cron job
       console.log('🕐 Starting attendance persistence cron job (runs daily at 11:59 PM)...');
       startAttendancePersistenceCron();
+
+      // Start TRINETRA automated alert sweep (additive; reads monitoring data only)
+      startTrinetraScheduler();
 
       // ✅ FIX: Disabled automatic sync on startup to prevent blocking DB on cold starts
       // Sync existing attendance data for the last 30 days

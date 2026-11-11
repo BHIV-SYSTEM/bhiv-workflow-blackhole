@@ -54,6 +54,18 @@ const monitoringAlertSchema = new mongoose.Schema({
     application_name: String,
     productivity_score: Number,
     activity_data: mongoose.Schema.Types.Mixed,
+    // TRINETRA rule provenance (additive; required for dedupe/cooldown).
+    trinetra_key: String,
+    trinetra_rule: String,
+    task_id: String,
+    focus_ratio: Number,
+    distraction_ratio: Number,
+    active_minutes: Number,
+    last_activity_at: Date,
+    day_started_at: Date,
+    stalled_hours: Number,
+    overdue_hours: Number,
+    due_date: Date,
     screenshot_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'ScreenCapture'
