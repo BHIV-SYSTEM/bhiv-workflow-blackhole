@@ -759,7 +759,13 @@ router.get('/telemetry/live', auth, async (req, res) => {
         mousePerMin =
           typeof latest.mouse_cadence === 'number'
             ? latest.mouse_cadence
-            : Math.round(((latest.mouse_event_count || 0) / intervalSeconds) * 60);
+            : (latest.mouse_event_count || 0) > 0
+              ? Math.round(((latest.mouse_event_count) / intervalSeconds) * 60)
+              : // Legacy rows that stored only the 0-100 score (EMS flush before
+                // mouse_event_count existed): score 100 ≈ 20 events / 30 s ≈ 40/min.
+                latest.mouse_activity_score > 0
+                  ? Math.round(latest.mouse_activity_score * 0.4)
+                  : 0;
         lastActivityAgeSeconds = Math.max(0, Math.round((now - new Date(latest.timestamp).getTime()) / 1000));
       }
       const isStale = lastActivityAgeSeconds !== null && lastActivityAgeSeconds > 120;

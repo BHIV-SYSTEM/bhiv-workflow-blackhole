@@ -687,12 +687,20 @@ class EMSSignalLayer extends EventEmitter {
         const riskLevel = stats.riskLevel;
         const indicator = stats.productivityIndicator;
 
-        // 1. Persist snapshot to EmployeeActivity with real interval metrics
+        // 1. Persist snapshot to EmployeeActivity with real interval metrics.
+        // Raw mouse_event_count/mouse_cadence must be written here too: TRINETRA
+        // live telemetry sums mouse_event_count (falling back to 0 when absent),
+        // so rows built only from the score showed keystrokes with zero mouse.
+        const intervalSeconds = 30;
         const activityDoc = new EmployeeActivity({
           employee: employeeId,
           session_id: employee.sessionId || 'unknown',
           keystroke_count: intervalKeystrokes,
           mouse_activity_score: intervalMouseScore,
+          mouse_event_count: intervalMouseEvents,
+          mouse_cadence: Math.round((intervalMouseEvents / intervalSeconds) * 60),
+          keystroke_cadence: Math.round((intervalKeystrokes / intervalSeconds) * 60),
+          interval_seconds: intervalSeconds,
           idle_duration: intervalIdleSec,
           active_application: { url: null, name: null, title: null },
           timestamp: new Date(),
