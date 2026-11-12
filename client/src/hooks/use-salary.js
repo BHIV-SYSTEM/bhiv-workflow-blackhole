@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/auth-context';
 import { toast } from './use-toast';
 import api from '../lib/api';
+import { formatEmployeeId } from '../lib/employeeId';
 
 export const useSalary = () => {
   const { user } = useAuth();
@@ -399,8 +400,8 @@ export const useSalaryManagement = (options = {}) => {
     if (!data || !data.salaryCards) return;
 
     const csvData = data.salaryCards.map(card => ({
+      'Employee ID': card.user.employeeId || formatEmployeeId(card.user.email) || card.user.id,
       'Employee Name': card.user.name,
-      'Employee ID': card.user.id,
       'Tag': card.user.tag,
       'Base Salary': card.salary.base,
       'Calculated Salary': card.salary.calculated.netPay,

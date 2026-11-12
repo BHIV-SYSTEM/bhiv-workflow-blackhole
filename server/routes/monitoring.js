@@ -2173,23 +2173,56 @@ router.get('/monthly-summary', async (req, res) => {
         timestamp: { $gte: startOfMonth, $lte: endOfMonth }
       })
       .select('employee timestamp keystroke_count mouse_activity_score idle_duration productivity_score')
+      .sort({ timestamp: 1 })
       .lean()
-      .limit(60000);
+      .limit(300000);
     } catch (dbErr) {
       console.warn('⚠️ Monthly logs query encountered issue, proceeding with fallback telemetry:', dbErr.message);
     }
 
-    // Query official Attendance records for the month to sync active hours with Work Hours Manager
+    // Query official Attendance & DailyAttendance records for the month to sync active hours with Work Hours Manager
     const Attendance = require('../models/Attendance');
+    const DailyAttendance = require('../models/DailyAttendance');
     let monthlyAttendances = [];
     try {
-      monthlyAttendances = await Attendance.find({
-        user: { $in: activeEmpIds },
-        $or: [
-          { date: { $gte: startOfMonth, $lte: endOfMonth } },
-          { startDayTime: { $gte: startOfMonth, $lte: endOfMonth } }
-        ]
-      }).select('user date startDayTime endDayTime hoursWorked').lean();
+      const [classicAtt, dailyAtt] = await Promise.all([
+        Attendance.find({
+          user: { $in: activeEmpIds },
+          $or: [
+            { date: { $gte: startOfMonth, $lte: endOfMonth } },
+            { startDayTime: { $gte: startOfMonth, $lte: endOfMonth } }
+          ]
+        }).select('user date startDayTime endDayTime hoursWorked').lean().catch(() => []),
+        DailyAttendance.find({
+          user: { $in: activeEmpIds },
+          $or: [
+            { date: { $gte: startOfMonth, $lte: endOfMonth } },
+            { startDayTime: { $gte: startOfMonth, $lte: endOfMonth } }
+          ]
+        }).select('user date startDayTime endDayTime totalHoursWorked').lean().catch(() => [])
+      ]);
+
+      // Normalize and combine, avoiding duplicate dates for same user
+      const seenUserDates = new Set();
+      classicAtt.forEach(att => {
+        const uId = att.user ? att.user.toString() : '';
+        const dStr = att.date ? new Date(att.date).toDateString() : (att.startDayTime ? new Date(att.startDayTime).toDateString() : '');
+        if (uId && dStr) seenUserDates.add(`${uId}_${dStr}`);
+        monthlyAttendances.push(att);
+      });
+      dailyAtt.forEach(att => {
+        const uId = att.user ? att.user.toString() : '';
+        const dStr = att.date ? new Date(att.date).toDateString() : (att.startDayTime ? new Date(att.startDayTime).toDateString() : '');
+        if (uId && dStr && !seenUserDates.has(`${uId}_${dStr}`)) {
+          monthlyAttendances.push({
+            user: att.user,
+            date: att.date,
+            startDayTime: att.startDayTime,
+            endDayTime: att.endDayTime,
+            hoursWorked: att.totalHoursWorked || 0
+          });
+        }
+      });
     } catch (attErr) {
       console.warn('⚠️ Monthly attendances query error:', attErr.message);
     }
@@ -2222,8 +2255,11 @@ router.get('/monthly-summary', async (req, res) => {
         sec = Math.round(att.hoursWorked * 3600);
       } else if (att.startDayTime) {
         const isToday = dateStr === nowLocalDateStr;
-        const endSession = att.endDayTime ? new Date(att.endDayTime) : (isToday ? new Date() : endOfMonth);
-        sec = Math.max(0, Math.floor((endSession - new Date(att.startDayTime)) / 1000));
+        // Cap unended sessions on past days to 8 hours max, preventing multi-hundred hour corruption
+        const endSession = att.endDayTime 
+          ? new Date(att.endDayTime) 
+          : (isToday ? new Date() : new Date(new Date(att.startDayTime).getTime() + 8 * 3600 * 1000));
+        sec = Math.min(10 * 3600, Math.max(0, Math.floor((endSession - new Date(att.startDayTime)) / 1000)));
       }
 
       if (dateStr === nowLocalDateStr && att.startDayTime) {

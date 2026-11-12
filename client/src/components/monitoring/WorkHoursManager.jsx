@@ -411,6 +411,10 @@ export function WorkHoursManager({ employee }) {
       
       if (response && (response.success || response.data?.success)) {
         setWorkSession(null);
+        try {
+          const empId = currentEmployee._id || currentEmployee.id;
+          localStorage.removeItem(`workHoursPauseState_${empId}`);
+        } catch (e) {}
         toast({
           title: "✅ Work Day Ended",
           description: response.message || response.data?.message || "Your work session has been completed.",
@@ -458,6 +462,10 @@ export function WorkHoursManager({ employee }) {
           
           if (attendanceResponse && (attendanceResponse.success || attendanceResponse.data?.success)) {
             setWorkSession(null);
+            try {
+              const empId = currentEmployee._id || currentEmployee.id;
+              localStorage.removeItem(`workHoursPauseState_${empId}`);
+            } catch (e) {}
             toast({
               title: "✅ Work Day Ended",
               description: attendanceResponse.message || attendanceResponse.data?.message || "Your work day has been completed.",

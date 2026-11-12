@@ -28,6 +28,7 @@ import {
   Shield,
   AlertCircle
 } from 'lucide-react';
+import { formatEmployeeId } from '../../lib/employeeId';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -325,6 +326,7 @@ const LiveAttendanceAdminPanel = () => {
 
   const handleExportData = () => {
     const csvData = filteredUsers.map(record => ({
+      'Employee ID': record.user?.employeeId || formatEmployeeId(record.user?.email),
       'Name': record.user?.name,
       'Email': record.user?.email,
       'Status': record.liveTracking?.enabled ? 'Tracking' : 'Not Tracking',

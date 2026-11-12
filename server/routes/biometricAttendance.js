@@ -14,6 +14,7 @@ const BiometricUpload = require('../models/BiometricUpload');
 const PublicHoliday = require('../models/PublicHoliday');
 const PaidLeaveConfig = require('../models/PaidLeaveConfig');
 const XLSX = require('xlsx');
+const { formatEmployeeId } = require('../utils/employeeId');
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -422,6 +423,7 @@ router.get('/export-salary', auth, async (req, res) => {
 
     // Prepare data for Excel
     const excelData = result.employees.map(emp => ({
+      'Employee ID': emp.user.employeeId || formatEmployeeId(emp.user.email),
       'Employee Name': emp.user.name,
       'Email': emp.user.email,
       'Department': emp.user.department?.name || 'N/A',
@@ -514,6 +516,7 @@ router.get('/export-detailed-logs', auth, async (req, res) => {
 
     // Prepare data for Excel
     const excelData = logs.map(log => ({
+      'Employee ID': log.user?.employeeId || formatEmployeeId(log.user?.email),
       'Date': new Date(log.date).toLocaleDateString(),
       'Employee Name': log.user.name,
       'Email': log.user.email,

@@ -351,12 +351,14 @@ export function ReportsGenerator({
       const flaggedScreenshots = reportData?.screenshots?.flagged || 0;
       const totalAlerts = reportData?.alertStats?.reduce((sum, s) => sum + (s.totalCount || 0), 0) || 0;
 
+      const empIdFormatted = activeEmployee.employeeId || formatEmployeeId(activeEmployee.email) || 'N/A';
+
       csv += 'EXECUTIVE KPI SUMMARY\n';
-      csv += 'Total Activities,Average Productivity Score (%),Total Screenshots,Flagged Screenshots,Total Alerts Triggered\n';
-      csv += `${totalActivities},${avgScore}%,${totalScreenshots},${flaggedScreenshots},${totalAlerts}\n\n`;
+      csv += 'Employee ID,Employee Name,Total Activities,Average Productivity Score (%),Total Screenshots,Flagged Screenshots,Total Alerts Triggered\n';
+      csv += `"${empIdFormatted}","${empName}",${totalActivities},${avgScore}%,${totalScreenshots},${flaggedScreenshots},${totalAlerts}\n\n`;
 
       csv += 'DAILY PERFORMANCE BREAKDOWN\n';
-      csv += 'Date,Total Activities,Productivity Score (%),Active Hours,Total Keystrokes,Mouse Activity (%),Efficiency Rating\n';
+      csv += 'Employee ID,Date,Total Activities,Productivity Score (%),Active Hours,Total Keystrokes,Mouse Activity (%),Efficiency Rating\n';
 
       if (reportData?.dailyMetrics && reportData.dailyMetrics.length > 0) {
         reportData.dailyMetrics.forEach(day => {
@@ -367,7 +369,7 @@ export function ReportsGenerator({
           const activeText = (day.totalActivities > 0 || day.activeSeconds > 0 || day.activeHours > 0)
             ? (day.activeHoursFormatted || `${day.activeHours}h`)
             : '-';
-          csv += `"${day.date}",${day.totalActivities > 0 ? day.totalActivities : '-'},"${day.totalActivities > 0 ? `${day.avgProductivityScore}%` : '-'}","${activeText}",${day.totalKeystroke > 0 ? day.totalKeystroke : '-'},"${day.totalActivities > 0 ? `${day.avgMouseActivity}%` : '-'}","${day.totalActivities > 0 ? eff : '-'}"\n`;
+          csv += `"${empIdFormatted}","${day.date}",${day.totalActivities > 0 ? day.totalActivities : '-'},"${day.totalActivities > 0 ? `${day.avgProductivityScore}%` : '-'}","${activeText}",${day.totalKeystroke > 0 ? day.totalKeystroke : '-'},"${day.totalActivities > 0 ? `${day.avgMouseActivity}%` : '-'}","${day.totalActivities > 0 ? eff : '-'}"\n`;
         });
       } else {
         csv += 'No daily activity logs recorded for this period\n';

@@ -61,19 +61,38 @@ router.post('/activity/ingest', auth, async (req, res) => {
       });
     }
 
-    // CRITICAL: Verify day is started before accepting activity data
+    // CRITICAL: Verify day is started before accepting activity data across Attendance or DailyAttendance
     const Attendance = require('../models/Attendance');
+    const DailyAttendance = require('../models/DailyAttendance');
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
     
-    const activeDay = await Attendance.findOne({
+    // Support sessions matching either Attendance or DailyAttendance, with null-safe endDayTime check
+    const unendedQuery = {
       user: req.user.id,
-      date: { $gte: today, $lt: tomorrow },
-      startDayTime: { $exists: true },
-      endDayTime: { $exists: false }
-    });
+      startDayTime: { $ne: null },
+      $or: [{ endDayTime: null }, { endDayTime: { $exists: false } }]
+    };
+
+    let activeDay = await Attendance.findOne({
+      ...unendedQuery,
+      date: { $gte: today, $lt: tomorrow }
+    }).sort({ startDayTime: -1 });
+
+    if (!activeDay) {
+      activeDay = await DailyAttendance.findOne({
+        ...unendedQuery,
+        date: { $gte: today, $lt: tomorrow }
+      }).sort({ startDayTime: -1 });
+    }
+
+    // Overnight session support (started yesterday evening, spans past midnight)
+    if (!activeDay) {
+      activeDay = (await Attendance.findOne(unendedQuery).sort({ startDayTime: -1 }))
+        || (await DailyAttendance.findOne(unendedQuery).sort({ startDayTime: -1 }));
+    }
 
     console.log(`📊 Activity ingestion for user ${req.user.id}: activeDay=${!!activeDay}, attendanceId=${attendanceId}`);
 

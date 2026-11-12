@@ -103,6 +103,14 @@ router.post("/exchange", async (req, res) => {
     }
   }
 
+  // Prevent exited users from logging in via SSO
+  if (existingUser && existingUser.stillExist === 0) {
+    return res.status(403).json({
+      error: "Your account has been marked as exited. Access to Niyantran is deactivated.",
+      code: "ACCOUNT_DEACTIVATED"
+    });
+  }
+
   let payload;
   if (existingUser) {
     // User already has an account on Niyantran: Open their EXACT existing account, role & tasks!

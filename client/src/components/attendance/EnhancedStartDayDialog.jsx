@@ -322,11 +322,29 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess }) => {
   };
 
   const handleGetLocation = async () => {
+    const isMobileDevice = /Mobile|Android|iPhone|iPad/i.test(navigator.userAgent);
     try {
       setLoading(true);
       setLocationError(null);
       
-      const coords = await getCurrentLocation();
+      let coords;
+      try {
+        coords = await getCurrentLocation();
+      } catch (locErr) {
+        // If on Desktop PC (which lacks physical GPS), use office coordinates as initial placement
+        // and let backend verify via Office Network IP
+        if (!isMobileDevice) {
+          console.log('🖥️ Desktop detected without GPS - using Office network verification path');
+          coords = {
+            latitude: OFFICE_COORDINATES.latitude,
+            longitude: OFFICE_COORDINATES.longitude,
+            accuracy: 10,
+            source: 'Desktop-LAN'
+          };
+        } else {
+          throw locErr;
+        }
+      }
       
       // Calculate distance from office
       const distance = calculateDistance(
@@ -338,7 +356,7 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess }) => {
       
       setLocation(coords);
       setDistanceFromOffice(distance);
-      setIsInOfficeRange(distance <= OFFICE_RADIUS);
+      setIsInOfficeRange(distance <= OFFICE_RADIUS || !isMobileDevice);
       setStep('validation');
       
     } catch (error) {
@@ -412,13 +430,18 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess }) => {
     try {
       setLoading(true);
       
+      const isMobileDevice = /Mobile|Android|iPhone|iPad/i.test(navigator.userAgent);
       const startDayData = {
         latitude: location.latitude,
         longitude: location.longitude,
         accuracy: location.accuracy,
         workFromHome,
         workLocation: workFromHome ? 'Home' : 'Office',
-        address: workFromHome ? 'Work From Home' : 'Blackhole Infiverse LLP Office'
+        address: workFromHome ? 'Work From Home' : 'Blackhole Infiverse LLP Office',
+        deviceInfo: {
+          ...deviceInfo,
+          deviceType: isMobileDevice ? 'Mobile' : 'Desktop'
+        }
       };
 
       const response = await api.attendance.startDay(user.id, startDayData);

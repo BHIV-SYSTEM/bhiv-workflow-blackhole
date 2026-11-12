@@ -518,47 +518,5 @@ router.put("/:id/notifications/read-all", auth, async (req, res) => {
   }
 })
 
-// TEMPORARY ROUTE - Update all users to stillExist: 1
-// @route   POST api/users/update-all-stillexist
-// @desc    Set stillExist to 1 for all users (NO AUTH - TEMPORARY)
-// @access  Public (TEMPORARY - REMOVE AFTER USE)
-router.post("/update-all-stillexist", async (req, res) => {
-  try {
-    console.log("🔄 Starting bulk update of stillExist field for all users...");
-
-    // Update all users to set stillExist: 1
-    const result = await User.updateMany(
-      {}, // All users
-      { $set: { stillExist: 1 } }
-    );
-
-    console.log(`✅ Updated ${result.modifiedCount} users with stillExist: 1`);
-
-    // Get count of all users for verification
-    const totalUsers = await User.countDocuments({});
-    const activeUsers = await User.countDocuments({ stillExist: 1 });
-    const inactiveUsers = await User.countDocuments({ stillExist: 0 });
-
-    res.json({
-      success: true,
-      message: "All users updated successfully",
-      stats: {
-        totalUsers,
-        activeUsers,
-        inactiveUsers,
-        modifiedCount: result.modifiedCount,
-        matchedCount: result.matchedCount
-      }
-    });
-
-  } catch (error) {
-    console.error("❌ Error updating users stillExist field:", error);
-    res.status(500).json({
-      success: false,
-      error: "Failed to update users",
-      details: error.message
-    });
-  }
-});
 
 module.exports = router

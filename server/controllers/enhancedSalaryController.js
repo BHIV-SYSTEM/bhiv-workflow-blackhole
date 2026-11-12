@@ -409,8 +409,8 @@ exports.getSalaryDashboard = async (req, res) => {
 
     console.log('Dashboard request:', { year, month, department, tag });
 
-    // Build user query
-    const userQuery = { role: 'User' }; // Only get regular users, not admins
+    // Build user query - only get active regular users, excluding exited employees
+    const userQuery = { role: 'User', stillExist: 1 };
     if (department) userQuery.department = department;
     if (tag) userQuery.tag = tag;
 

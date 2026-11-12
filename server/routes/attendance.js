@@ -66,6 +66,26 @@ const MAX_WORKING_HOURS = parseInt(process.env.MAX_WORKING_HOURS) || 10;
 const AUTO_END_DAY_ENABLED = process.env.AUTO_END_DAY_ENABLED === 'true';
 const OFFICE_ADDRESS = 'Blackhole Infiverse LLP, Road Number 3, near Hathi Circle, above Bright Connection, Kala Galli, Motilal Nagar II, Goregaon West, Mumbai, Maharashtra';
 
+// Helper: Extract client IP address handling reverse proxies and IPv6 mapping
+const getClientIp = (req) => {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (forwarded) {
+    const list = forwarded.split(',');
+    return list[0].trim().replace(/^::ffff:/, '');
+  }
+  return (req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress || '').replace(/^::ffff:/, '');
+};
+
+// Helper: Check if IP is in configured office network or local development
+const isOfficeIp = (ip) => {
+  if (!ip) return false;
+  if (ip === '127.0.0.1' || ip === '::1' || ip === 'localhost') return true;
+  const configured = process.env.OFFICE_IPS || '';
+  if (!configured.trim()) return false;
+  const list = configured.split(',').map(s => s.trim().replace(/^::ffff:/, '')).filter(Boolean);
+  return list.includes(ip);
+};
+
 // Simple start day route for backward compatibility (used by test and simple clients)
 router.post('/start', auth, async (req, res) => {
   try {
@@ -164,33 +184,55 @@ router.post('/start', auth, async (req, res) => {
 router.post('/start-day/:userId', auth, async (req, res) => {
   try {
     const { userId } = req.params;
-    let { latitude, longitude, address, accuracy, workFromHome, homeLocation } = req.body;
+    let { latitude, longitude, address, accuracy, workFromHome, homeLocation, deviceInfo } = req.body;
     
     // Verify user authorization
     if (req.user.id !== userId && req.user.role !== 'Admin') {
       return res.status(403).json({ error: 'Not authorized' });
     }
-    
-    // Validate geolocation
-    if (latitude === undefined || latitude === null || longitude === undefined || longitude === null) {
-      return res.status(400).json({ 
-        error: 'Geolocation data required',
-        code: 'LOCATION_REQUIRED'
-      });
+
+    // Detect client device type and office network IP
+    const clientIp = getClientIp(req);
+    const clientDeviceType = (deviceInfo?.deviceType || '').toLowerCase();
+    const isDesktop = clientDeviceType === 'desktop' || (!/mobile|android|iphone|ipad/i.test(req.headers['user-agent'] || ''));
+    const onOfficeNetwork = isOfficeIp(clientIp);
+
+    // If Desktop on Office Network, physical GPS is not required
+    if (isDesktop && onOfficeNetwork && !workFromHome) {
+      if (latitude === undefined || latitude === null || longitude === undefined || longitude === null) {
+        latitude = OFFICE_COORDINATES.latitude;
+        longitude = OFFICE_COORDINATES.longitude;
+      }
+      if (!address) {
+        address = 'Blackhole Infiverse LLP Office (Desktop LAN/Wi-Fi)';
+      }
+    } else if (!workFromHome) {
+      // Validate geolocation for mobile, laptop, or non-office devices
+      if (latitude === undefined || latitude === null || longitude === undefined || longitude === null) {
+        return res.status(400).json({ 
+          error: isDesktop 
+            ? 'Desktop not on office network. Connect to Office Wi-Fi/LAN, allow location, or select Work From Home.'
+            : 'Geolocation data required. Please allow location access on your mobile device/laptop.',
+          code: 'LOCATION_REQUIRED'
+        });
+      }
     }
     
-    const latNum = parseFloat(latitude);
-    const lngNum = parseFloat(longitude);
-    if (isNaN(latNum) || isNaN(lngNum)) {
+    let latNum = parseFloat(latitude);
+    let lngNum = parseFloat(longitude);
+    if (!isNaN(latNum) && !isNaN(lngNum)) {
+      latitude = latNum;
+      longitude = lngNum;
+    } else if (!workFromHome && !(isDesktop && onOfficeNetwork)) {
       return res.status(400).json({ 
         error: 'Invalid geolocation coordinates',
         code: 'LOCATION_REQUIRED'
       });
     }
-    latitude = latNum;
-    longitude = lngNum;
 
-    const formattedCoords = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+    const formattedCoords = (latitude !== undefined && longitude !== undefined) 
+      ? `${Number(latitude).toFixed(6)}, ${Number(longitude).toFixed(6)}` 
+      : 'Office Coordinates';
     
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -237,8 +279,13 @@ router.post('/start-day/:userId', auth, async (req, res) => {
       }
       // Update address variable for later use
       address = wfhAddress;
+    } else if (isDesktop && onOfficeNetwork) {
+      // ✅ DESKTOP FAST-PATH: Verified via Office IP/LAN
+      workLocationType = 'Office';
+      locationValidated = true;
+      console.log(`🖥️ Desktop user ${userId} verified via Office Network IP (${clientIp})`);
     } else {
-      // Check if user is within office radius
+      // Check if user is within office radius (Mobile, Laptop, or remote desktop)
       const distance = geolib.getDistance(
         { latitude: OFFICE_COORDINATES.latitude, longitude: OFFICE_COORDINATES.longitude },
         { latitude, longitude }
@@ -246,7 +293,7 @@ router.post('/start-day/:userId', auth, async (req, res) => {
       
       if (distance > OFFICE_RADIUS) {
         return res.status(400).json({
-          error: `You must be within ${OFFICE_RADIUS}m of office premises to start your day.`,
+          error: `You must be within ${OFFICE_RADIUS}m of office premises to start your day (current distance: ${distance}m).`,
           distance: distance,
           allowedRadius: OFFICE_RADIUS,
           officeAddress: OFFICE_ADDRESS,
@@ -573,6 +620,8 @@ router.post('/end-day/:userId', auth, async (req, res) => {
         };
       }
       dailyRecord.totalHoursWorked = Math.round(hoursWorked * 100) / 100;
+      dailyRecord.regularHours = Math.min(hoursWorked, standardHours);
+      dailyRecord.overtimeHours = hoursWorked > standardHours ? Math.round((hoursWorked - standardHours) * 100) / 100 : 0;
       dailyRecord.breakTime = breakTimeMinutes; // Set break time from work session
       dailyRecord.isPresent = true;
       dailyRecord.status = 'Present';
@@ -692,21 +741,26 @@ router.post('/validate-spam-hours/:recordId', auth, adminAuth, async (req, res) 
     // Save original hours before updating
     const originalHours = record.hoursWorked;
 
-    // SIMPLE RULE: Spam validation = EXACTLY 8 hours (not more, not less)
-    const validatedHours = 8;
+    // Determine validated hours:
+    // If WFH, max 8h cap applies. If WFO, allow actual worked hours.
+    const isWfh = record.workPattern === 'Remote' || record.workLocationType === 'Home';
+    const validatedHours = isWfh 
+      ? Math.min(8, Math.round(actualHoursWorked * 100) / 100) 
+      : Math.round(actualHoursWorked * 100) / 100;
     
     // Detect if this is a midnight span
     const isMidnightSpan = record.spanType === 'MIDNIGHT_SPAN' || 
                            (record.spamReason && record.spamReason.toLowerCase().includes('midnight'));
 
-    // Update record with EXACTLY 8 hours
+    // Update record with validated hours
     record.hoursWorked = validatedHours;
+    record.overtimeHours = validatedHours > 8 ? Math.round((validatedHours - 8) * 100) / 100 : 0;
     record.spamStatus = 'Valid';
     record.validatedBy = req.user.id;
     record.validatedAt = new Date();
     record.spamReason = reason || (isMidnightSpan 
-      ? `Midnight span validated - Fixed ${validatedHours}h granted (actual: ${originalHours}h)` 
-      : `Admin validated - User gets exactly ${validatedHours} hours (actual: ${originalHours}h)`);
+      ? `Midnight span validated - ${validatedHours}h granted (actual: ${originalHours}h)` 
+      : `Admin validated - User gets ${validatedHours} hours (actual: ${originalHours}h)`);
     record.approvalStatus = 'Approved';
 
     await record.save();

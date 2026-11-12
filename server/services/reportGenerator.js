@@ -9,6 +9,7 @@ const ScreenCapture = require('../models/ScreenCapture');
 const EmployeeActivity = require('../models/EmployeeActivity');
 const MonitoringAlert = require('../models/MonitoringAlert');
 const Attendance = require('../models/Attendance');
+const DailyAttendance = require('../models/DailyAttendance');
 const { formatEmployeeId } = require('../utils/employeeId');
 
 function formatActiveTime(seconds) {
@@ -154,13 +155,35 @@ class ReportGenerator {
 
       (async () => {
         try {
-          return await Attendance.find({
-            user: employeeId,
-            $or: [
-              { date: { $gte: start, $lte: end } },
-              { startDayTime: { $gte: start, $lte: end } }
-            ]
-          }).lean();
+          const [attList, dailyList] = await Promise.all([
+            Attendance.find({
+              user: employeeId,
+              $or: [
+                { date: { $gte: start, $lte: end } },
+                { startDayTime: { $gte: start, $lte: end } }
+              ]
+            }).lean(),
+            DailyAttendance.find({
+              user: employeeId,
+              $or: [
+                { date: { $gte: start, $lte: end } },
+                { startDayTime: { $gte: start, $lte: end } }
+              ]
+            }).lean()
+          ]);
+          const combined = [...(attList || [])];
+          const seen = new Set(combined.map(r => new Date(r.startDayTime || r.date).toISOString().slice(0, 10)));
+          (dailyList || []).forEach(d => {
+            const key = new Date(d.startDayTime || d.date).toISOString().slice(0, 10);
+            if (!seen.has(key)) {
+              combined.push({
+                ...d,
+                hoursWorked: d.totalHoursWorked || d.hoursWorked || 0
+              });
+              seen.add(key);
+            }
+          });
+          return combined;
         } catch (e) {
           return [];
         }
@@ -369,8 +392,10 @@ class ReportGenerator {
           sec = Math.round(att.hoursWorked * 3600);
         } else if (att.startDayTime) {
           const isToday = getLocalDateString(new Date()) === dStr;
-          const endSession = att.endDayTime ? new Date(att.endDayTime) : (isToday ? new Date() : end);
-          sec = Math.max(0, Math.floor((endSession - new Date(att.startDayTime)) / 1000));
+          const endSession = att.endDayTime 
+            ? new Date(att.endDayTime) 
+            : (isToday ? new Date() : new Date(new Date(att.startDayTime).getTime() + 8 * 3600 * 1000));
+          sec = Math.min(10 * 3600, Math.max(0, Math.floor((endSession - new Date(att.startDayTime)) / 1000)));
         }
         if (sec > 0) {
           dailyMap[dStr].activeSeconds = Math.max(dailyMap[dStr].activeSeconds, sec);
@@ -972,19 +997,21 @@ class ReportGenerator {
       csv += `Period,${startStr} to ${endStr}\n`;
       csv += `Generated At,${new Date().toISOString()}\n\n`;
 
+      const empIdFormatted = employee.employeeId || formatEmployeeId(employee.email) || 'N/A';
+
       csv += 'EXECUTIVE KPI SUMMARY\n';
-      csv += 'Total Activities,Average Productivity Score (%),Active Hours,Total Keystrokes,Total Alerts\n';
-      csv += `${reportData.activities.length},${summary.productivityScore}%,${summary.activeHoursFormatted || `${summary.activeHours}h`},${summary.totalKeystrokes},${summary.violations}\n\n`;
+      csv += 'Employee ID,Employee Name,Total Activities,Average Productivity Score (%),Active Hours,Total Keystrokes,Total Alerts\n';
+      csv += `"${empIdFormatted}","${employee.name}",${reportData.activities.length},${summary.productivityScore}%,${summary.activeHoursFormatted || `${summary.activeHours}h`},${summary.totalKeystrokes},${summary.violations}\n\n`;
 
       csv += 'DETAILED ACTIVITY LOGS\n';
-      csv += 'Timestamp,Application,Window Title,Productivity Score (%),Idle Duration (s),Keystrokes,Mouse Score (%)\n';
+      csv += 'Employee ID,Timestamp,Application,Window Title,Productivity Score (%),Idle Duration (s),Keystrokes,Mouse Score (%)\n';
 
       if (reportData.activities.length > 0) {
         reportData.activities.forEach(act => {
           const ts = act.timestamp ? new Date(act.timestamp).toISOString() : '';
           const app = (act.active_application?.name || 'Workspace').replace(/"/g, '""');
           const title = (act.active_application?.title || '').replace(/"/g, '""');
-          csv += `"${ts}","${app}","${title}",${act.productivity_score || 0},${act.idle_duration || 0},${act.keystroke_count || 0},${act.mouse_activity_score || 0}\n`;
+          csv += `"${empIdFormatted}","${ts}","${app}","${title}",${act.productivity_score || 0},${act.idle_duration || 0},${act.keystroke_count || 0},${act.mouse_activity_score || 0}\n`;
         });
       } else {
         csv += 'No activity logs recorded in this period\n';
@@ -1208,14 +1235,39 @@ class ReportGenerator {
         }
       ]),
 
-      // 7. Team official attendance
-      Attendance.find({
-        user: { $in: empIds },
-        $or: [
-          { date: { $gte: start, $lte: end } },
-          { startDayTime: { $gte: start, $lte: end } }
-        ]
-      }).select('user hoursWorked startDayTime endDayTime').lean()
+      // 7. Team official attendance from Attendance & DailyAttendance
+      Promise.all([
+        Attendance.find({
+          user: { $in: empIds },
+          $or: [
+            { date: { $gte: start, $lte: end } },
+            { startDayTime: { $gte: start, $lte: end } }
+          ]
+        }).select('user hoursWorked startDayTime endDayTime').lean(),
+        DailyAttendance.find({
+          user: { $in: empIds },
+          $or: [
+            { date: { $gte: start, $lte: end } },
+            { startDayTime: { $gte: start, $lte: end } }
+          ]
+        }).select('user hoursWorked totalHoursWorked startDayTime endDayTime').lean()
+      ]).then(([attRecords, dailyRecords]) => {
+        const combined = [...(attRecords || [])];
+        const seen = new Set(combined.map(r => `${r.user}_${new Date(r.startDayTime || r.date).toISOString().slice(0, 10)}`));
+        (dailyRecords || []).forEach(d => {
+          const key = `${d.user}_${new Date(d.startDayTime || d.date).toISOString().slice(0, 10)}`;
+          if (!seen.has(key)) {
+            combined.push({
+              user: d.user,
+              hoursWorked: d.totalHoursWorked || d.hoursWorked || 0,
+              startDayTime: d.startDayTime,
+              endDayTime: d.endDayTime
+            });
+            seen.add(key);
+          }
+        });
+        return combined;
+      })
     ]);
 
     const statsMap = new Map();
@@ -1242,8 +1294,10 @@ class ReportGenerator {
         sec = Math.round(att.hoursWorked * 3600);
       } else if (att.startDayTime) {
         const isToday = att.startDayTime && new Date(att.startDayTime).toDateString() === new Date().toDateString();
-        const endSession = att.endDayTime ? new Date(att.endDayTime) : (isToday ? new Date() : end);
-        sec = Math.max(0, Math.floor((endSession - new Date(att.startDayTime)) / 1000));
+        const endSession = att.endDayTime 
+          ? new Date(att.endDayTime) 
+          : (isToday ? new Date() : new Date(new Date(att.startDayTime).getTime() + 8 * 3600 * 1000));
+        sec = Math.min(10 * 3600, Math.max(0, Math.floor((endSession - new Date(att.startDayTime)) / 1000)));
       }
       empAttendanceSecMap.set(uId, (empAttendanceSecMap.get(uId) || 0) + sec);
     });
@@ -1673,7 +1727,7 @@ class ReportGenerator {
       let csv = 'Employee ID,Name,Date,Activities,Productivity,Active Hour,Key Strokes,Mouse Score,Efficiency\n';
 
       data.members.forEach(m => {
-        const empId = (m.employeeId || 'N/A').replace(/"/g, '""');
+        const empId = (m.employeeId || formatEmployeeId(m.email) || 'N/A').replace(/"/g, '""');
         const name = (m.name || 'Employee').replace(/"/g, '""');
         const acts = m.totalActivities > 0 ? m.totalActivities : '-';
         const prod = m.totalActivities > 0 ? `${m.avgProductivity}%` : '-';

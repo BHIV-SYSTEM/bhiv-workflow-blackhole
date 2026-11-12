@@ -13,22 +13,40 @@ const OFFICE_COORDINATES = {
   latitude: parseFloat(process.env.OFFICE_LAT) || 19.1628987,
   longitude: parseFloat(process.env.OFFICE_LNG) || 72.8355871
 };
-const OFFICE_RADIUS = parseInt(process.env.OFFICE_RADIUS) || 100; // meters
-const MAX_WORKING_HOURS = parseInt(process.env.MAX_WORKING_HOURS) || 8;
+const OFFICE_RADIUS = parseInt(process.env.OFFICE_RADIUS) || 2000; // meters (default 2km)
+const MAX_WORKING_HOURS = parseInt(process.env.MAX_WORKING_HOURS) || 10;
+
+// Helper: Extract client IP address handling reverse proxies and IPv6 mapping
+const getClientIp = (req) => {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (forwarded) {
+    const list = forwarded.split(',');
+    return list[0].trim().replace(/^::ffff:/, '');
+  }
+  return (req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress || '').replace(/^::ffff:/, '');
+};
+
+// Helper: Check if IP is in configured office network or local development
+const isOfficeIp = (ip) => {
+  if (!ip) return false;
+  if (ip === '127.0.0.1' || ip === '::1' || ip === 'localhost') return true;
+  const configured = process.env.OFFICE_IPS || '';
+  if (!configured.trim()) return false;
+  const list = configured.split(',').map(s => s.trim().replace(/^::ffff:/, '')).filter(Boolean);
+  return list.includes(ip);
+};
 
 // Start day with enhanced validation and status tracking
 router.post('/start-day', auth, async (req, res) => {
   try {
-    const { latitude, longitude, address, accuracy, deviceInfo, workFromHome } = req.body;
+    let { latitude, longitude, address, accuracy, deviceInfo, workFromHome } = req.body;
     const userId = req.user.id;
 
-    // Validate geolocation
-    if (!latitude || !longitude) {
-      return res.status(400).json({ 
-        success: false,
-        error: 'Geolocation data required' 
-      });
-    }
+    // Detect client device type and IP
+    const clientIp = getClientIp(req);
+    const clientDeviceType = (deviceInfo?.deviceType || '').toLowerCase();
+    const isDesktop = clientDeviceType === 'desktop' || (!/mobile|android|iphone|ipad/i.test(req.headers['user-agent'] || ''));
+    const onOfficeNetwork = isOfficeIp(clientIp);
 
     // Get user's location restrictions
     const userTag = await UserTag.findOne({ user: userId });
@@ -43,11 +61,42 @@ router.post('/start-day', auth, async (req, res) => {
     }
 
     let workLocationType = 'Office';
-    let locationValidated = true;
+    let locationValidated = false;
 
-    // Location validation
-    if (!workFromHome) {
-      // Check office location
+    // Location validation: Desktop Office Network Fast-Path vs Mobile/Laptop GPS
+    if (workFromHome) {
+      if (!allowRemote) {
+        return res.status(400).json({
+          success: false,
+          error: 'Work from home is not allowed for your account'
+        });
+      }
+      workLocationType = 'Home';
+      locationValidated = true;
+    } else if (isDesktop && onOfficeNetwork) {
+      // ✅ DESKTOP FAST-PATH: Verified via Office IP/LAN (no physical GPS required)
+      workLocationType = 'Office';
+      locationValidated = true;
+      if (!latitude || !longitude) {
+        latitude = OFFICE_COORDINATES.latitude;
+        longitude = OFFICE_COORDINATES.longitude;
+      }
+      if (!address) {
+        address = 'Blackhole Infiverse LLP Office (Desktop LAN/Wi-Fi)';
+      }
+      console.log(`🖥️ Desktop user ${userId} verified via Office Network IP (${clientIp})`);
+    } else {
+      // Mobile, Laptop, or Non-office Desktop: MUST pass GPS Location check
+      if (!latitude || !longitude) {
+        return res.status(400).json({ 
+          success: false,
+          error: isDesktop
+            ? 'Desktop not on office network. Connect to Office Wi-Fi/LAN, allow location, or select Work From Home.'
+            : 'Geolocation data required. Please allow location access on your mobile device/laptop.',
+          code: 'LOCATION_REQUIRED'
+        });
+      }
+
       const distanceFromOffice = geolib.getDistance(
         { latitude: OFFICE_COORDINATES.latitude, longitude: OFFICE_COORDINATES.longitude },
         { latitude, longitude }
@@ -64,16 +113,8 @@ router.post('/start-day', auth, async (req, res) => {
           showWorkFromHomeOption: allowRemote
         });
       }
-    } else {
-      // Work from home option selected
-      if (!allowRemote) {
-        return res.status(400).json({
-          success: false,
-          error: 'Work from home is not allowed for your account'
-        });
-      }
-      workLocationType = 'Home';
-      // Lock the home location for the day
+
+      workLocationType = 'Office';
       locationValidated = true;
     }
 
@@ -206,7 +247,7 @@ router.post('/end-day', auth, async (req, res) => {
     const sessionDateEnd = new Date(sessionDate);
     sessionDateEnd.setDate(sessionDateEnd.getDate() + 1);
 
-    // Check for mandatory daily aim completion
+    // Check for daily aim (record status without trapping/blocking employee from clocking out)
     const Aim = require('../models/Aim');
     const Progress = require('../models/Progress');
     
@@ -218,41 +259,9 @@ router.post('/end-day', auth, async (req, res) => {
       }
     });
 
-    // Validate aim completion
-    if (!todayAim) {
-      return res.status(400).json({
-        success: false,
-        error: 'Please set and complete your daily aim before ending your day',
-        code: 'AIM_NOT_SET',
-        message: 'Daily aim completion is mandatory before ending work day'
-      });
-    }
+    const isAimCompleted = todayAim && (todayAim.completionStatus === 'Completed' || todayAim.completionStatus === 'MVP Achieved');
 
-    if (!todayAim.completionStatus || todayAim.completionStatus === 'Pending') {
-      return res.status(400).json({
-        success: false,
-        error: 'Please complete your daily aim before ending your day',
-        code: 'AIM_NOT_COMPLETED',
-        message: 'You must mark your aim as Completed or MVP Achieved with a comment',
-        aim: {
-          id: todayAim._id,
-          content: todayAim.aims,
-          status: todayAim.completionStatus
-        }
-      });
-    }
-
-    if ((todayAim.completionStatus === 'Completed' || todayAim.completionStatus === 'MVP Achieved') && 
-        (!todayAim.completionComment || todayAim.completionComment.trim() === '')) {
-      return res.status(400).json({
-        success: false,
-        error: 'Completion comment is required for your completed aim',
-        code: 'AIM_COMMENT_MISSING',
-        message: 'Please add a comment describing your achievements'
-      });
-    }
-
-    // Check for daily progress (optional but recommended)
+    // Check for daily progress (lenient validation - record status without blocking)
     const todayProgress = await Progress.findOne({
       user: userId,
       date: {
@@ -261,20 +270,16 @@ router.post('/end-day', auth, async (req, res) => {
       }
     });
 
-    // Check if progress has any meaningful content
     const hasProgressContent = todayProgress && (
       (todayProgress.notes && todayProgress.notes.trim() !== '') ||
       (todayProgress.achievements && todayProgress.achievements.trim() !== '') ||
-      (todayProgress.blockers && todayProgress.blockers.trim() !== '')
+      (todayProgress.blockers && todayProgress.blockers.trim() !== '') ||
+      (todayProgress.tasksCompleted && todayProgress.tasksCompleted.length > 0) ||
+      todayProgress.percentageCompleted !== undefined
     );
-    
-    if (!hasProgressContent) {
-      return res.status(400).json({
-        success: false,
-        error: 'Please set your daily progress before ending your day',
-        code: 'PROGRESS_NOT_SET',
-        message: 'Daily progress update is required before ending work day'
-      });
+
+    if (!todayAim || !isAimCompleted || !hasProgressContent) {
+      console.log(`ℹ️ User ${userId} ending day with partial aim/progress metrics - allowing clean clock-out.`);
     }
 
     const endTime = new Date();
@@ -337,10 +342,10 @@ router.post('/end-day', auth, async (req, res) => {
     attendanceRecord.approvalStatus = 'Auto-Approved';
     attendanceRecord.systemNotes = `Day ended after ${attendanceRecord.totalHoursWorked} hours of work`;
     
-    // Store aim completion status
-    attendanceRecord.dailyAimCompleted = true;
-    attendanceRecord.aimCompletionStatus = todayAim.completionStatus;
-    attendanceRecord.aimCompletionComment = todayAim.completionComment;
+    // Store aim completion status safely
+    attendanceRecord.dailyAimCompleted = !!isAimCompleted;
+    attendanceRecord.aimCompletionStatus = todayAim?.completionStatus || 'None';
+    attendanceRecord.aimCompletionComment = todayAim?.completionComment || '';
     
     // Store progress completion status
     attendanceRecord.dailyProgressCompleted = !!todayProgress;

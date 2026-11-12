@@ -519,6 +519,14 @@ router.post("/login", async (req, res) => {
       return res.status(400).json({ error: "Invalid credentials" })
     }
 
+    // Check if user has exited the company
+    if (user.stillExist === 0) {
+      return res.status(403).json({ 
+        error: "Your account has been deactivated (marked as exited). Please contact HR/Administrator.",
+        code: "ACCOUNT_DEACTIVATED" 
+      });
+    }
+
     // Check password directly
     if (password !== user.password) {
       return res.status(400).json({ error: "Invalid credentials" })

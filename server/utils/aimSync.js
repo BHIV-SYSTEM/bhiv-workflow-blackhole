@@ -18,19 +18,9 @@ const syncProgressToAim = async (userId, progressData) => {
       }
     });
 
+    // Only update if user has created an aim; do NOT auto-create dummy pending aims
     if (!todayAim) {
-      // Create a default aim if none exists
-      const user = await User.findById(userId);
-      if (user) {
-        todayAim = new Aim({
-          user: userId,
-          department: user.department,
-          date: today,
-          aims: 'Daily work objectives - to be updated',
-          completionStatus: 'Pending',
-          progressPercentage: 0
-        });
-      }
+      return null;
     }
 
     if (todayAim) {
@@ -76,19 +66,9 @@ const syncAttendanceToAim = async (userId, attendanceData) => {
       }
     });
 
+    // Only update if user has created an aim; do NOT auto-create dummy pending aims
     if (!todayAim) {
-      // Create a default aim if none exists
-      const user = await User.findById(userId);
-      if (user) {
-        todayAim = new Aim({
-          user: userId,
-          department: user.department,
-          date: today,
-          aims: 'Daily work objectives - to be updated',
-          completionStatus: 'Pending',
-          progressPercentage: 0
-        });
-      }
+      return null;
     }
 
     if (todayAim) {

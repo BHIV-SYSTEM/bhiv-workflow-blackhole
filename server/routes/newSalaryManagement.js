@@ -132,8 +132,8 @@ router.get('/hours/all', auth, adminAuth, async (req, res) => {
     // Get branch filter
     const branchQuery = getBranchQuery(req);
 
-    // Get all users (including exited) - FILTERED BY BRANCH
-    const allUsers = await User.find(branchQuery)
+    // Get all active users (excluding exited) - FILTERED BY BRANCH
+    const allUsers = await User.find({ stillExist: 1, ...branchQuery })
       .populate('department', 'name color')
       .select('name email department employeeId role branch stillExist')
       .lean();
