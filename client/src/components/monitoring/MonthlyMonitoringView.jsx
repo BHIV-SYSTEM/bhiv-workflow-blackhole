@@ -387,8 +387,14 @@ export function MonthlyMonitoringView({
       };
     }
 
-    // Days where employee actually worked
-    const workedDays = daily.filter(d => (d.status === 'Worked' || d.status === 'Completed Workday' || d.activeSeconds > 0) && d.productivityScore > 0);
+    // Days where employee actually worked (matches backend monthly-employee-breakdown criteria)
+    const workedDays = daily.filter(d =>
+      d.status === 'Worked' ||
+      d.status === 'Completed Workday' ||
+      (d.activeSeconds || 0) > 0 ||
+      (d.logCount || 0) > 0 ||
+      (d.productivityScore || 0) > 0
+    );
 
     if (workedDays.length === 0) {
       return {

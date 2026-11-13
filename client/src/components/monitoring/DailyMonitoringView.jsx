@@ -25,7 +25,10 @@ import { API_URL } from '@/lib/api';
 export function DailyMonitoringView({ onSelectEmployee, departmentFilter = 'all', statusTab = 'active', searchQuery: initialSearch = '' }) {
   const [selectedDate, setSelectedDate] = useState(() => {
     const today = new Date();
-    return today.toISOString().split('T')[0];
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    const d = String(today.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
   });
 
   const [loading, setLoading] = useState(true);
@@ -35,7 +38,7 @@ export function DailyMonitoringView({ onSelectEmployee, departmentFilter = 'all'
       totalIdleTime: '0m',
       avgProductivityScore: 0,
       totalKeystrokes: 0,
-      overallProductivityEfficiency: 'Low Efficiency'
+      overallProductivityEfficiency: 'No Activity'
     },
     employees: []
   });
@@ -118,8 +121,12 @@ export function DailyMonitoringView({ onSelectEmployee, departmentFilter = 'all'
 
   const formatDateDisplay = (dateStr) => {
     try {
+      const parts = String(dateStr || '').split('-').map(Number);
+      const parsed = parts.length === 3 && !parts.some(Number.isNaN)
+        ? new Date(parts[0], parts[1] - 1, parts[2])
+        : new Date(dateStr);
       const options = { year: 'numeric', month: 'long', day: 'numeric' };
-      return new Date(dateStr).toLocaleDateString(undefined, options);
+      return parsed.toLocaleDateString(undefined, options);
     } catch (e) {
       return dateStr;
     }

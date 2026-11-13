@@ -64,6 +64,7 @@ export function EmployeeDetailModal({ employee, onClose }) {
       );
 
       const logs = response.data.activities || [];
+      const backendSummary = response.data.summary || null;
       setActivityLogs(logs);
 
       // Only count logs matching target date for active hours and timeline graph
@@ -74,34 +75,42 @@ export function EmployeeDetailModal({ employee, onClose }) {
         return logDateStr === targetDate;
       });
 
-      // Process logs for timeline & metrics
+      // Process logs for timeline & fallback metrics
       let totalKeystrokes = 0;
       let totalMouseScore = 0;
+      let activeMouseCount = 0;
       let totalIdleSec = 0;
       let totalProdScore = 0;
+      let totalSpanSec = 0;
       const hourlyMap = {};
 
       dayLogs.forEach((log) => {
-        totalKeystrokes += log.keystroke_count || 0;
-        totalMouseScore += log.mouse_activity_score || 0;
-        const isLogActive = (log.keystroke_count || 0) > 0 || (log.mouse_activity_score || 0) >= 15;
+        const intervalSec = Math.min(60, Math.max(1, Number(log.interval_seconds) || 30));
+        totalSpanSec += intervalSec;
+        const keys = Number(log.keystroke_count || 0);
+        const mouseScore = Number(log.mouse_activity_score || 0);
+        totalKeystrokes += keys;
+        if (mouseScore > 0) {
+          totalMouseScore += mouseScore;
+          activeMouseCount++;
+        }
+        const isLogActive = keys > 0 || mouseScore >= 10 || Number(log.mouse_event_count || 0) >= 3;
         let idleVal = 0;
         if (!isLogActive) {
-          let raw = log.idle_duration || 0;
+          let raw = Number(log.idle_duration || 0);
           if (raw > 10000) raw = Math.round(raw / 1000);
-          // Idle duration for a single 30s telemetry snapshot cannot exceed 30 seconds
-          idleVal = Math.min(30, Math.max(0, raw));
+          idleVal = Math.min(intervalSec, Math.max(0, raw));
         }
         totalIdleSec += idleVal;
-        totalProdScore += log.productivity_score || 0;
+        totalProdScore += Number(log.productivity_score || 0);
 
         const hour = new Date(log.timestamp).getHours();
         const hourLabel = `${hour}:00`;
         if (!hourlyMap[hourLabel]) {
           hourlyMap[hourLabel] = { hour: hourLabel, keystrokes: 0, productivity: 0, count: 0 };
         }
-        hourlyMap[hourLabel].keystrokes += log.keystroke_count || 0;
-        hourlyMap[hourLabel].productivity += log.productivity_score || 0;
+        hourlyMap[hourLabel].keystrokes += keys;
+        hourlyMap[hourLabel].productivity += Number(log.productivity_score || 0);
         hourlyMap[hourLabel].count++;
       });
 
@@ -113,29 +122,36 @@ export function EmployeeDetailModal({ employee, onClose }) {
       setTimelineData(processedTimeline);
 
       const logCount = dayLogs.length;
-      let calculatedActiveSec = Math.max(0, logCount * 30 - totalIdleSec);
-      if (employee?.activeSeconds && employee.activeSeconds > 0) {
+      const hasEmployeeSession = (employee?.activeSeconds || 0) > 0;
+      let calculatedActiveSec = Math.max(0, totalSpanSec - totalIdleSec);
+      if (hasEmployeeSession) {
         calculatedActiveSec = employee.activeSeconds;
       }
-      const avgProd = logCount > 0 ? Math.round(totalProdScore / logCount) : 0;
-      const avgMouse = logCount > 0 ? Math.round(totalMouseScore / logCount) : 0;
+      const avgProd = logCount > 0
+        ? Math.round(totalProdScore / logCount)
+        : (hasEmployeeSession ? (employee?.productivityScore || 50) : 0);
+      const avgMouse = activeMouseCount > 0 ? Math.round(totalMouseScore / activeMouseCount) : 0;
 
       let efficiency = employee.stillExist === 0 ? 'Exited' : 'No Telemetry Today';
-      if (logCount > 0) {
+      if (logCount > 0 || hasEmployeeSession) {
         if (avgProd >= 60) efficiency = 'High Efficiency';
         else if (avgProd >= 40) efficiency = 'Moderate Efficiency';
         else efficiency = 'Low Efficiency';
       }
 
-      const calculatedActiveHours = employee?.totalActiveHours || `${Math.floor(calculatedActiveSec / 3600)}h ${Math.floor((calculatedActiveSec % 3600) / 60)}m`;
+      const calculatedActiveHours = (hasEmployeeSession && employee?.totalActiveHours)
+        ? employee.totalActiveHours
+        : `${Math.floor(calculatedActiveSec / 3600)}h ${Math.floor((calculatedActiveSec % 3600) / 60)}m`;
       const calculatedIdleTime = `${Math.floor(totalIdleSec / 60)}m`;
 
-      const finalActiveHours = logCount > 0 ? calculatedActiveHours : '0h 0m';
-      const finalIdleTime = logCount > 0 ? calculatedIdleTime : '0m';
-      const finalKeystrokes = logCount > 0 ? totalKeystrokes : 0;
-      const finalMouse = logCount > 0 ? avgMouse : 0;
-      const finalProd = logCount > 0 ? avgProd : 0;
-      const finalEfficiency = efficiency;
+      const finalActiveHours = backendSummary ? backendSummary.activeHours : ((logCount > 0 || hasEmployeeSession) ? calculatedActiveHours : '0h 0m');
+      const finalIdleTime = backendSummary ? backendSummary.idleTime : (logCount > 0 ? calculatedIdleTime : '0m');
+      const finalKeystrokes = backendSummary ? backendSummary.totalKeystrokes : (logCount > 0 ? totalKeystrokes : 0);
+      const finalMouse = backendSummary ? backendSummary.mouseActivity : (logCount > 0 ? avgMouse : 0);
+      const finalProd = backendSummary ? backendSummary.productivityScore : avgProd;
+      const finalEfficiency = employee.stillExist === 0
+        ? 'Exited'
+        : (backendSummary ? backendSummary.productivityEfficiency : efficiency);
 
       const latest = dayLogs[0];
       const lastActiveDate = response.data.lastActiveTimestamp

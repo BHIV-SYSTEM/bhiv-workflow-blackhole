@@ -129,29 +129,34 @@ employeeActivitySchema.statics.getActivitySummary = async function(employeeId, s
   ]);
 };
 
-// Instance method to calculate productivity score
+// Instance method to calculate productivity score (scaled to sample interval_seconds)
 employeeActivitySchema.methods.calculateProductivityScore = function() {
-  const idleSec = this.idle_duration || 0;
+  let idleSec = this.idle_duration || 0;
+  if (idleSec > 10000) idleSec = Math.round(idleSec / 1000);
   const keys = this.keystroke_count || 0;
   const mouse = this.mouse_activity_score || 0;
+  const mouseEvents = this.mouse_event_count || 0;
+  const sampleSec = (this.interval_seconds && this.interval_seconds >= 1 && this.interval_seconds <= 120)
+    ? this.interval_seconds
+    : 30;
+  const hasInput = keys > 0 || mouse > 0 || mouseEvents > 0;
 
-  // If user had no keystrokes and minimal mouse movement or was idle for the snapshot, score is strictly 0
-  if ((keys === 0 && mouse < 10) || idleSec >= 30) {
+  // Truly idle only when no input AND system idle >= 30s
+  if (!hasInput && idleSec >= 30) {
     this.productivity_score = 0;
     return 0;
   }
 
-  const keystrokeScore = Math.min(keys / 40, 1) * 100;
-  const mouseScore = Math.min(Math.max(mouse, 0), 100);
-  const idlePenalty = Math.min(100, (idleSec / 30) * 100);
-  const activeRatioScore = Math.max(0, 100 - idlePenalty);
+  const isDistraction = String(this.app_category || '').toUpperCase() === 'DISTRACTION';
+  const baseCredit = isDistraction ? 15 : 55;
+  const keyCadencePerMin = (keys / sampleSec) * 60;
+  const keyBonus = Math.min(1, keyCadencePerMin / 120) * 30;
+  const effectiveMouseScore = mouse > 0
+    ? Math.min(100, mouse)
+    : (mouseEvents > 0 ? Math.min(100, Math.round((((mouseEvents / sampleSec) * 60) / 240) * 100)) : 0);
+  const mouseBonus = (effectiveMouseScore / 100) * 15;
 
-  this.productivity_score = Math.round(
-    (keystrokeScore * 0.35) +
-    (mouseScore * 0.35) +
-    (activeRatioScore * 0.3)
-  );
-
+  this.productivity_score = Math.min(100, Math.round(baseCredit + keyBonus + mouseBonus));
   return this.productivity_score;
 };
 

@@ -19,6 +19,14 @@ const reportGenerator = require('../services/reportGenerator');
 const { formatEmployeeId } = require('../utils/employeeId');
 const fs = require('fs').promises;
 const { getViolationScreenshots, generateOptimizedScreenshotUrl } = require('../utils/cloudinary');
+const {
+  getLocalDateKey,
+  parseLocalDateParam,
+  getEfficiencyLabel,
+  evaluateSample,
+  summarizeActivitiesWithSession,
+  resolveSessionsMap
+} = require('../utils/telemetryMetrics');
 
 // Helper to get branch filter from request
 const getBranchQuery = (req) => {
@@ -222,22 +230,14 @@ router.post('/stop-all', async (req, res) => {
 router.get('/employees/:id/activity', async (req, res) => {
   try {
     const { id: employeeId } = req.params;
-    const { date, startDate, endDate, limit = 1000 } = req.query;
+    const { date, startDate, endDate, limit = 20000 } = req.query;
 
     let activities = [];
+    let targetDateObj = null;
     if (date) {
-      // Get activities for specific date (support YYYY-MM-DD string or ISO date)
-      let start, end;
-      if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date.trim())) {
-        const [y, m, d] = date.trim().split('-').map(Number);
-        start = new Date(y, m - 1, d, 0, 0, 0, 0);
-        end = new Date(y, m - 1, d, 23, 59, 59, 999);
-      } else {
-        start = new Date(date);
-        start.setHours(0, 0, 0, 0);
-        end = new Date(date);
-        end.setHours(23, 59, 59, 999);
-      }
+      targetDateObj = parseLocalDateParam(date);
+      const start = new Date(targetDateObj.getFullYear(), targetDateObj.getMonth(), targetDateObj.getDate(), 0, 0, 0, 0);
+      const end = new Date(targetDateObj.getFullYear(), targetDateObj.getMonth(), targetDateObj.getDate(), 23, 59, 59, 999);
       
       activities = await EmployeeActivity.find({
         employee: employeeId,
@@ -258,6 +258,7 @@ router.get('/employees/:id/activity', async (req, res) => {
     } else {
       // Default to today's activities (calendar day 00:00:00 to 23:59:59.999)
       const now = new Date();
+      targetDateObj = now;
       const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
       const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
       
@@ -271,8 +272,24 @@ router.get('/employees/:id/activity', async (req, res) => {
       .lean();
     }
 
+    // Recompute normalized productivity score on returned samples + unified day summary
+    const normalizedActivities = (activities || []).map(act => ({
+      ...act,
+      productivity_score: evaluateSample(act).qualityScore
+    }));
+
+    let summary = null;
+    if (targetDateObj) {
+      const start = new Date(targetDateObj.getFullYear(), targetDateObj.getMonth(), targetDateObj.getDate(), 0, 0, 0, 0);
+      const end = new Date(targetDateObj.getFullYear(), targetDateObj.getMonth(), targetDateObj.getDate(), 23, 59, 59, 999);
+      const dateKey = getLocalDateKey(targetDateObj);
+      const sessionsMap = await resolveSessionsMap([employeeId], start, end);
+      const sessionInfo = sessionsMap.get(`${employeeId}_${dateKey}`) || null;
+      summary = summarizeActivitiesWithSession(normalizedActivities, sessionInfo);
+    }
+
     // Find the latest historical activity log to provide true last active timestamp
-    let lastActiveLog = (activities && activities.length > 0) ? activities[0] : null;
+    let lastActiveLog = (normalizedActivities && normalizedActivities.length > 0) ? normalizedActivities[0] : null;
     if (!lastActiveLog) {
       lastActiveLog = await EmployeeActivity.findOne({
         employee: employeeId
@@ -286,9 +303,10 @@ router.get('/employees/:id/activity', async (req, res) => {
     const realtimeStatus = activityTracker.getActivityStatus(employeeId);
 
     res.json({
-      activities: activities || [],
+      activities: normalizedActivities,
+      summary,
       realtimeStatus,
-      totalCount: activities ? activities.length : 0,
+      totalCount: normalizedActivities.length,
       lastActiveTimestamp: lastActiveLog?.timestamp || null,
       lastActiveApp: lastActiveLog?.active_application || null
     });
@@ -944,17 +962,17 @@ router.get('/reports/:employeeId', async (req, res) => {
       return res.status(404).json({ success: false, error: 'Employee not found' });
     }
 
-    const start = startDate ? new Date(startDate) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const start = startDate ? parseLocalDateParam(startDate) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     start.setHours(0, 0, 0, 0);
 
-    const end = endDate ? new Date(endDate) : new Date();
+    const end = endDate ? parseLocalDateParam(endDate) : new Date();
     end.setHours(23, 59, 59, 999);
 
-    const [activities, screenshots, alerts, attendances] = await Promise.all([
+    const [activities, screenshots, alerts, sessionsMap] = await Promise.all([
       EmployeeActivity.find({
         employee: employeeId,
         timestamp: { $gte: start, $lte: end }
-      }).select('timestamp keystroke_count mouse_activity_score idle_duration productivity_score active_application').sort({ timestamp: 1 }).lean(),
+      }).select('timestamp keystroke_count mouse_activity_score mouse_event_count idle_duration interval_seconds app_category productivity_score active_application').sort({ timestamp: 1 }).lean(),
       ScreenCapture.find({
         employee: employeeId,
         timestamp: { $gte: start, $lte: end }
@@ -963,111 +981,41 @@ router.get('/reports/:employeeId', async (req, res) => {
         employee: employeeId,
         timestamp: { $gte: start, $lte: end }
       }).select('timestamp alert_type severity description').lean(),
-      (async () => {
-        try {
-          const Attendance = require('../models/Attendance');
-          return await Attendance.find({
-            user: employeeId,
-            $or: [
-              { date: { $gte: start, $lte: end } },
-              { startDayTime: { $gte: start, $lte: end } }
-            ]
-          }).lean();
-        } catch (e) {
-          return [];
-        }
-      })()
+      resolveSessionsMap([employeeId], start, end)
     ]);
 
-    const getLocalDateStr = (dateVal) => {
-      if (!dateVal) return null;
-      const d = dateVal instanceof Date ? dateVal : new Date(dateVal);
-      if (isNaN(d.getTime())) return null;
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      return `${y}-${m}-${day}`;
-    };
+    const activitiesByDate = {};
+    activities.forEach(act => {
+      if (!act || !act.timestamp) return;
+      const dateKey = getLocalDateKey(act.timestamp);
+      if (!dateKey) return;
+      if (!activitiesByDate[dateKey]) activitiesByDate[dateKey] = [];
+      activitiesByDate[dateKey].push(act);
+    });
 
-    // Build day map across date range
     const dailyMetricsMap = {};
     const curr = new Date(start);
     while (curr <= end) {
-      const dateKey = getLocalDateStr(curr);
+      const dateKey = getLocalDateKey(curr);
+      const dayLogs = activitiesByDate[dateKey] || [];
+      const sessionInfo = sessionsMap.get(`${employeeId}_${dateKey}`) || null;
+      const metrics = summarizeActivitiesWithSession(dayLogs, sessionInfo);
+      const hNum = Math.floor(metrics.activeSeconds / 3600);
+      const mNum = Math.floor((metrics.activeSeconds % 3600) / 60);
       dailyMetricsMap[dateKey] = {
         date: dateKey,
-        totalActivities: 0,
-        keystrokeSum: 0,
-        mouseScoreSum: 0,
-        productivitySum: 0,
-        idleSeconds: 0,
-        activeSeconds: 0
+        totalActivities: metrics.logCount,
+        avgProductivityScore: metrics.avgProductivityScore,
+        activeHours: Math.round((metrics.activeSeconds / 3600) * 10) / 10,
+        activeHoursFormatted: `${hNum}h ${mNum}m`,
+        activeSeconds: metrics.activeSeconds,
+        totalKeystroke: metrics.totalKeystrokes,
+        avgMouseActivity: metrics.avgMouseActivity
       };
       curr.setDate(curr.getDate() + 1);
     }
 
-    // Populate activity data into daily map
-    activities.forEach(act => {
-      if (!act || !act.timestamp) return;
-      const dateKey = getLocalDateStr(act.timestamp);
-      if (dailyMetricsMap[dateKey]) {
-        const item = dailyMetricsMap[dateKey];
-        item.totalActivities++;
-        item.keystrokeSum += (act.keystroke_count || 0);
-        item.mouseScoreSum += (act.mouse_activity_score || 0);
-        item.productivitySum += (act.productivity_score || 0);
-
-        const isActive = (act.keystroke_count || 0) > 0 || (act.mouse_activity_score || 0) >= 15;
-        let idle = 0;
-        if (!isActive) {
-          let raw = act.idle_duration || 0;
-          if (raw > 10000) raw = Math.round(raw / 1000);
-          idle = Math.min(30, Math.max(0, raw));
-        }
-        item.idleSeconds += idle;
-        item.activeSeconds += Math.max(0, 30 - idle);
-      }
-    });
-
-    // Merge official attendance if available
-    attendances.forEach(att => {
-      const dateKey = getLocalDateStr(att.date || att.startDayTime);
-      if (dateKey && dailyMetricsMap[dateKey]) {
-        const item = dailyMetricsMap[dateKey];
-        let sec = 0;
-        if (att.hoursWorked > 0) {
-          sec = Math.round(att.hoursWorked * 3600);
-        } else if (att.startDayTime) {
-          const isToday = getLocalDateStr(new Date()) === dateKey;
-          const endSession = att.endDayTime ? new Date(att.endDayTime) : (isToday ? new Date() : end);
-          sec = Math.max(0, Math.floor((endSession - new Date(att.startDayTime)) / 1000));
-        }
-        if (sec > 0) {
-          item.activeSeconds = Math.max(item.activeSeconds, sec);
-        }
-      }
-    });
-
-    const dailyMetrics = Object.values(dailyMetricsMap).map(day => {
-      const avgProd = day.totalActivities > 0 ? Math.round(day.productivitySum / day.totalActivities) : 0;
-      const avgMouse = day.totalActivities > 0 ? Math.round(day.mouseScoreSum / day.totalActivities) : 0;
-      const activeH = Math.round((day.activeSeconds / 3600) * 10) / 10;
-      const hNum = Math.floor(day.activeSeconds / 3600);
-      const mNum = Math.round((day.activeSeconds % 3600) / 60);
-      const activeHoursFormatted = day.totalActivities > 0 && day.activeSeconds > 0
-        ? `${hNum}h ${mNum}m`
-        : (day.totalActivities > 0 ? '0h 1m' : '0h 0m');
-      return {
-        date: day.date,
-        totalActivities: day.totalActivities,
-        avgProductivityScore: avgProd,
-        activeHours: activeH,
-        activeHoursFormatted,
-        activeSeconds: day.activeSeconds,
-        totalKeystroke: day.keystrokeSum,
-        avgMouseActivity: avgMouse
-      };
-    });
+    const dailyMetrics = Object.values(dailyMetricsMap);
 
     // Screenshot statistics
     const byTrigger = {};
@@ -1666,7 +1614,7 @@ router.get('/team-summary', async (req, res) => {
       employee: { $in: empIds },
       timestamp: { $gte: startOfDay, $lte: endOfDay }
     })
-    .select('employee keystroke_count mouse_activity_score idle_duration productivity_score active_application timestamp')
+    .select('employee keystroke_count mouse_activity_score mouse_event_count idle_duration interval_seconds app_category productivity_score active_application timestamp')
     .sort({ timestamp: -1 })
     .lean();
 
@@ -1701,111 +1649,48 @@ router.get('/team-summary', async (req, res) => {
       }
     }
 
-    // Fetch today's official Attendance sessions to synchronize working hours with Work Hours Manager
-    const Attendance = require('../models/Attendance');
-    const todayAttendances = await Attendance.find({
-      user: { $in: empIds },
-      $or: [
-        { date: { $gte: startOfDay, $lte: endOfDay } },
-        { startDayTime: { $gte: startOfDay, $lte: endOfDay } }
-      ]
-    }).lean();
-
-    const attendanceByEmp = new Map();
-    for (const att of todayAttendances) {
-      attendanceByEmp.set(att.user.toString(), att);
-    }
+    // Synchronize working hours across WorkSession, Attendance, and DailyAttendance
+    const todayDateKey = getLocalDateKey(startOfDay);
+    const sessionsMap = await resolveSessionsMap(empIds, startOfDay, endOfDay);
 
     const teamData = employees.map((emp) => {
       const empIdStr = emp._id.toString();
       const activities = todayActivitiesByEmp.get(empIdStr) || [];
-
       let latestLog = activities[0] || latestHistoricalLogByEmp.get(empIdStr) || null;
-      let logsToProcess = activities;
-      
-      let totalKeystrokes = 0;
-      let totalMouseScore = 0;
-      let activeMouseSamples = 0;
-      let totalIdleSeconds = 0;
-      let totalProductivityScore = 0;
-      let activeSeconds = 0;
+      const sessionInfo = sessionsMap.get(`${empIdStr}_${todayDateKey}`) || null;
 
-      if (logsToProcess.length > 0) {
-        logsToProcess.forEach(act => {
-          totalKeystrokes += (act.keystroke_count || 0);
-          totalMouseScore += (act.mouse_activity_score || 0);
-          if ((act.mouse_activity_score || 0) > 0) {
-            activeMouseSamples++;
-          }
-          
-          // If employee had keystrokes or mouse movement in this 30s window, they were active!
-          const isActActive = (act.keystroke_count || 0) > 0 || (act.mouse_activity_score || 0) >= 15;
-          let idleVal = 0;
-          if (!isActActive) {
-            let rawIdle = (act.idle_duration || 0);
-            if (rawIdle > 10000) rawIdle = Math.round(rawIdle / 1000);
-            idleVal = Math.min(30, rawIdle > 0 ? rawIdle : 30);
-          }
-          totalIdleSeconds += idleVal;
-          totalProductivityScore += (act.productivity_score || 0);
-        });
-
-        // Estimated active duration based on log counts (assuming ~30s interval per log) minus idle
-        const totalLogSeconds = logsToProcess.length * 30;
-        activeSeconds = Math.max(0, totalLogSeconds - totalIdleSeconds);
+      if (emp.stillExist === 0) {
+        return {
+          _id: emp._id,
+          name: emp.name,
+          email: emp.email,
+          department: emp.department?.name || 'General',
+          stillExist: 0,
+          currentStatus: 'Exited',
+          hasStartedDay: false,
+          startDayTime: null,
+          productivityScore: 0,
+          activeHours: '0h 0m',
+          activeSeconds: 0,
+          idleTime: '0m',
+          idleSeconds: 0,
+          keystrokesToday: 0,
+          mouseActivity: 0,
+          currentActivity: {
+            appName: 'Account Inactive (Exited)',
+            windowTitle: 'Exited',
+            url: ''
+          },
+          productivityEfficiency: 'Exited',
+          lastActiveTimestamp: latestLog?.timestamp || null
+        };
       }
 
-      // Synchronize with official Attendance session (Work Hours Manager)
-      const att = attendanceByEmp.get(empIdStr);
-      let attendanceElapsedSec = 0;
-      if (att && att.startDayTime) {
-        const sessionEnd = att.endDayTime ? new Date(att.endDayTime) : new Date();
-        const maxSessionSec = Math.max(0, Math.floor((sessionEnd - new Date(att.startDayTime)) / 1000));
-        
-        if (att.endDayTime && att.hoursWorked > 0) {
-          // Completed session: use validated hoursWorked, capped by physical session duration
-          attendanceElapsedSec = Math.min(maxSessionSec, Math.round(att.hoursWorked * 3600));
-        } else {
-          // Active ongoing session: cannot exceed physical elapsed time since check-in!
-          attendanceElapsedSec = maxSessionSec;
-        }
-      }
-
-      if (attendanceElapsedSec > 0) {
-        activeSeconds = Math.max(activeSeconds, attendanceElapsedSec);
-      }
-
-      let avgMouseActivity = 0;
-      let avgProductivityScore = 0;
-      let productivityEfficiency = 'No Activity';
-
-      if (logsToProcess.length > 0) {
-        avgMouseActivity = activeMouseSamples > 0 ? Math.round(totalMouseScore / activeMouseSamples) : 0;
-        avgProductivityScore = Math.round(totalProductivityScore / logsToProcess.length);
-        if (avgProductivityScore >= 60) {
-          productivityEfficiency = 'High Efficiency';
-        } else if (avgProductivityScore >= 40) {
-          productivityEfficiency = 'Moderate Efficiency';
-        } else {
-          productivityEfficiency = 'Low Efficiency';
-        }
-      } else {
-        // Zero logs today - preserve attendance active hours if checked in
-        activeSeconds = attendanceElapsedSec > 0 ? attendanceElapsedSec : 0;
-        totalIdleSeconds = 0;
-        totalKeystrokes = 0;
-        avgMouseActivity = 0;
-        avgProductivityScore = 0;
-        productivityEfficiency = emp.stillExist === 0 ? 'Exited' : (attendanceElapsedSec > 0 ? 'Moderate Efficiency' : 'No Activity');
-      }
-
-      const hasStartedDay = Boolean((att && att.startDayTime) || logsToProcess.length > 0 || activeSeconds > 0);
+      const metrics = summarizeActivitiesWithSession(activities, sessionInfo);
 
       // Current status calculation
       let currentStatus = 'Away';
-      if (emp.stillExist === 0) {
-        currentStatus = 'Exited';
-      } else if (latestLog) {
+      if (latestLog && activities.length > 0) {
         const timeSinceLastLogSec = (new Date() - new Date(latestLog.timestamp)) / 1000;
         if (timeSinceLastLogSec <= 300) {
           currentStatus = (latestLog.idle_duration || 0) > 300 ? 'Idle' : 'Active';
@@ -1814,14 +1699,12 @@ router.get('/team-summary', async (req, res) => {
         } else {
           currentStatus = 'Away';
         }
-      } else if (att && att.startDayTime && !att.endDayTime) {
-        currentStatus = 'Idle';
-      } else {
-        currentStatus = 'Away';
+      } else if (metrics.hasStartedDay) {
+        currentStatus = 'Active';
       }
 
-      const activeHoursFormatted = `${Math.floor(activeSeconds / 3600)}h ${Math.floor((activeSeconds % 3600) / 60)}m`;
-      const idleTimeFormatted = `${Math.floor(totalIdleSeconds / 60)}m`;
+      const activeHoursFormatted = `${Math.floor(metrics.activeSeconds / 3600)}h ${Math.floor((metrics.activeSeconds % 3600) / 60)}m`;
+      const idleTimeFormatted = `${Math.floor(metrics.totalIdleSeconds / 60)}m`;
       const historicalLastLog = latestHistoricalLogByEmp.get(empIdStr);
 
       return {
@@ -1831,21 +1714,21 @@ router.get('/team-summary', async (req, res) => {
         department: emp.department?.name || 'General',
         stillExist: emp.stillExist,
         currentStatus,
-        hasStartedDay,
-        startDayTime: att?.startDayTime || null,
-        productivityScore: avgProductivityScore,
+        hasStartedDay: metrics.hasStartedDay,
+        startDayTime: metrics.startDayTime,
+        productivityScore: metrics.avgProductivityScore,
         activeHours: activeHoursFormatted,
-        activeSeconds,
+        activeSeconds: metrics.activeSeconds,
         idleTime: idleTimeFormatted,
-        idleSeconds: totalIdleSeconds,
-        keystrokesToday: totalKeystrokes,
-        mouseActivity: avgMouseActivity,
+        idleSeconds: metrics.totalIdleSeconds,
+        keystrokesToday: metrics.totalKeystrokes,
+        mouseActivity: metrics.avgMouseActivity,
         currentActivity: {
-          appName: latestLog?.active_application?.name || (emp.stillExist === 0 ? 'Account Inactive (Exited)' : 'No Active Session'),
-          windowTitle: latestLog?.active_application?.title || (emp.stillExist === 0 ? 'Exited' : 'Away / Offline'),
+          appName: latestLog?.active_application?.name || (metrics.hasStartedDay ? 'Workspace Active' : 'No Active Session'),
+          windowTitle: latestLog?.active_application?.title || (metrics.hasStartedDay ? 'Session active' : 'Away / Offline'),
           url: latestLog?.active_application?.url || ''
         },
-        productivityEfficiency,
+        productivityEfficiency: metrics.productivityEfficiency,
         lastActiveTimestamp: latestLog?.timestamp || historicalLastLog?.timestamp || null
       };
     });
@@ -1900,13 +1783,10 @@ router.get('/team-summary', async (req, res) => {
 router.get('/daily-summary', async (req, res) => {
   try {
     const { date, department = 'all', statusTab = 'active' } = req.query;
-    const targetDate = date ? new Date(date) : new Date();
+    const targetDate = parseLocalDateParam(date);
 
-    const startOfDay = new Date(targetDate);
-    startOfDay.setHours(0, 0, 0, 0);
-
-    const endOfDay = new Date(targetDate);
-    endOfDay.setHours(23, 59, 59, 999);
+    const startOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 0, 0, 0, 0);
+    const endOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 23, 59, 59, 999);
 
     let userQuery = { role: { $nin: ['admin', 'Admin'] } };
 
@@ -1932,7 +1812,7 @@ router.get('/daily-summary', async (req, res) => {
       employee: { $in: activeEmpIds },
       timestamp: { $gte: startOfDay, $lte: endOfDay }
     })
-    .select('employee keystroke_count mouse_activity_score idle_duration productivity_score active_application timestamp')
+    .select('employee keystroke_count mouse_activity_score mouse_event_count idle_duration interval_seconds app_category productivity_score active_application timestamp')
     .sort({ timestamp: 1 })
     .lean();
 
@@ -1945,20 +1825,9 @@ router.get('/daily-summary', async (req, res) => {
       activitiesByEmp.get(empIdStr).push(act);
     }
 
-    // Fetch official Attendance sessions for this date to synchronize working hours with Work Hours Manager
-    const Attendance = require('../models/Attendance');
-    const dayAttendances = await Attendance.find({
-      user: { $in: activeEmpIds },
-      $or: [
-        { date: { $gte: startOfDay, $lte: endOfDay } },
-        { startDayTime: { $gte: startOfDay, $lte: endOfDay } }
-      ]
-    }).lean();
-
-    const attendanceByEmp = new Map();
-    for (const att of dayAttendances) {
-      attendanceByEmp.set(att.user.toString(), att);
-    }
+    // Synchronize working hours across WorkSession, Attendance, and DailyAttendance
+    const targetDateKey = getLocalDateKey(startOfDay);
+    const sessionsMap = await resolveSessionsMap(activeEmpIds, startOfDay, endOfDay);
 
     let totalTeamKeystrokes = 0;
     let totalTeamActiveSeconds = 0;
@@ -1988,96 +1857,18 @@ router.get('/daily-summary', async (req, res) => {
         };
       }
 
-      const activities = activitiesByEmp.get(emp._id.toString()) || [];
+      const empIdStr = emp._id.toString();
+      const activities = activitiesByEmp.get(empIdStr) || [];
+      const sessionInfo = sessionsMap.get(`${empIdStr}_${targetDateKey}`) || null;
+      const metrics = summarizeActivitiesWithSession(activities, sessionInfo);
 
-      let totalKeystrokes = 0;
-      let totalMouseScore = 0;
-      let totalIdleSeconds = 0;
-      let totalProductivityScore = 0;
-      const appUsageMap = {};
-
-      activities.forEach(act => {
-        totalKeystrokes += (act.keystroke_count || 0);
-        totalMouseScore += (act.mouse_activity_score || 0);
-
-        // If employee had keystrokes or mouse movement in this 30s window, they were active!
-        const isActActive = (act.keystroke_count || 0) > 0 || (act.mouse_activity_score || 0) >= 15;
-        let idleVal = 0;
-        if (!isActActive) {
-          let rawIdle = (act.idle_duration || 0);
-          if (rawIdle > 10000) rawIdle = Math.round(rawIdle / 1000);
-          idleVal = Math.min(30, Math.max(0, rawIdle));
-        }
-        totalIdleSeconds += idleVal;
-        totalProductivityScore += (act.productivity_score || 0);
-
-        const appName = act.active_application?.name || 'Other';
-        appUsageMap[appName] = (appUsageMap[appName] || 0) + 1;
-      });
-
-      let logCount = activities.length;
-      let totalLogSeconds = logCount * 30;
-      let activeSeconds = Math.max(0, totalLogSeconds - totalIdleSeconds);
-
-      // Synchronize with official Attendance session (Work Hours Manager)
-      const att = attendanceByEmp.get(emp._id.toString());
-      let attendanceElapsedSec = 0;
-      if (att && att.startDayTime) {
-        const isSelectedDateToday = targetDate.toDateString() === new Date().toDateString();
-        const sessionEnd = att.endDayTime ? new Date(att.endDayTime) : (isSelectedDateToday ? new Date() : endOfDay);
-        const maxSessionSec = Math.max(0, Math.floor((sessionEnd - new Date(att.startDayTime)) / 1000));
-        
-        if (att.endDayTime && att.hoursWorked > 0) {
-          attendanceElapsedSec = Math.min(maxSessionSec, Math.round(att.hoursWorked * 3600));
-        } else {
-          attendanceElapsedSec = maxSessionSec;
-        }
-      }
-
-      if (attendanceElapsedSec > 0) {
-        activeSeconds = Math.max(activeSeconds, attendanceElapsedSec);
-      }
-
-      let avgMouseActivity = 0;
-      let avgProductivityScore = 0;
-      let productivityEfficiency = 'No Activity';
-
-      if (logCount > 0) {
-        avgMouseActivity = Math.round(totalMouseScore / logCount);
-        avgProductivityScore = Math.round(totalProductivityScore / logCount);
-        totalTeamKeystrokes += totalKeystrokes;
-        totalTeamActiveSeconds += activeSeconds;
-        totalTeamIdleSeconds += totalIdleSeconds;
-        teamProductivitySum += avgProductivityScore;
+      if (metrics.hasActivity) {
+        totalTeamKeystrokes += metrics.totalKeystrokes;
+        totalTeamActiveSeconds += metrics.activeSeconds;
+        totalTeamIdleSeconds += metrics.totalIdleSeconds;
+        teamProductivitySum += metrics.avgProductivityScore;
         activeEmployeeCount++;
-
-        if (avgProductivityScore >= 60) {
-          productivityEfficiency = 'High Efficiency';
-        } else if (avgProductivityScore >= 40) {
-          productivityEfficiency = 'Moderate Efficiency';
-        } else {
-          productivityEfficiency = 'Low Efficiency';
-        }
-      } else {
-        // Zero logs today - preserve attendance active hours if checked in
-        activeSeconds = attendanceElapsedSec > 0 ? attendanceElapsedSec : 0;
-        totalIdleSeconds = 0;
-        totalKeystrokes = 0;
-        avgMouseActivity = 0;
-        avgProductivityScore = 0;
-        productivityEfficiency = emp.stillExist === 0 ? 'Exited' : (attendanceElapsedSec > 0 ? 'Moderate Efficiency' : 'No Activity');
-        if (activeSeconds > 0) {
-          totalTeamActiveSeconds += activeSeconds;
-          activeEmployeeCount++;
-        }
       }
-
-      const hasStartedDay = Boolean((att && att.startDayTime) || logCount > 0 || activeSeconds > 0);
-
-      const appDetails = Object.entries(appUsageMap)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 4)
-        .map(([name, count]) => ({ name, count }));
 
       return {
         employeeId: emp._id,
@@ -2085,17 +1876,17 @@ router.get('/daily-summary', async (req, res) => {
         email: emp.email,
         department: emp.department?.name || 'General',
         stillExist: emp.stillExist,
-        hasStartedDay,
-        startDayTime: att?.startDayTime || null,
-        totalActiveHours: `${Math.floor(activeSeconds / 3600)}h ${Math.floor((activeSeconds % 3600) / 60)}m`,
-        activeSeconds,
-        totalIdleTime: `${Math.floor(totalIdleSeconds / 60)}m`,
-        idleSeconds: totalIdleSeconds,
-        productivityScore: avgProductivityScore,
-        keystrokes: totalKeystrokes,
-        mouseActivity: avgMouseActivity,
-        activityDetails: appDetails.length > 0 ? appDetails : [{ name: 'Workspace Active', count: 1 }],
-        productivityEfficiency
+        hasStartedDay: metrics.hasStartedDay,
+        startDayTime: metrics.startDayTime,
+        totalActiveHours: `${Math.floor(metrics.activeSeconds / 3600)}h ${Math.floor((metrics.activeSeconds % 3600) / 60)}m`,
+        activeSeconds: metrics.activeSeconds,
+        totalIdleTime: `${Math.floor(metrics.totalIdleSeconds / 60)}m`,
+        idleSeconds: metrics.totalIdleSeconds,
+        productivityScore: metrics.avgProductivityScore,
+        keystrokes: metrics.totalKeystrokes,
+        mouseActivity: metrics.avgMouseActivity,
+        activityDetails: metrics.appDetails.length > 0 ? metrics.appDetails : [{ name: 'Workspace Active', count: 1 }],
+        productivityEfficiency: metrics.productivityEfficiency
       };
     });
 
@@ -2116,9 +1907,7 @@ router.get('/daily-summary', async (req, res) => {
       ? Math.round(teamProductivitySum / activeEmployeeCount)
       : 0;
 
-    let overallEfficiency = 'Low Efficiency';
-    if (avgTeamProductivity >= 60) overallEfficiency = 'High Efficiency';
-    else if (avgTeamProductivity >= 40) overallEfficiency = 'Moderate Efficiency';
+    const overallEfficiency = getEfficiencyLabel(avgTeamProductivity, activeEmployeeCount > 0);
 
     const responseDateStr = date || `${startOfDay.getFullYear()}-${String(startOfDay.getMonth() + 1).padStart(2, '0')}-${String(startOfDay.getDate()).padStart(2, '0')}`;
     res.json({
@@ -2184,7 +1973,7 @@ router.get('/monthly-summary', async (req, res) => {
         employee: { $in: activeEmpIds },
         timestamp: { $gte: startOfMonth, $lte: endOfMonth }
       })
-      .select('employee timestamp keystroke_count mouse_activity_score idle_duration productivity_score')
+      .select('employee timestamp keystroke_count mouse_activity_score mouse_event_count idle_duration interval_seconds app_category productivity_score')
       .sort({ timestamp: 1 })
       .lean()
       .limit(300000);
@@ -2192,188 +1981,74 @@ router.get('/monthly-summary', async (req, res) => {
       console.warn('⚠️ Monthly logs query encountered issue, proceeding with fallback telemetry:', dbErr.message);
     }
 
-    // Query official Attendance & DailyAttendance records for the month to sync active hours with Work Hours Manager
-    const Attendance = require('../models/Attendance');
-    const DailyAttendance = require('../models/DailyAttendance');
-    let monthlyAttendances = [];
-    try {
-      const [classicAtt, dailyAtt] = await Promise.all([
-        Attendance.find({
-          user: { $in: activeEmpIds },
-          $or: [
-            { date: { $gte: startOfMonth, $lte: endOfMonth } },
-            { startDayTime: { $gte: startOfMonth, $lte: endOfMonth } }
-          ]
-        }).select('user date startDayTime endDayTime hoursWorked').lean().catch(() => []),
-        DailyAttendance.find({
-          user: { $in: activeEmpIds },
-          $or: [
-            { date: { $gte: startOfMonth, $lte: endOfMonth } },
-            { startDayTime: { $gte: startOfMonth, $lte: endOfMonth } }
-          ]
-        }).select('user date startDayTime endDayTime totalHoursWorked').lean().catch(() => [])
-      ]);
+    // Unified WorkSession + Attendance + DailyAttendance map keyed by `${empId}_${YYYY-MM-DD}`
+    const sessionsMap = await resolveSessionsMap(activeEmpIds, startOfMonth, endOfMonth, now);
+    const nowLocalDateStr = getLocalDateKey(now);
 
-      // Normalize and combine, avoiding duplicate dates for same user
-      const seenUserDates = new Set();
-      classicAtt.forEach(att => {
-        const uId = att.user ? att.user.toString() : '';
-        const dStr = att.date ? new Date(att.date).toDateString() : (att.startDayTime ? new Date(att.startDayTime).toDateString() : '');
-        if (uId && dStr) seenUserDates.add(`${uId}_${dStr}`);
-        monthlyAttendances.push(att);
-      });
-      dailyAtt.forEach(att => {
-        const uId = att.user ? att.user.toString() : '';
-        const dStr = att.date ? new Date(att.date).toDateString() : (att.startDayTime ? new Date(att.startDayTime).toDateString() : '');
-        if (uId && dStr && !seenUserDates.has(`${uId}_${dStr}`)) {
-          monthlyAttendances.push({
-            user: att.user,
-            date: att.date,
-            startDayTime: att.startDayTime,
-            endDayTime: att.endDayTime,
-            hoursWorked: att.totalHoursWorked || 0
-          });
-        }
-      });
-    } catch (attErr) {
-      console.warn('⚠️ Monthly attendances query error:', attErr.message);
-    }
-
-    const empAttendanceSecMap = new Map();
-    const dayAttendanceSecMap = new Map();
+    // Group logs by `${empId}_${dateKey}` and `${dateKey}` for unified evaluation
+    const logsByEmpDate = new Map();
     const empStartedTodayMap = new Map();
-    const nowLocalDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
-    monthlyAttendances.forEach(att => {
-      const uId = att.user ? att.user.toString() : null;
-      if (!uId) return;
-
-      let dateStr = '';
-      if (att.date) {
-        try {
-          const dObj = new Date(att.date);
-          dateStr = `${dObj.getFullYear()}-${String(dObj.getMonth() + 1).padStart(2, '0')}-${String(dObj.getDate()).padStart(2, '0')}`;
-        } catch (e) {}
-      }
-      if (!dateStr && att.startDayTime) {
-        try {
-          const dObj = new Date(att.startDayTime);
-          dateStr = `${dObj.getFullYear()}-${String(dObj.getMonth() + 1).padStart(2, '0')}-${String(dObj.getDate()).padStart(2, '0')}`;
-        } catch (e) {}
-      }
-
-      let sec = 0;
-      if (att.hoursWorked > 0) {
-        sec = Math.round(att.hoursWorked * 3600);
-      } else if (att.startDayTime) {
-        const isToday = dateStr === nowLocalDateStr;
-        // Cap unended sessions on past days to 8 hours max, preventing multi-hundred hour corruption
-        const endSession = att.endDayTime 
-          ? new Date(att.endDayTime) 
-          : (isToday ? new Date() : new Date(new Date(att.startDayTime).getTime() + 8 * 3600 * 1000));
-        sec = Math.min(10 * 3600, Math.max(0, Math.floor((endSession - new Date(att.startDayTime)) / 1000)));
-      }
-
-      if (dateStr === nowLocalDateStr && att.startDayTime) {
-        empStartedTodayMap.set(uId, true);
-      }
-
-      empAttendanceSecMap.set(uId, (empAttendanceSecMap.get(uId) || 0) + sec);
-      if (dateStr) {
-        dayAttendanceSecMap.set(dateStr, (dayAttendanceSecMap.get(dateStr) || 0) + sec);
-      }
-    });
-
-    const daysInMonth = endOfMonth.getDate();
-    const dayByDayMap = {};
-
-    for (let d = 1; d <= daysInMonth; d++) {
-      const dateStr = `${year}-${String(monthIdx + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      dayByDayMap[dateStr] = {
-        date: dateStr,
-        day: d,
-        activeSeconds: 0,
-        idleSeconds: 0,
-        keystrokes: 0,
-        productivitySum: 0,
-        count: 0
-      };
-    }
-
-    const employeeMonthlyMap = {};
-    employees.forEach(emp => {
-      employeeMonthlyMap[emp._id.toString()] = {
-        employeeId: emp._id,
-        name: emp.name,
-        email: emp.email,
-        department: emp.department?.name || 'General',
-        stillExist: emp.stillExist,
-        totalKeystrokes: 0,
-        totalMouseScore: 0,
-        totalIdleSeconds: 0,
-        totalProductivityScore: 0,
-        logCount: 0
-      };
-    });
-
-    allMonthlyLogs.forEach(log => {
-      if (!log || !log.timestamp) return;
-      let dateStr = '';
-      try {
-        dateStr = log.timestamp instanceof Date ? log.timestamp.toISOString().split('T')[0] : new Date(log.timestamp).toISOString().split('T')[0];
-      } catch (e) {
-        return;
-      }
+    for (const log of allMonthlyLogs) {
+      if (!log || !log.timestamp) continue;
+      const dateStr = getLocalDateKey(log.timestamp);
       const empIdStr = log.employee ? log.employee.toString() : '';
+      if (!dateStr || !empIdStr) continue;
 
       if (dateStr === nowLocalDateStr) {
         empStartedTodayMap.set(empIdStr, true);
       }
 
-      const isLogActive = (log.keystroke_count || 0) > 0 || (log.mouse_activity_score || 0) >= 15;
-      let idleVal = 0;
-      if (!isLogActive) {
-        let rawIdle = (log.idle_duration || 0);
-        if (rawIdle > 10000) rawIdle = Math.round(rawIdle / 1000);
-        idleVal = Math.min(30, Math.max(0, rawIdle));
-      }
+      const key = `${empIdStr}_${dateStr}`;
+      if (!logsByEmpDate.has(key)) logsByEmpDate.set(key, []);
+      logsByEmpDate.get(key).push(log);
+    }
 
-      if (dayByDayMap[dateStr]) {
-        dayByDayMap[dateStr].keystrokes += (log.keystroke_count || 0);
-        dayByDayMap[dateStr].idleSeconds += idleVal;
-        dayByDayMap[dateStr].productivitySum += (log.productivity_score || 0);
-        dayByDayMap[dateStr].count++;
-        dayByDayMap[dateStr].activeSeconds += Math.max(0, 30 - idleVal);
-      }
-
-      if (employeeMonthlyMap[empIdStr]) {
-        const empData = employeeMonthlyMap[empIdStr];
-        empData.totalKeystrokes += (log.keystroke_count || 0);
-        empData.totalMouseScore += (log.mouse_activity_score || 0);
-        empData.totalIdleSeconds += idleVal;
-        empData.totalProductivityScore += (log.productivity_score || 0);
-        empData.logCount++;
+    sessionsMap.forEach((sess) => {
+      if (sess.dateKey === nowLocalDateStr) {
+        empStartedTodayMap.set(sess.empId, true);
       }
     });
 
-    // Process Day-by-Day chart array incorporating attendance
-    const dayByDayBreakdown = Object.values(dayByDayMap).map(day => {
-      const avgProd = day.count > 0 ? Math.round(day.productivitySum / day.count) : 0;
-      const attDaySec = dayAttendanceSecMap.get(day.date) || 0;
-      const effectiveDayActiveSec = Math.max(day.activeSeconds, attDaySec);
-      const activeHours = Math.round((effectiveDayActiveSec / 3600) * 10) / 10;
-      const idleHours = Math.round((day.idleSeconds / 3600) * 10) / 10;
-      return {
-        date: day.date,
-        day: day.day,
-        activeHours,
-        idleHours,
-        avgProductivityScore: avgProd,
-        keystrokes: day.keystrokes
-      };
-    });
+    const daysInMonth = endOfMonth.getDate();
+    const dayByDayBreakdown = [];
 
-    // Process Employee performance array
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = `${year}-${String(monthIdx + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      let dayActiveSec = 0;
+      let dayIdleSec = 0;
+      let dayKeystrokes = 0;
+      let dayProdSum = 0;
+      let dayActiveEmpCount = 0;
+
+      for (const emp of employees) {
+        if (emp.stillExist === 0) continue;
+        const empIdStr = emp._id.toString();
+        const dayLogs = logsByEmpDate.get(`${empIdStr}_${dateStr}`) || [];
+        const sessionInfo = sessionsMap.get(`${empIdStr}_${dateStr}`) || null;
+        if (dayLogs.length > 0 || sessionInfo) {
+          const metrics = summarizeActivitiesWithSession(dayLogs, sessionInfo);
+          if (metrics.hasActivity) {
+            dayActiveSec += metrics.activeSeconds;
+            dayIdleSec += metrics.totalIdleSeconds;
+            dayKeystrokes += metrics.totalKeystrokes;
+            dayProdSum += metrics.avgProductivityScore;
+            dayActiveEmpCount++;
+          }
+        }
+      }
+
+      dayByDayBreakdown.push({
+        date: dateStr,
+        day: d,
+        activeHours: Math.round((dayActiveSec / 3600) * 10) / 10,
+        idleHours: Math.round((dayIdleSec / 3600) * 10) / 10,
+        avgProductivityScore: dayActiveEmpCount > 0 ? Math.round(dayProdSum / dayActiveEmpCount) : 0,
+        keystrokes: dayKeystrokes
+      });
+    }
+
+    // Process Employee performance array using exact per-day worked aggregation
     let totalTeamActiveSec = 0;
     let totalTeamIdleSec = 0;
     let totalTeamKeystrokes = 0;
@@ -2381,15 +2056,16 @@ router.get('/monthly-summary', async (req, res) => {
     let totalTeamProdSum = 0;
     let activeEmpCount = 0;
 
-    const employeePerformance = Object.values(employeeMonthlyMap).map(emp => {
+    const employeePerformance = employees.map(emp => {
+      const empIdStr = emp._id.toString();
       const isExited = emp.stillExist === 0;
 
       if (isExited) {
         return {
-          employeeId: emp.employeeId,
+          employeeId: emp._id,
           name: emp.name,
           email: emp.email,
-          department: emp.department,
+          department: emp.department?.name || 'General',
           stillExist: 0,
           totalActiveHours: '0h 0m',
           activeSeconds: 0,
@@ -2403,53 +2079,61 @@ router.get('/monthly-summary', async (req, res) => {
         };
       }
 
-      let activeSec = Math.max(0, (emp.logCount * 30) - emp.totalIdleSeconds);
-      const attSec = empAttendanceSecMap.get(emp.employeeId.toString()) || 0;
-      let effectiveActiveSec = Math.max(activeSec, attSec);
+      let empActiveSec = 0;
+      let empIdleSec = 0;
+      let empKeystrokes = 0;
+      let empMouseSum = 0;
+      let empMouseDays = 0;
+      let empProdSum = 0;
+      let empWorkedDays = 0;
 
-      let avgProd = emp.logCount > 0 ? Math.round(emp.totalProductivityScore / emp.logCount) : 0;
-      let avgMouse = emp.logCount > 0 ? Math.round(emp.totalMouseScore / emp.logCount) : 0;
-      let idleSec = emp.totalIdleSeconds;
-      let keystrokes = emp.totalKeystrokes;
-
-      if (emp.logCount === 0 && effectiveActiveSec === 0) {
-        avgProd = 0;
-        effectiveActiveSec = 0;
-        idleSec = 0;
-        keystrokes = 0;
-        avgMouse = 0;
+      for (let d = 1; d <= daysInMonth; d++) {
+        const dateStr = `${year}-${String(monthIdx + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const dayLogs = logsByEmpDate.get(`${empIdStr}_${dateStr}`) || [];
+        const sessionInfo = sessionsMap.get(`${empIdStr}_${dateStr}`) || null;
+        if (dayLogs.length > 0 || sessionInfo) {
+          const metrics = summarizeActivitiesWithSession(dayLogs, sessionInfo);
+          if (metrics.hasActivity) {
+            empActiveSec += metrics.activeSeconds;
+            empIdleSec += metrics.totalIdleSeconds;
+            empKeystrokes += metrics.totalKeystrokes;
+            empProdSum += metrics.avgProductivityScore;
+            empWorkedDays++;
+            if (metrics.avgMouseActivity > 0) {
+              empMouseSum += metrics.avgMouseActivity;
+              empMouseDays++;
+            }
+          }
+        }
       }
 
-      if (emp.logCount > 0 || effectiveActiveSec > 0) {
-        totalTeamActiveSec += effectiveActiveSec;
-        totalTeamIdleSec += idleSec;
-        totalTeamKeystrokes += keystrokes;
+      const avgProd = empWorkedDays > 0 ? Math.round(empProdSum / empWorkedDays) : 0;
+      const avgMouse = empMouseDays > 0 ? Math.round(empMouseSum / empMouseDays) : 0;
+
+      if (empWorkedDays > 0) {
+        totalTeamActiveSec += empActiveSec;
+        totalTeamIdleSec += empIdleSec;
+        totalTeamKeystrokes += empKeystrokes;
         totalTeamMouseScore += avgMouse;
         totalTeamProdSum += avgProd;
         activeEmpCount++;
       }
 
-      let efficiency = 'No Activity';
-      if (emp.logCount > 0 || effectiveActiveSec > 0) {
-        if (avgProd >= 60) efficiency = 'High Efficiency';
-        else if (avgProd >= 40) efficiency = 'Moderate Efficiency';
-        else efficiency = 'Low Efficiency';
-      }
-
-      const hasStartedToday = Boolean(empStartedTodayMap.get(emp.employeeId.toString()) || effectiveActiveSec > 0);
+      const efficiency = getEfficiencyLabel(avgProd, empWorkedDays > 0);
+      const hasStartedToday = Boolean(empStartedTodayMap.get(empIdStr));
 
       return {
-        employeeId: emp.employeeId,
+        employeeId: emp._id,
         name: emp.name,
         email: emp.email,
-        department: emp.department,
+        department: emp.department?.name || 'General',
         stillExist: 1,
-        totalActiveHours: `${Math.floor(effectiveActiveSec / 3600)}h ${Math.floor((effectiveActiveSec % 3600) / 60)}m`,
-        activeSeconds: effectiveActiveSec,
-        totalIdleHours: `${Math.floor(idleSec / 3600)}h ${Math.floor((idleSec % 3600) / 60)}m`,
-        idleSeconds: idleSec,
+        totalActiveHours: `${Math.floor(empActiveSec / 3600)}h ${Math.floor((empActiveSec % 3600) / 60)}m`,
+        activeSeconds: empActiveSec,
+        totalIdleHours: `${Math.floor(empIdleSec / 3600)}h ${Math.floor((empIdleSec % 3600) / 60)}m`,
+        idleSeconds: empIdleSec,
         avgProductivityScore: avgProd,
-        totalKeystrokes: keystrokes,
+        totalKeystrokes: empKeystrokes,
         avgMouseActivity: avgMouse,
         productivityEfficiency: efficiency,
         hasStartedToday
@@ -2470,12 +2154,7 @@ router.get('/monthly-summary', async (req, res) => {
     });
 
     const overallAvgProductivity = activeEmpCount > 0 ? Math.round(totalTeamProdSum / activeEmpCount) : 0;
-    let overallProductivityEfficiency = 'No Activity';
-    if (activeEmpCount > 0) {
-      if (overallAvgProductivity >= 60) overallProductivityEfficiency = 'High Efficiency';
-      else if (overallAvgProductivity >= 40) overallProductivityEfficiency = 'Moderate Efficiency';
-      else overallProductivityEfficiency = 'Low Efficiency';
-    }
+    const overallProductivityEfficiency = getEfficiencyLabel(overallAvgProductivity, activeEmpCount > 0);
 
     res.json({
       success: true,
@@ -2528,128 +2207,56 @@ router.get('/monthly-employee-breakdown', async (req, res) => {
       employee: employeeId,
       timestamp: { $gte: startOfMonth, $lte: endOfMonth }
     })
-    .select('timestamp idle_duration keystroke_count mouse_activity_score productivity_score active_application.name')
+    .select('timestamp idle_duration interval_seconds keystroke_count mouse_activity_score mouse_event_count app_category productivity_score active_application.name')
     .sort({ timestamp: 1 })
     .lean();
 
     const daysInMonth = endOfMonth.getDate();
-    const dailyMap = {};
     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const dayShortNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const logsByDateMap = {};
 
     for (let d = 1; d <= daysInMonth; d++) {
-      const dateObj = new Date(year, monthIdx, d);
-      const dayOfWeek = dateObj.getDay();
       const dateStr = `${year}-${String(monthIdx + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      dailyMap[dateStr] = {
-        date: dateStr,
-        day: d,
-        dayOfWeek: dayNames[dayOfWeek],
-        dayShort: dayShortNames[dayOfWeek],
-        isWeekend: (dayOfWeek === 0 || dayOfWeek === 6),
-        keystrokes: 0,
-        mouseScoreSum: 0,
-        idleSeconds: 0,
-        productivitySum: 0,
-        logCount: 0,
-        appUsageMap: {}
-      };
+      logsByDateMap[dateStr] = [];
     }
 
     logs.forEach(log => {
-      if (!log || !log.timestamp) return;
-      let dateStr = '';
-      try {
-        dateStr = log.timestamp instanceof Date ? log.timestamp.toISOString().split('T')[0] : new Date(log.timestamp).toISOString().split('T')[0];
-      } catch (e) {
-        return;
-      }
-      if (dailyMap[dateStr]) {
-        const isLogActive = (log.keystroke_count || 0) > 0 || (log.mouse_activity_score || 0) >= 15;
-        let idleVal = 0;
-        if (!isLogActive) {
-          let rawIdle = (log.idle_duration || 0);
-          if (rawIdle > 10000) rawIdle = Math.round(rawIdle / 1000);
-          idleVal = Math.min(30, rawIdle > 0 ? rawIdle : 30);
-        }
-
-        dailyMap[dateStr].keystrokes += (log.keystroke_count || 0);
-        dailyMap[dateStr].mouseScoreSum += (log.mouse_activity_score || 0);
-        dailyMap[dateStr].idleSeconds += idleVal;
-        dailyMap[dateStr].productivitySum += (log.productivity_score || 0);
-        dailyMap[dateStr].logCount++;
-
-        const appName = log.active_application?.name || 'Workspace';
-        dailyMap[dateStr].appUsageMap[appName] = (dailyMap[dateStr].appUsageMap[appName] || 0) + 1;
+      const dateStr = getLocalDateKey(log?.timestamp);
+      if (dateStr && logsByDateMap[dateStr]) {
+        logsByDateMap[dateStr].push(log);
       }
     });
 
-    // Fetch official Attendance records for this employee in this month
-    const Attendance = require('../models/Attendance');
-    let empAttendances = [];
-    try {
-      empAttendances = await Attendance.find({
-        user: employeeId,
-        $or: [
-          { date: { $gte: startOfMonth, $lte: endOfMonth } },
-          { startDayTime: { $gte: startOfMonth, $lte: endOfMonth } }
-        ]
-      }).select('date startDayTime endDayTime hoursWorked').lean();
-    } catch (attErr) {
-      console.warn('⚠️ Monthly employee attendances query error:', attErr.message);
-    }
-
-    const attendanceByDateMap = new Map();
-    const nowLocalDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-
-    empAttendances.forEach(att => {
-      let dStr = '';
-      if (att.date) {
-        try {
-          const dObj = new Date(att.date);
-          dStr = `${dObj.getFullYear()}-${String(dObj.getMonth() + 1).padStart(2, '0')}-${String(dObj.getDate()).padStart(2, '0')}`;
-        } catch (e) {}
-      }
-      if (!dStr && att.startDayTime) {
-        try {
-          const dObj = new Date(att.startDayTime);
-          dStr = `${dObj.getFullYear()}-${String(dObj.getMonth() + 1).padStart(2, '0')}-${String(dObj.getDate()).padStart(2, '0')}`;
-        } catch (e) {}
-      }
-      if (!dStr) return;
-
-      let sec = 0;
-      if (att.hoursWorked > 0) {
-        sec = Math.round(att.hoursWorked * 3600);
-      } else if (att.startDayTime) {
-        const isToday = dStr === nowLocalDateStr;
-        const endSession = att.endDayTime ? new Date(att.endDayTime) : (isToday ? new Date() : endOfMonth);
-        sec = Math.max(0, Math.floor((endSession - new Date(att.startDayTime)) / 1000));
-      }
-
-      attendanceByDateMap.set(dStr, Math.max(attendanceByDateMap.get(dStr) || 0, sec));
-    });
+    const sessionsMap = await resolveSessionsMap([employeeId], startOfMonth, endOfMonth, now);
 
     const isExited = employee.stillExist === 0;
     let totalMonthlyActiveSec = 0;
     let totalMonthlyIdleSec = 0;
     let totalMonthlyKeystrokes = 0;
     let totalMonthlyMouseSum = 0;
+    let mouseDaysCount = 0;
     let totalMonthlyProdSum = 0;
     let workedDaysCount = 0;
 
     const todayDate = new Date();
     todayDate.setHours(23, 59, 59, 999);
 
-    const dailyBreakdown = Object.values(dailyMap).map(day => {
-      const dateObj = new Date(year, monthIdx, day.day);
+    const dailyBreakdown = [];
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateObj = new Date(year, monthIdx, d);
+      const dayOfWeek = dateObj.getDay();
+      const dateStr = `${year}-${String(monthIdx + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+      const dayLogs = logsByDateMap[dateStr] || [];
+      const sessionInfo = sessionsMap.get(`${employeeId}_${dateStr}`) || null;
 
       if (isExited) {
-        return {
-          date: day.date,
-          day: day.day,
-          dayOfWeek: day.dayOfWeek,
-          dayShort: day.dayShort,
+        dailyBreakdown.push({
+          date: dateStr,
+          day: d,
+          dayOfWeek: dayNames[dayOfWeek],
+          dayShort: dayShortNames[dayOfWeek],
           status: 'Exited',
           activeHours: '0h 0m',
           activeSeconds: 0,
@@ -2660,15 +2267,16 @@ router.get('/monthly-employee-breakdown', async (req, res) => {
           mouseActivity: 0,
           topApp: 'Account Inactive (Exited)',
           productivityEfficiency: 'Exited'
-        };
+        });
+        continue;
       }
 
-      if (day.isWeekend && day.logCount === 0) {
-        return {
-          date: day.date,
-          day: day.day,
-          dayOfWeek: day.dayOfWeek,
-          dayShort: day.dayShort,
+      if (isWeekend && dayLogs.length === 0 && !sessionInfo) {
+        dailyBreakdown.push({
+          date: dateStr,
+          day: d,
+          dayOfWeek: dayNames[dayOfWeek],
+          dayShort: dayShortNames[dayOfWeek],
           status: 'Weekend',
           activeHours: '0h 0m',
           activeSeconds: 0,
@@ -2679,16 +2287,16 @@ router.get('/monthly-employee-breakdown', async (req, res) => {
           mouseActivity: 0,
           topApp: 'Weekend Off',
           productivityEfficiency: 'Weekend Off'
-        };
+        });
+        continue;
       }
 
-      const isFutureDate = dateObj > todayDate;
-      if (isFutureDate && day.logCount === 0) {
-        return {
-          date: day.date,
-          day: day.day,
-          dayOfWeek: day.dayOfWeek,
-          dayShort: day.dayShort,
+      if (dateObj > todayDate && dayLogs.length === 0 && !sessionInfo) {
+        dailyBreakdown.push({
+          date: dateStr,
+          day: d,
+          dayOfWeek: dayNames[dayOfWeek],
+          dayShort: dayShortNames[dayOfWeek],
           status: 'Upcoming',
           activeHours: '0h 0m',
           activeSeconds: 0,
@@ -2699,97 +2307,52 @@ router.get('/monthly-employee-breakdown', async (req, res) => {
           mouseActivity: 0,
           topApp: 'Shift Not Started',
           productivityEfficiency: 'Upcoming'
-        };
+        });
+        continue;
       }
 
-      let activeSec = 0;
-      let idleSec = 0;
-      let avgProd = 0;
-      let avgMouse = 0;
-      let keystrokes = 0;
-      let topApp = 'Visual Studio Code';
-      let status = 'Worked';
+      const metrics = summarizeActivitiesWithSession(dayLogs, sessionInfo);
+      let status = 'No Activity';
+      let topApp = 'No Activity Logged';
 
-      const attSec = attendanceByDateMap.get(day.date) || 0;
-
-      if (day.logCount > 0) {
-        activeSec = Math.max(0, (day.logCount * 30) - day.idleSeconds);
-        if (attSec > 0) {
-          activeSec = Math.max(activeSec, attSec);
-        }
-        idleSec = day.idleSeconds;
-        avgProd = Math.round(day.productivitySum / day.logCount);
-        avgMouse = Math.round(day.mouseScoreSum / day.logCount);
-        keystrokes = day.keystrokes;
-
-        const topApps = Object.entries(day.appUsageMap).sort((a, b) => b[1] - a[1]);
-        if (topApps.length > 0) {
-          topApp = topApps[0][0];
-        }
-
-        totalMonthlyActiveSec += activeSec;
-        totalMonthlyIdleSec += idleSec;
-        totalMonthlyKeystrokes += keystrokes;
-        totalMonthlyMouseSum += avgMouse;
-        totalMonthlyProdSum += avgProd;
+      if (metrics.hasActivity) {
+        status = 'Worked';
+        topApp = metrics.appDetails.length > 0 ? metrics.appDetails[0].name : 'Work Hours Session';
+        totalMonthlyActiveSec += metrics.activeSeconds;
+        totalMonthlyIdleSec += metrics.totalIdleSeconds;
+        totalMonthlyKeystrokes += metrics.totalKeystrokes;
+        totalMonthlyProdSum += metrics.avgProductivityScore;
         workedDaysCount++;
-      } else {
-        if (attSec > 0) {
-          status = 'Worked';
-          activeSec = attSec;
-          idleSec = 0;
-          avgProd = 50;
-          avgMouse = 0;
-          keystrokes = 0;
-          topApp = 'Work Hours Session';
-          totalMonthlyActiveSec += activeSec;
-          workedDaysCount++;
-        } else {
-          // Weekday in the past with no recorded activity logs
-          status = 'No Activity';
-          activeSec = 0;
-          idleSec = 0;
-          avgProd = 0;
-          avgMouse = 0;
-          keystrokes = 0;
-          topApp = 'No Activity Logged';
+        if (metrics.avgMouseActivity > 0) {
+          totalMonthlyMouseSum += metrics.avgMouseActivity;
+          mouseDaysCount++;
         }
       }
 
-      let efficiency = 'No Activity';
-      if (day.logCount > 0 || activeSec > 0) {
-        if (avgProd >= 60) efficiency = 'High Efficiency';
-        else if (avgProd >= 40) efficiency = 'Moderate Efficiency';
-        else efficiency = 'Low Efficiency';
-      }
-
-      return {
-        date: day.date,
-        day: day.day,
-        dayOfWeek: day.dayOfWeek,
-        dayShort: day.dayShort,
+      dailyBreakdown.push({
+        date: dateStr,
+        day: d,
+        dayOfWeek: dayNames[dayOfWeek],
+        dayShort: dayShortNames[dayOfWeek],
         status,
-        activeHours: `${Math.floor(activeSec / 3600)}h ${Math.floor((activeSec % 3600) / 60)}m`,
-        activeSeconds: activeSec,
-        idleTime: `${Math.floor(idleSec / 60)}m`,
-        idleSeconds: idleSec,
-        productivityScore: avgProd,
-        keystrokes,
-        mouseActivity: avgMouse,
+        activeHours: `${Math.floor(metrics.activeSeconds / 3600)}h ${Math.floor((metrics.activeSeconds % 3600) / 60)}m`,
+        activeSeconds: metrics.activeSeconds,
+        idleTime: `${Math.floor(metrics.totalIdleSeconds / 60)}m`,
+        idleSeconds: metrics.totalIdleSeconds,
+        productivityScore: metrics.avgProductivityScore,
+        keystrokes: metrics.totalKeystrokes,
+        mouseActivity: metrics.avgMouseActivity,
         topApp,
-        productivityEfficiency: efficiency
-      };
-    });
+        productivityEfficiency: metrics.productivityEfficiency
+      });
+    }
 
     const avgMonthlyProd = workedDaysCount > 0 ? Math.round(totalMonthlyProdSum / workedDaysCount) : 0;
-    const avgMonthlyMouse = workedDaysCount > 0 ? Math.round(totalMonthlyMouseSum / workedDaysCount) : 0;
+    const avgMonthlyMouse = mouseDaysCount > 0 ? Math.round(totalMonthlyMouseSum / mouseDaysCount) : 0;
 
     let overallEfficiency = 'No Activity';
     if (isExited) overallEfficiency = 'Exited';
-    else if (workedDaysCount === 0) overallEfficiency = 'No Activity';
-    else if (avgMonthlyProd >= 60) overallEfficiency = 'High Efficiency';
-    else if (avgMonthlyProd >= 40) overallEfficiency = 'Moderate Efficiency';
-    else overallEfficiency = 'Low Efficiency';
+    else overallEfficiency = getEfficiencyLabel(avgMonthlyProd, workedDaysCount > 0);
 
     res.json({
       success: true,

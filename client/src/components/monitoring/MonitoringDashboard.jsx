@@ -55,8 +55,8 @@ export function MonitoringDashboard({ employee, monitoringStatus }) {
       const processedData = processActivityData(activityResponse.data.activities);
       setActivityData(processedData);
 
-      // Calculate daily metrics
-      const metrics = calculateDailyMetrics(activityResponse.data.activities);
+      // Calculate daily metrics (prefer unified backend summary when available)
+      const metrics = calculateDailyMetrics(activityResponse.data.activities, activityResponse.data.summary);
       setDailyMetrics(metrics);
 
       setRecentAlerts(alertsResponse.data.alerts);
@@ -107,7 +107,18 @@ export function MonitoringDashboard({ employee, monitoringStatus }) {
       .sort((a, b) => parseInt(a.hour) - parseInt(b.hour));
   };
 
-  const calculateDailyMetrics = (activities) => {
+  const calculateDailyMetrics = (activities, summary = null) => {
+    if (summary) {
+      return {
+        totalKeystroke: summary.totalKeystrokes || 0,
+        avgMouseActivity: summary.mouseActivity || 0,
+        avgProductivityScore: summary.productivityScore || 0,
+        totalIdleTime: Math.round((summary.idleSeconds || 0) / 60),
+        activeHours: Math.round(((summary.activeSeconds || 0) / 3600) * 100) / 100,
+        totalActivities: summary.logCount || (activities?.length || 0)
+      };
+    }
+
     if (!activities || activities.length === 0) {
       return {
         totalKeystroke: 0,
@@ -125,14 +136,11 @@ export function MonitoringDashboard({ employee, monitoringStatus }) {
       ? activeMouseEntries.reduce((sum, a) => sum + (a.mouse_activity_score || 0), 0) / activeMouseEntries.length
       : 0;
     const avgProductivityScore = activities.reduce((sum, a) => sum + (a.productivity_score || 0), 0) / activities.length;
-    const totalIdleTime = activities.reduce((sum, a) => sum + (a.idle_duration || 0), 0);
+    const totalIdleTime = activities.reduce((sum, a) => sum + Math.min(Number(a.interval_seconds || 30), Math.max(0, Number(a.idle_duration || 0))), 0);
     
-    // Calculate active hours
-    const firstActivity = activities[activities.length - 1]?.timestamp;
-    const lastActivity = activities[0]?.timestamp;
-    const activeHours = firstActivity && lastActivity 
-      ? (new Date(lastActivity) - new Date(firstActivity)) / (1000 * 60 * 60)
-      : 0;
+    // Calculate active hours from interval spans minus idle
+    const totalSpanSec = activities.reduce((sum, a) => sum + Math.min(60, Math.max(1, Number(a.interval_seconds || 30))), 0);
+    const activeHours = Math.max(0, totalSpanSec - totalIdleTime) / 3600;
 
     return {
       totalKeystroke,
