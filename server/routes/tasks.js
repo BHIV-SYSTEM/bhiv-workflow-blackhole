@@ -224,7 +224,13 @@ router.get("/", auth, async (req, res) => {
 
     const filter = { ...branchQuery }
     if (department) filter.department = new mongoose.Types.ObjectId(department)
-    if (status) filter.status = status
+    if (status) {
+      if (status.includes(",")) {
+        filter.status = { $in: status.split(",").map(s => s.trim()).filter(Boolean) }
+      } else {
+        filter.status = status
+      }
+    }
     if (priority) filter.priority = priority
     if (dueDate) {
       const date = new Date(dueDate)
@@ -289,8 +295,16 @@ router.get("/", auth, async (req, res) => {
           as: "departmentData"
         }
       },
-      // Always embed latest submission for completed tasks
-      ...( filter.status === "Completed" ? [
+      // Always embed latest submission for completed, submitted-for-review, or closed tasks, or when submission filter is active
+      ...( (filter.status === "Completed" ||
+            filter.status === "Submitted for Review" ||
+            filter.status === "Closed" ||
+            (filter.status && filter.status.$in && (
+              filter.status.$in.includes("Completed") ||
+              filter.status.$in.includes("Submitted for Review") ||
+              filter.status.$in.includes("Closed")
+            )) ||
+            Boolean(submissionStatus)) ? [
         {
           $lookup: {
             from: "tasksubmissions",
@@ -363,7 +377,7 @@ router.get("/", auth, async (req, res) => {
 router.get("/stats", auth, async (req, res) => {
   try {
     const branchQuery = getBranchQuery(req)
-    const matchFilter = { ...branchQuery, status: "Completed" }
+    const matchFilter = { ...branchQuery, status: { $in: ["Completed", "Closed", "Submitted for Review"] } }
 
     // One aggregation: join submissions, group by status, group by department
     const [statusResult, deptResult] = await Promise.all([

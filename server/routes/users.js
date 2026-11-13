@@ -343,10 +343,10 @@ router.get("/:id/tasks", async (req, res) => {
   try {
     const { status } = req.query
 
-    // First check if user is active
-    const user = await User.findOne({ _id: req.params.id, stillExist: 1 })
+    // Verify user exists
+    const user = await User.findById(req.params.id)
     if (!user) {
-      return res.status(404).json({ error: "User not found or no longer active" })
+      return res.status(404).json({ error: "User not found" })
     }
 
     // Build filter object
@@ -445,10 +445,10 @@ router.get("/:id/submissions", auth, async (req, res) => {
 // Get user notifications - SHOW ALL USERS
 router.get("/:id/notifications", auth, async (req, res) => {
   try {
-    // First check if user is active
-    const user = await User.findOne({ _id: req.params.id, stillExist: 1 })
+    // Verify user exists
+    const user = await User.findById(req.params.id)
     if (!user) {
-      return res.status(404).json({ error: "User not found or no longer active" })
+      return res.status(404).json({ error: "User not found" })
     }
 
     // Check if user is requesting their own notifications or if requester is admin
@@ -498,10 +498,10 @@ router.get("/:id/notifications", auth, async (req, res) => {
 // Mark all notifications as read - SHOW ALL USERS
 router.put("/:id/notifications/read-all", auth, async (req, res) => {
   try {
-    // First check if user is active
-    const user = await User.findOne({ _id: req.params.id, stillExist: 1 })
+    // Verify user exists
+    const user = await User.findById(req.params.id)
     if (!user) {
-      return res.status(404).json({ error: "User not found or no longer active" })
+      return res.status(404).json({ error: "User not found" })
     }
 
     // Check if user is requesting their own notifications or if requester is admin

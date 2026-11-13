@@ -391,13 +391,22 @@ function Progress() {
     const fetchUserTasks = async () => {
       try {
         setIsLoading(true);
-        console.log("user in progress", user.id);
+        const storedUser = JSON.parse(localStorage.getItem("WorkflowUser") || "null");
+        const userId = user?.id || user?._id || storedUser?.id || storedUser?._id;
+        if (!userId) {
+          setIsLoading(false);
+          return;
+        }
+
+        const token = localStorage.getItem("WorkflowToken");
+        const headers = token ? { "x-auth-token": token } : {};
   
         // Axios request to get tasks by user ID
-        const response = await axios.get(`${API_URL}/users/${user.id}/tasks`);
+        const response = await axios.get(`${API_URL}/users/${userId}/tasks`, { headers });
+        const userTasks = Array.isArray(response.data) ? response.data : [];
         
-        const filteredTasks = response.data.filter(task =>
-          ["Pending", "In Progress"].includes(task.status)
+        const filteredTasks = userTasks.filter(task =>
+          ["Pending", "In Progress", "Approved", "Submitted for Review", "Returned", "Pending Validation"].includes(task.status)
         );
   
         setTasks(filteredTasks);
@@ -418,7 +427,7 @@ function Progress() {
       }
     };
   
-    if (user) {
+    if (user || localStorage.getItem("WorkflowUser")) {
       fetchUserTasks();
     }
   }, [user]);
@@ -561,15 +570,20 @@ function Progress() {
 
   if (tasks.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-[80vh] px-4">
+      <div className="flex flex-col items-center justify-center h-[80vh] px-4 text-center">
         <AlertCircle className="h-12 w-12 text-muted-foreground mb-4" />
         <h2 className="text-2xl font-bold mb-2">No Active Tasks</h2>
-        <p className="text-muted-foreground text-center mb-6">
-          You don't have any active tasks assigned to you at the moment.
+        <p className="text-muted-foreground text-center mb-6 max-w-md">
+          You don't have any active tasks assigned to you at the moment. If you recently registered or completed all your previous tasks, please contact your Lead or Admin to assign your next task.
         </p>
-        <Button onClick={() => navigate("/dashboard")}>
-          Return to Dashboard
-        </Button>
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <Button onClick={() => navigate("/my-tasks")} variant="outline" className="rounded-xl">
+            View My Tasks
+          </Button>
+          <Button onClick={() => navigate("/dashboard")} className="rounded-xl">
+            Return to Dashboard
+          </Button>
+        </div>
       </div>
     );
   }

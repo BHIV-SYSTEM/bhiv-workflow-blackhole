@@ -198,7 +198,7 @@ const CompletedTasks = () => {
       const signal = controller.signal
 
       const params = new URLSearchParams({
-        status: "Completed",
+        status: "Completed,Submitted for Review,Closed",
         page: pageNum,
         limit: LIMIT,
       })

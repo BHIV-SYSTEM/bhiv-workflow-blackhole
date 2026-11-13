@@ -236,7 +236,7 @@ function MyTasks() {
       case "validation":
         return task.status === "Pending Validation" || task.status === "Returned"
       case "approved":
-        return task.status === "Approved"
+        return task.status === "Approved" || task.status === "Pending"
       case "inprogress":
         return task.status === "In Progress"
       case "submitted":
@@ -252,7 +252,7 @@ function MyTasks() {
   const stats = {
     total: tasks.length,
     validation: tasks.filter((t) => t.status === "Pending Validation" || t.status === "Returned").length,
-    approved: tasks.filter((t) => t.status === "Approved").length,
+    approved: tasks.filter((t) => t.status === "Approved" || t.status === "Pending").length,
     inProgress: tasks.filter((t) => t.status === "In Progress").length,
     submitted: tasks.filter((t) => t.status === "Submitted for Review" || submissions[t._id]).length,
     completed: tasks.filter((t) => t.status === "Completed" || t.status === "Closed").length,
@@ -463,6 +463,7 @@ function MyTasks() {
                 const isValidationPending = task.status === "Pending Validation"
                 const isReturned = task.status === "Returned"
                 const isApproved = task.status === "Approved"
+                const isPending = task.status === "Pending"
                 const isInProgress = task.status === "In Progress"
                 const isClosed = task.status === "Closed" || task.status === "Completed"
                 const isReview = task.status === "Submitted for Review"
@@ -527,12 +528,12 @@ function MyTasks() {
                             </div>
                           )}
 
-                          {isApproved && (
+                          {(isApproved || isPending) && (
                             <div className="p-3 rounded-lg bg-cyan-950/30 border border-cyan-500/30 flex items-center justify-between gap-3 text-xs text-cyan-200">
                               <div className="flex items-center gap-2">
                                 <ShieldCheck className="h-4 w-4 text-cyan-400 shrink-0" />
                                 <span>
-                                  <strong>Gate Passed:</strong> Task authorized by Lead. You can now start execution.
+                                  <strong>{isApproved ? "Gate Passed:" : "Task Assigned:"}</strong> {isApproved ? "Task authorized by Lead. You can now start execution." : "Task assigned and ready to execute. Click Start Execution to begin."}
                                 </span>
                               </div>
                               <Badge variant="outline" className="border-cyan-400/40 text-cyan-300 bg-cyan-500/10 text-[10px]">
@@ -660,7 +661,7 @@ function MyTasks() {
                             </Button>
                           )}
 
-                          {isApproved && (
+                          {(isApproved || isPending) && (
                             <Button
                               size="sm"
                               disabled={actionLoadingId === task._id}
