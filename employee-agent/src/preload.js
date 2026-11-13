@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // App state
   getAppState: () => ipcRenderer.invoke('get-app-state'),
   getTrackingStats: () => ipcRenderer.invoke('get-tracking-stats'),
+  getDailySummary: () => ipcRenderer.invoke('get-daily-summary'),
+  submitProgress: (payload) => ipcRenderer.invoke('submit-progress', payload),
 
   // TRINETRA: task attribution + capture telemetry
   getTasks: () => ipcRenderer.invoke('get-tasks'),

@@ -169,12 +169,12 @@ class ApiService {
 
       return {
         success: false,
-        error: response.data?.message || 'Failed to start day'
+        error: response.data?.error || response.data?.message || 'Failed to start day'
       };
     } catch (error) {
       return {
         success: false,
-        error: error.response?.data?.error || error.message || 'Failed to start day'
+        error: error.response?.data?.error || error.response?.data?.message || error.message || 'Failed to start day'
       };
     }
   }
@@ -227,19 +227,63 @@ class ApiService {
       const response = await this.client.post(`/api/attendance/end-day/${userId}`, locationData);
       
       if (response.data && (response.data.success !== false || response.status === 200)) {
+        // Keep web WorkHoursManager WorkSession synced cleanly (best-effort)
+        try {
+          await this.client.post('/api/monitoring/work-session/end', { employeeId: userId });
+        } catch (syncErr) {
+          // Ignore if no monitoring WorkSession existed
+        }
         return {
-          success: true
+          success: true,
+          message: response.data?.message || 'Work day ended successfully!',
+          data: response.data?.data || null
         };
       }
 
       return {
         success: false,
-        error: response.data?.message || 'Failed to end day'
+        code: response.data?.code,
+        error: response.data?.error || response.data?.message || 'Failed to end day'
       };
     } catch (error) {
+      const errData = error.response?.data || {};
+      const errMsg = errData.error || errData.message || error.message || 'Failed to end day';
+
+      if (errData.code === 'PROGRESS_NOT_SET' || /daily progress/i.test(errMsg)) {
+        return {
+          success: false,
+          code: 'PROGRESS_NOT_SET',
+          error: errMsg
+        };
+      }
+
+      // If attendance day wasn't created via attendance route, try monitoring work-session fallback
+      if (errData.code === 'DAY_NOT_STARTED') {
+        try {
+          const userId = this.getUserIdFromToken();
+          const wsRes = await this.client.post('/api/monitoring/work-session/end', { employeeId: userId });
+          if (wsRes.data && (wsRes.data.success !== false || wsRes.status === 200)) {
+            return {
+              success: true,
+              message: wsRes.data?.message || 'Work session ended successfully!',
+              data: wsRes.data?.data || null
+            };
+          }
+        } catch (wsErr) {
+          const wsData = wsErr.response?.data || {};
+          const wsMsg = wsData.error || wsData.message || errMsg;
+          return {
+            success: false,
+            code: wsData.code || errData.code,
+            error: wsMsg
+          };
+        }
+      }
+
       return {
         success: false,
-        error: error.response?.data?.error || error.message || 'Failed to end day'
+        code: errData.code,
+        error: errMsg
       };
     }
   }
@@ -421,6 +465,65 @@ class ApiService {
       return {
         valid: false,
         error: error.response?.data?.message || error.message
+      };
+    }
+  }
+
+  /**
+   * Fetch today's authoritative work & active time summary from backend
+   * @returns {Promise<Object>} - { success, summary, error }
+   */
+  async getDailySummary() {
+    try {
+      const userId = this.getUserIdFromToken();
+      if (!userId) {
+        return { success: false, error: 'User not authenticated' };
+      }
+
+      const response = await this.client.get(`/api/users/${userId}/daily-summary`);
+      return {
+        success: true,
+        summary: response.data
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.error || error.response?.data?.message || error.message
+      };
+    }
+  }
+
+  /**
+   * Submit daily progress quickly from desktop agent (unlocks End Day when PROGRESS_NOT_SET)
+   * @param {Object} payload - { taskId, progressPercentage, notes, achievements, blockers }
+   * @returns {Promise<Object>} - { success, progress, error }
+   */
+  async submitProgress(payload) {
+    try {
+      const userId = this.getUserIdFromToken();
+      if (!userId) {
+        return { success: false, error: 'User not authenticated' };
+      }
+
+      const response = await this.client.post('/api/progress', {
+        user: userId,
+        task: payload.taskId,
+        progressPercentage: Number(payload.progressPercentage ?? 50),
+        notes: (payload.notes || '').trim(),
+        achievements: (payload.achievements || '').trim(),
+        blockers: (payload.blockers || '').trim()
+      });
+
+      return {
+        success: true,
+        progress: response.data
+      };
+    } catch (error) {
+      const errData = error.response?.data;
+      const firstValidation = Array.isArray(errData?.errors) && errData.errors[0]?.msg;
+      return {
+        success: false,
+        error: firstValidation || errData?.error || errData?.msg || errData?.message || error.message || 'Failed to save daily progress'
       };
     }
   }

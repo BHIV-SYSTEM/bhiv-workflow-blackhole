@@ -50,8 +50,12 @@ let appState = {
 
 function createWindow() {
   const windowOptions = {
-    width: 400,
-    height: 600,
+    width: 460,
+    height: 740,
+    minWidth: 420,
+    minHeight: 640,
+    backgroundColor: '#090d16',
+    title: 'Infiverse Activity Agent',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -59,7 +63,7 @@ function createWindow() {
     },
     show: false,
     frame: true,
-    resizable: false
+    resizable: true
   };
   
   // Add icon if file exists
@@ -262,18 +266,20 @@ ipcMain.handle('login', async (event, credentials) => {
   }
 });
 
-ipcMain.handle('logout', () => {
+ipcMain.handle('logout', async () => {
   if (attendancePoller) {
     attendancePoller.stop();
   }
   
   if (appState.isDayStarted) {
-    endTracking();
+    await Promise.resolve(endTracking());
     appState.isDayStarted = false;
+    appState.startTime = null;
   }
   
   appState.isLoggedIn = false;
   appState.user = null;
+  appState.startTime = null;
   store.delete('authToken');
   store.delete('savedCredentials');
   apiService.setAuthToken(null);
@@ -287,7 +293,13 @@ ipcMain.handle('start-day', async () => {
     const result = await apiService.startDay();
     if (result.success) {
       appState.isDayStarted = true;
+      appState.startTime = result.startTime || new Date().toISOString();
       await beginTracking(result.attendanceId);
+      if (attendancePoller) {
+        attendancePoller.currentStatus.dayStarted = true;
+        attendancePoller.currentStatus.attendanceId = result.attendanceId || null;
+        attendancePoller.currentStatus.startTime = appState.startTime;
+      }
       updateTrayMenu();
     }
     return result;
@@ -301,10 +313,35 @@ ipcMain.handle('end-day', async () => {
     const result = await apiService.endDay();
     if (result.success) {
       appState.isDayStarted = false;
-      endTracking();
+      appState.startTime = null;
+      await Promise.resolve(endTracking());
+      if (attendancePoller) {
+        attendancePoller.currentStatus.dayStarted = false;
+        attendancePoller.currentStatus.attendanceId = null;
+        attendancePoller.currentStatus.startTime = null;
+      }
       updateTrayMenu();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('day-status-changed', { dayStarted: false });
+      }
     }
     return result;
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('get-daily-summary', async () => {
+  try {
+    return await apiService.getDailySummary();
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('submit-progress', async (event, payload) => {
+  try {
+    return await apiService.submitProgress(payload);
   } catch (error) {
     return { success: false, error: error.message };
   }

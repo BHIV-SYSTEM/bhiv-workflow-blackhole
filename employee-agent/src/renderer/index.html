@@ -3,30 +3,95 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Employee Activity Agent</title>
+  <title>Infiverse Activity Agent</title>
   <style>
+    :root {
+      --bg-base: #070b14;
+      --bg-surface: rgba(15, 23, 42, 0.86);
+      --bg-card: rgba(30, 41, 59, 0.52);
+      --bg-card-hover: rgba(30, 41, 59, 0.78);
+      --border-subtle: rgba(148, 163, 184, 0.14);
+      --border-strong: rgba(148, 163, 184, 0.25);
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --emerald: #10b981;
+      --emerald-bright: #34d399;
+      --emerald-dim: rgba(16, 185, 129, 0.14);
+      --cyan: #38bdf8;
+      --cyan-dim: rgba(56, 189, 248, 0.14);
+      --indigo: #818cf8;
+      --amber: #f59e0b;
+      --amber-dim: rgba(245, 158, 11, 0.14);
+      --rose: #ef4444;
+      --rose-bright: #f87171;
+      --rose-dim: rgba(239, 68, 68, 0.14);
+      --shadow-glow: 0 20px 50px rgba(0, 0, 0, 0.55);
+    }
+
     * {
       margin: 0;
       padding: 0;
       box-sizing: border-box;
     }
 
+    html, body {
+      height: 100%;
+    }
+
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      height: 100vh;
+      font-family: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+      background:
+        radial-gradient(circle at 12% 8%, rgba(16, 185, 129, 0.14), transparent 42%),
+        radial-gradient(circle at 88% 12%, rgba(56, 189, 248, 0.12), transparent 40%),
+        radial-gradient(circle at 50% 95%, rgba(99, 102, 241, 0.10), transparent 45%),
+        linear-gradient(160deg, #060911 0%, #0b1220 50%, #080d18 100%);
+      color: var(--text-primary);
       display: flex;
-      align-items: center;
       justify-content: center;
+      align-items: flex-start;
+      padding: 16px;
+      overflow-y: auto;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Subtle dark scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(148, 163, 184, 0.25);
+      border-radius: 999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(148, 163, 184, 0.4);
     }
 
     .container {
-      background: white;
-      border-radius: 12px;
-      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
       width: 100%;
-      max-width: 380px;
-      padding: 30px;
+      max-width: 420px;
+      background: var(--bg-surface);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--border-subtle);
+      border-radius: 20px;
+      padding: 20px;
+      box-shadow: var(--shadow-glow), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .container::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 20px;
+      right: 20px;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(52, 211, 153, 0.45), rgba(56, 189, 248, 0.45), transparent);
     }
 
     .screen {
@@ -35,371 +100,823 @@
 
     .screen.active {
       display: block;
+      animation: fadeSlideIn 0.22s ease-out;
     }
 
-    h1 {
-      color: #333;
-      font-size: 24px;
-      margin-bottom: 10px;
+    @keyframes fadeSlideIn {
+      from {
+        opacity: 0;
+        transform: translateY(6px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
 
-    h2 {
-      color: #555;
-      font-size: 18px;
-      margin-bottom: 20px;
-    }
-
-    p {
-      color: #666;
-      line-height: 1.6;
-      margin-bottom: 15px;
-    }
-
-    .input-group {
-      margin-bottom: 20px;
-    }
-
-    label {
-      display: block;
-      color: #555;
-      font-size: 14px;
-      margin-bottom: 5px;
-      font-weight: 500;
-    }
-
-    input[type="email"],
-    input[type="password"] {
-      width: 100%;
-      padding: 12px;
-      border: 2px solid #e0e0e0;
-      border-radius: 6px;
-      font-size: 14px;
-      transition: border-color 0.3s;
-    }
-
-    input[type="email"]:focus,
-    input[type="password"]:focus {
-      outline: none;
-      border-color: #667eea;
-    }
-
-    .checkbox-group {
+    /* Brand Header */
+    .brand-header {
       display: flex;
-      align-items: flex-start;
-      margin-bottom: 20px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
     }
 
-    input[type="checkbox"] {
-      margin-right: 10px;
-      margin-top: 3px;
-      cursor: pointer;
+    .brand-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
     }
 
-    .checkbox-label {
-      font-size: 13px;
-      color: #666;
-      cursor: pointer;
+    .brand-logo {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #10b981 0%, #0ea5e9 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 6px 18px rgba(16, 185, 129, 0.28);
+      flex-shrink: 0;
     }
 
-    button {
-      width: 100%;
-      padding: 12px;
-      background: #667eea;
-      color: white;
-      border: none;
-      border-radius: 6px;
+    .brand-logo svg {
+      width: 19px;
+      height: 19px;
+      color: #ffffff;
+    }
+
+    .brand-text h1 {
       font-size: 16px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.3s;
-    }
-
-    button:hover {
-      background: #5568d3;
-    }
-
-    button:disabled {
-      background: #ccc;
-      cursor: not-allowed;
-    }
-
-    button.secondary {
-      background: #e0e0e0;
-      color: #333;
-      margin-top: 10px;
-    }
-
-    button.secondary:hover {
-      background: #d0d0d0;
-    }
-
-    button.danger {
-      background: #f44336;
-    }
-
-    button.danger:hover {
-      background: #da190b;
-    }
-
-    button.success {
-      background: #4caf50;
-    }
-
-    button.success:hover {
-      background: #45a049;
-    }
-
-    .status-badge {
-      display: inline-block;
-      padding: 6px 12px;
-      border-radius: 20px;
-      font-size: 12px;
-      font-weight: 600;
-      margin: 10px 0;
-    }
-
-    .status-active {
-      background: #e8f5e9;
-      color: #4caf50;
-    }
-
-    .status-inactive {
-      background: #ffebee;
-      color: #f44336;
-    }
-
-    .stats-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 15px;
-      margin: 20px 0;
-    }
-
-    .stat-card {
-      background: #f5f5f5;
-      padding: 15px;
-      border-radius: 8px;
-      text-align: center;
-    }
-
-    .stat-value {
-      font-size: 24px;
       font-weight: 700;
-      color: #667eea;
-      margin-bottom: 5px;
+      letter-spacing: -0.02em;
+      color: var(--text-primary);
+      line-height: 1.2;
     }
 
-    .stat-label {
-      font-size: 12px;
-      color: #666;
-      text-transform: uppercase;
+    .brand-text p {
+      font-size: 11.5px;
+      color: var(--text-secondary);
+      margin-top: 1px;
     }
 
-    .task-box {
-      background: #f8fafc;
-      border: 1px solid #e2e8f0;
-      border-radius: 8px;
-      padding: 12px 14px;
+    /* Status Pill */
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+      border: 1px solid transparent;
+      flex-shrink: 0;
+    }
+
+    .status-pill-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+    }
+
+    .status-pill.active {
+      background: var(--emerald-dim);
+      color: var(--emerald-bright);
+      border-color: rgba(16, 185, 129, 0.32);
+    }
+
+    .status-pill.active .status-pill-dot {
+      background: var(--emerald-bright);
+      box-shadow: 0 0 8px var(--emerald);
+      animation: pulseDot 1.8s infinite;
+    }
+
+    .status-pill.inactive {
+      background: rgba(100, 116, 139, 0.16);
+      color: var(--text-secondary);
+      border-color: rgba(148, 163, 184, 0.2);
+    }
+
+    .status-pill.inactive .status-pill-dot {
+      background: var(--text-muted);
+    }
+
+    @keyframes pulseDot {
+      0%, 100% {
+        transform: scale(1);
+        opacity: 1;
+      }
+      50% {
+        transform: scale(1.3);
+        opacity: 0.65;
+      }
+    }
+
+    /* Consent Screen */
+    .hero-center {
+      text-align: center;
+      margin: 6px 0 18px;
+    }
+
+    .hero-center .brand-logo {
+      width: 48px;
+      height: 48px;
+      border-radius: 14px;
+      margin: 0 auto 12px;
+    }
+
+    .hero-center h1 {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .hero-center p {
+      font-size: 12.5px;
+      color: var(--text-secondary);
+      margin-top: 4px;
+    }
+
+    .consent-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .consent-card h3 {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .consent-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
       margin-bottom: 12px;
     }
 
-    .task-box label {
-      font-size: 12px;
-      text-transform: uppercase;
-      color: #64748b;
+    .consent-list li {
+      font-size: 12.5px;
+      color: #cbd5e1;
+      line-height: 1.45;
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .consent-check {
+      color: var(--emerald-bright);
       font-weight: 700;
+      margin-top: 1px;
+      flex-shrink: 0;
+    }
+
+    .privacy-note {
+      background: var(--emerald-dim);
+      border: 1px solid rgba(16, 185, 129, 0.26);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 11.5px;
+      color: #a7f3d0;
+      line-height: 1.45;
+    }
+
+    /* Form Controls */
+    .input-group {
+      margin-bottom: 14px;
+    }
+
+    .input-group label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
       margin-bottom: 6px;
     }
 
-    .task-box select {
+    input[type="email"],
+    input[type="password"],
+    input[type="text"],
+    input[type="number"],
+    textarea,
+    select {
       width: 100%;
-      padding: 9px 10px;
-      border: 2px solid #e0e0e0;
-      border-radius: 6px;
-      font-size: 13px;
-      background: white;
-      color: #1e293b;
+      padding: 10px 12px;
+      background: rgba(15, 23, 42, 0.78);
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      color: var(--text-primary);
+      font-size: 13.5px;
+      font-family: inherit;
+      transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
     }
 
-    .task-box select:focus {
+    input::placeholder,
+    textarea::placeholder {
+      color: var(--text-muted);
+    }
+
+    input:focus,
+    textarea:focus,
+    select:focus {
       outline: none;
-      border-color: #667eea;
+      border-color: var(--emerald);
+      background: rgba(15, 23, 42, 0.96);
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.16);
+    }
+
+    select option {
+      background: #0f172a;
+      color: #f8fafc;
+    }
+
+    /* Buttons */
+    .btn {
+      width: 100%;
+      padding: 11px 16px;
+      border: none;
+      border-radius: 11px;
+      font-size: 13.5px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: transform 0.14s ease, box-shadow 0.18s ease, opacity 0.18s ease, background 0.18s ease;
+    }
+
+    .btn svg {
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+    }
+
+    .btn:active:not(:disabled) {
+      transform: translateY(1px);
+    }
+
+    .btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      color: #ffffff;
+      box-shadow: 0 8px 20px rgba(16, 185, 129, 0.25);
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      box-shadow: 0 10px 24px rgba(16, 185, 129, 0.36);
+      transform: translateY(-1px);
+    }
+
+    .btn-danger {
+      background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+      color: #ffffff;
+      box-shadow: 0 8px 20px rgba(239, 68, 68, 0.24);
+    }
+
+    .btn-danger:hover:not(:disabled) {
+      box-shadow: 0 10px 24px rgba(239, 68, 68, 0.36);
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background: rgba(30, 41, 59, 0.85);
+      color: var(--text-primary);
+      border: 1px solid var(--border-strong);
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: rgba(51, 65, 85, 0.9);
+    }
+
+    .btn-ghost-icon {
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      border-radius: 10px;
+      background: rgba(30, 41, 59, 0.65);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.16s ease;
+      flex-shrink: 0;
+    }
+
+    .btn-ghost-icon:hover {
+      color: var(--rose-bright);
+      background: var(--rose-dim);
+      border-color: rgba(239, 68, 68, 0.3);
+    }
+
+    .btn-ghost-icon svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    /* Alert / Toast Banner */
+    .alert-banner {
+      display: none;
+      align-items: flex-start;
+      gap: 9px;
+      padding: 10px 12px;
+      border-radius: 11px;
+      font-size: 12px;
+      line-height: 1.45;
+      margin-bottom: 14px;
+      border: 1px solid transparent;
+    }
+
+    .alert-banner.visible {
+      display: flex;
+      animation: fadeSlideIn 0.2s ease-out;
+    }
+
+    .alert-banner.error {
+      background: rgba(239, 68, 68, 0.13);
+      border-color: rgba(239, 68, 68, 0.32);
+      color: #fca5a5;
+    }
+
+    .alert-banner.success {
+      background: rgba(16, 185, 129, 0.14);
+      border-color: rgba(16, 185, 129, 0.32);
+      color: #6ee7b7;
+    }
+
+    .alert-banner.warning {
+      background: rgba(245, 158, 11, 0.14);
+      border-color: rgba(245, 158, 11, 0.32);
+      color: #fcd34d;
+    }
+
+    .alert-banner.info {
+      background: rgba(56, 189, 248, 0.14);
+      border-color: rgba(56, 189, 248, 0.32);
+      color: #7dd3fc;
+    }
+
+    .alert-content {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .alert-close {
+      background: none;
+      border: none;
+      color: inherit;
+      opacity: 0.7;
+      cursor: pointer;
+      font-size: 15px;
+      line-height: 1;
+      padding: 0 2px;
+    }
+
+    .alert-close:hover {
+      opacity: 1;
+    }
+
+    /* Employee Profile Card */
+    .profile-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 12px 14px;
+      margin-bottom: 14px;
+    }
+
+    .profile-left {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      min-width: 0;
+    }
+
+    .avatar-circle {
+      width: 38px;
+      height: 38px;
+      border-radius: 11px;
+      background: linear-gradient(135deg, rgba(16, 185, 129, 0.25), rgba(56, 189, 248, 0.25));
+      border: 1px solid rgba(52, 211, 153, 0.35);
+      color: var(--emerald-bright);
+      font-size: 14px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .profile-info {
+      min-width: 0;
+    }
+
+    .user-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .user-email {
+      font-size: 11.5px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-top: 1px;
+    }
+
+    /* Active Time Hero Card */
+    .active-hero {
+      background: linear-gradient(145deg, rgba(16, 185, 129, 0.14) 0%, rgba(15, 23, 42, 0.9) 55%, rgba(56, 189, 248, 0.10) 100%);
+      border: 1px solid rgba(16, 185, 129, 0.28);
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 14px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .active-hero.inactive-state {
+      background: linear-gradient(145deg, rgba(30, 41, 59, 0.65) 0%, rgba(15, 23, 42, 0.92) 100%);
+      border-color: var(--border-subtle);
+    }
+
+    .active-hero-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .active-hero-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .active-hero-label svg {
+      width: 14px;
+      height: 14px;
+      color: var(--emerald-bright);
+    }
+
+    .date-badge {
+      font-size: 11px;
+      color: var(--text-secondary);
+      background: rgba(15, 23, 42, 0.65);
+      border: 1px solid var(--border-subtle);
+      padding: 3px 8px;
+      border-radius: 999px;
+    }
+
+    .active-time-value {
+      font-size: 32px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      font-variant-numeric: tabular-nums;
+      background: linear-gradient(135deg, #ffffff 10%, #6ee7b7 60%, #7dd3fc 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      line-height: 1.15;
+      margin-bottom: 10px;
+    }
+
+    .active-hero.inactive-state .active-time-value {
+      background: linear-gradient(135deg, #f8fafc 20%, #94a3b8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .active-hero-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(148, 163, 184, 0.12);
+      font-size: 11.5px;
+      color: var(--text-secondary);
+    }
+
+    .meta-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .meta-value {
+      color: var(--text-primary);
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .prod-pill {
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      background: var(--cyan-dim);
+      color: var(--cyan);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+    }
+
+    /* Telemetry Stats Grid */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .stat-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 13px;
+      padding: 12px 13px;
+      transition: background 0.16s ease, border-color 0.16s ease;
+    }
+
+    .stat-card:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--border-strong);
+    }
+
+    .stat-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    .stat-icon {
+      width: 24px;
+      height: 24px;
+      border-radius: 7px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .stat-icon svg {
+      width: 13px;
+      height: 13px;
+    }
+
+    .icon-cyan { background: rgba(56, 189, 248, 0.14); color: #38bdf8; }
+    .icon-indigo { background: rgba(129, 140, 248, 0.14); color: #818cf8; }
+    .icon-emerald { background: rgba(16, 185, 129, 0.14); color: #34d399; }
+    .icon-amber { background: rgba(245, 158, 11, 0.14); color: #fbbf24; }
+
+    .stat-value {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text-primary);
+      font-variant-numeric: tabular-nums;
+      line-height: 1.2;
+    }
+
+    .stat-value.app-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: #a5b4fc;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 24px;
+    }
+
+    /* Task Attribution & Capture Box */
+    .task-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 13px;
+      padding: 12px 13px;
+      margin-bottom: 14px;
+    }
+
+    .task-box-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 7px;
+    }
+
+    .task-box label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-secondary);
+    }
+
+    .task-box select {
+      padding: 8px 10px;
+      font-size: 12.5px;
+      border-radius: 9px;
     }
 
     .capture-row {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-top: 10px;
+      margin-top: 9px;
       font-size: 11px;
-      color: #64748b;
-      gap: 8px;
+      color: var(--text-secondary);
     }
 
     .capture-status {
-      font-weight: 600;
-      color: #475569;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
     }
 
     .capture-dot {
-      display: inline-block;
       width: 7px;
       height: 7px;
       border-radius: 50%;
-      background: #cbd5e1;
-      margin-right: 5px;
+      background: var(--text-muted);
     }
 
-    .capture-dot.on {
-      background: #22c55e;
+    .capture-dot.active {
+      background: var(--emerald-bright);
+      box-shadow: 0 0 8px rgba(16, 185, 129, 0.7);
     }
 
-    .capture-dot.off {
-      background: #f59e0b;
+    .capture-dot.paused {
+      background: var(--amber);
     }
 
-    .user-info {
-      background: #f8fafc;
-      border: 1px solid #e2e8f0;
-      padding: 12px 14px;
-      border-radius: 8px;
-      margin-bottom: 12px;
-      text-align: center;
-    }
-
-    .user-name {
-      font-size: 16px;
-      color: #1e293b;
-      font-weight: 700;
-      margin-bottom: 2px;
-    }
-
-    .user-email {
-      font-size: 12px;
-      color: #64748b;
-      font-weight: 400;
-    }
-
-    .error-message {
-      background: #ffebee;
-      color: #c62828;
-      padding: 10px;
-      border-radius: 6px;
-      margin-bottom: 15px;
-      font-size: 14px;
+    /* Quick Daily Progress Drawer (shown if End Day requires daily progress) */
+    .quick-progress-card {
       display: none;
+      background: rgba(15, 23, 42, 0.96);
+      border: 1px solid rgba(245, 158, 11, 0.38);
+      border-radius: 14px;
+      padding: 14px;
+      margin-bottom: 14px;
+      animation: fadeSlideIn 0.2s ease-out;
     }
 
-    .error-message.show {
+    .quick-progress-card.visible {
       display: block;
     }
 
-    .consent-box {
-      background: #f9f9f9;
-      border-left: 4px solid #667eea;
-      padding: 15px;
-      margin: 20px 0;
-      border-radius: 4px;
-    }
-
-    .consent-list {
-      margin: 15px 0;
-      padding-left: 20px;
-    }
-
-    .consent-list li {
-      margin: 8px 0;
-      color: #555;
-      line-height: 1.5;
-    }
-
-    .divider {
-      height: 1px;
-      background: #e0e0e0;
-      margin: 20px 0;
-    }
-
-    .app-title {
-      text-align: center;
-      margin-bottom: 30px;
-    }
-
-    .app-icon {
-      width: 60px;
-      height: 60px;
-      margin: 0 auto 15px;
-      background: #667eea;
-      border-radius: 50%;
+    .qp-header {
       display: flex;
       align-items: center;
-      justify-content: center;
-      color: white;
-      font-size: 30px;
-      font-weight: bold;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+
+    .qp-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #fcd34d;
+    }
+
+    .qp-desc {
+      font-size: 11.5px;
+      color: var(--text-secondary);
+      margin-bottom: 11px;
+      line-height: 1.4;
+    }
+
+    .qp-row {
+      display: grid;
+      grid-template-columns: 1fr 84px;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .qp-actions {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .qp-actions .btn {
+      padding: 9px 12px;
+      font-size: 12.5px;
+    }
+
+    textarea#progressNotes {
+      resize: vertical;
+      min-height: 60px;
+      font-size: 12.5px;
+    }
+
+    /* Action Footer */
+    .actions-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+    }
+
+    .footer-note {
+      text-align: center;
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 10px;
     }
   </style>
 </head>
 <body>
   <div class="container">
     <!-- Consent Screen -->
-    <div id="consentScreen" class="screen">
-      <div class="app-title">
-        <div class="app-icon">👁️</div>
-        <h1>Employee Activity Agent</h1>
+    <div id="consentScreen" class="screen active">
+      <div class="hero-center">
+        <div class="brand-logo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
+          </svg>
+        </div>
+        <h1>Infiverse Activity Agent</h1>
+        <p>Privacy-first workday telemetry &amp; attendance sync</p>
       </div>
-      
-      <h2>Privacy & Consent</h2>
-      
-      <div class="consent-box">
-        <p><strong>This application will track:</strong></p>
+
+      <div class="consent-card">
+        <h3>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+          What We Measure
+        </h3>
         <ul class="consent-list">
-          <li>Mouse event counts (not positions)</li>
-          <li>Keyboard event counts (not actual keystrokes)</li>
-          <li>Active application name and window title</li>
-          <li>Idle/active time</li>
-          <li>Periodic work-screen snapshots while your workday is active</li>
-          <li>The task you select, so tracked time can be attributed to it</li>
+          <li><span class="consent-check">&#10003;</span><span>Mouse &amp; keyboard activity counts (aggregate metrics only)</span></li>
+          <li><span class="consent-check">&#10003;</span><span>Active window application name &amp; live workday duration</span></li>
+          <li><span class="consent-check">&#10003;</span><span>Idle time detection &amp; scheduled Trinetra verification</span></li>
+          <li><span class="consent-check">&#10003;</span><span>Zero keylogging, passwords, or private clipboard capture</span></li>
         </ul>
+        <div class="privacy-note">
+          Tracking activates strictly during your started workday and halts the moment you click End Day.
+        </div>
       </div>
 
-      <p><strong>What we DO NOT track:</strong></p>
-      <ul class="consent-list">
-        <li>Actual keystroke content or passwords</li>
-        <li>Personal files or personal browsing outside work hours</li>
-        <li>Activity while your workday is ended or monitoring is paused</li>
-        <li>Windows matching the privacy blocklist configured by your admin</li>
-      </ul>
-
-      <p>Snapshots are skipped when your screen has not changed, and are retained only for the period set by company policy.</p>
-
-      <p>Tracking begins only after you click "Start Day" and stops immediately when you click "End Day" or close this application.</p>
-
-      <div class="checkbox-group">
-        <input type="checkbox" id="consentCheckbox">
-        <label for="consentCheckbox" class="checkbox-label">
-          I understand and consent to activity tracking as described above
-        </label>
-      </div>
-
-      <div id="consentError" class="error-message"></div>
-
-      <button id="acceptConsentBtn">Accept & Continue</button>
+      <button id="consentBtn" class="btn btn-primary">Accept &amp; Continue</button>
     </div>
 
     <!-- Login Screen -->
     <div id="loginScreen" class="screen">
-      <div class="app-title">
-        <div class="app-icon">👁️</div>
-        <h1>Employee Activity Agent</h1>
+      <div class="hero-center">
+        <div class="brand-logo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
+          </svg>
+        </div>
+        <h1>Welcome Back</h1>
+        <p>Sign in with your Infiverse workspace credentials</p>
       </div>
 
-      <h2>Login</h2>
-
-      <div id="loginError" class="error-message"></div>
+      <div id="loginError" class="alert-banner error">
+        <div class="alert-content" id="loginErrorText"></div>
+      </div>
 
       <div class="input-group">
-        <label for="email">Email</label>
-        <input type="email" id="email" placeholder="your.email@company.com" required>
+        <label for="email">Work Email</label>
+        <input type="email" id="email" placeholder="name@company.com" required>
       </div>
 
       <div class="input-group">
@@ -407,45 +924,143 @@
         <input type="password" id="password" placeholder="Enter your password" required>
       </div>
 
-      <button id="loginBtn">Login</button>
+      <button id="loginBtn" class="btn btn-primary">Sign In</button>
+      <div class="footer-note">Connected securely to Infiverse Workspace</div>
     </div>
 
     <!-- Dashboard Screen -->
     <div id="dashboardScreen" class="screen">
-      <div class="app-title">
-        <h1>Dashboard</h1>
+      <!-- Top Brand Bar -->
+      <div class="brand-header">
+        <div class="brand-left">
+          <div class="brand-logo">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+              <path d="M2 17l10 5 10-5"/>
+              <path d="M2 12l10 5 10-5"/>
+            </svg>
+          </div>
+          <div class="brand-text">
+            <h1>Infiverse Agent</h1>
+            <p>Workday &amp; Activity Monitor</p>
+          </div>
+        </div>
+        <div id="trackingStatus" class="status-pill inactive">
+          <span class="status-pill-dot"></span>
+          <span id="trackingStatusText">Standby</span>
+        </div>
       </div>
 
-      <div class="user-info">
-        <div class="user-name" id="userName">Employee</div>
-        <div class="user-email" id="userEmail">user@example.com</div>
+      <!-- Employee Identity Card -->
+      <div class="profile-card">
+        <div class="profile-left">
+          <div class="avatar-circle" id="userAvatar">EM</div>
+          <div class="profile-info">
+            <div class="user-name" id="userName">Employee</div>
+            <div class="user-email" id="userEmail">user@example.com</div>
+          </div>
+        </div>
+        <button id="logoutBtn" class="btn-ghost-icon" title="Sign Out">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+            <polyline points="16 17 21 12 16 7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+        </button>
       </div>
 
-      <div id="trackingStatus" class="status-badge status-inactive">
-        Day Not Started
+      <!-- Dashboard Inline Alert Banner -->
+      <div id="dashboardAlert" class="alert-banner">
+        <div class="alert-content" id="dashboardAlertText"></div>
+        <button type="button" class="alert-close" id="dashboardAlertClose" aria-label="Dismiss">&times;</button>
       </div>
 
+      <!-- Today's Active Time Hero Card -->
+      <div id="activeHeroCard" class="active-hero inactive-state">
+        <div class="active-hero-top">
+          <div class="active-hero-label">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
+            </svg>
+            Today's Active Time
+          </div>
+          <span class="date-badge" id="todayDateBadge">Today</span>
+        </div>
+
+        <div class="active-time-value" id="activeTimeDisplay">0h 00m 00s</div>
+
+        <div class="active-hero-meta">
+          <span class="meta-item">
+            Started: <span class="meta-value" id="startTimeLabel">--:--</span>
+          </span>
+          <span class="meta-item">
+            <span class="prod-pill" id="productivityBadge">0% Prod</span>
+          </span>
+        </div>
+      </div>
+
+      <!-- Live Telemetry Stats Grid -->
       <div id="statsContainer" class="stats-grid" style="display: none;">
         <div class="stat-card">
+          <div class="stat-top">
+            <span class="stat-label">Mouse Events</span>
+            <span class="stat-icon icon-cyan">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="6" y="3" width="12" height="18" rx="6"/>
+                <line x1="12" y1="7" x2="12" y2="11"/>
+              </svg>
+            </span>
+          </div>
           <div class="stat-value" id="mouseCount">0</div>
-          <div class="stat-label">Mouse Events</div>
         </div>
+
         <div class="stat-card">
+          <div class="stat-top">
+            <span class="stat-label">Keystrokes</span>
+            <span class="stat-icon icon-emerald">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="2" y="4" width="20" height="16" rx="2"/>
+                <path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h8"/>
+              </svg>
+            </span>
+          </div>
           <div class="stat-value" id="keyCount">0</div>
-          <div class="stat-label">Key Events</div>
         </div>
+
         <div class="stat-card">
-          <div class="stat-value" id="activeApp" style="font-size: 16px; color: #4f46e5; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Desktop</div>
-          <div class="stat-label">Active App</div>
+          <div class="stat-top">
+            <span class="stat-label">Active App</span>
+            <span class="stat-icon icon-indigo">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="2" y="3" width="20" height="14" rx="2"/>
+                <line x1="8" y1="21" x2="16" y2="21"/>
+                <line x1="12" y1="17" x2="12" y2="21"/>
+              </svg>
+            </span>
+          </div>
+          <div class="stat-value app-name" id="activeApp" title="Desktop">Desktop</div>
         </div>
+
         <div class="stat-card">
+          <div class="stat-top">
+            <span class="stat-label">Idle Time</span>
+            <span class="stat-icon icon-amber">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M5 22h14M5 2h14M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/>
+                <path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/>
+              </svg>
+            </span>
+          </div>
           <div class="stat-value" id="idleTime">0s</div>
-          <div class="stat-label">Idle Time</div>
         </div>
       </div>
 
+      <!-- Current Task & Capture Status -->
       <div class="task-box" id="taskBox" style="display: none;">
-        <label for="activeTaskSelect">Current Task</label>
+        <div class="task-box-header">
+          <label for="activeTaskSelect">Active Task Attribution</label>
+        </div>
         <select id="activeTaskSelect">
           <option value="">— Not attributed to a task —</option>
         </select>
@@ -458,11 +1073,45 @@
         </div>
       </div>
 
-      <div class="divider"></div>
+      <!-- Quick Daily Progress Drawer (Auto-opens if End Day requires daily progress) -->
+      <div id="quickProgressCard" class="quick-progress-card">
+        <div class="qp-header">
+          <span class="qp-title">Quick Daily Progress Required</span>
+        </div>
+        <p class="qp-desc">
+          Submit a quick progress update for today so your work day can be closed cleanly.
+        </p>
+        <div class="qp-row">
+          <select id="progressTaskSelect">
+            <option value="">Select task...</option>
+          </select>
+          <input type="number" id="progressPercent" min="0" max="100" value="75" placeholder="%" title="Completion %">
+        </div>
+        <textarea id="progressNotes" placeholder="What did you work on or complete today?"></textarea>
+        <div class="qp-actions">
+          <button type="button" id="saveProgressEndBtn" class="btn btn-primary">Save Progress &amp; End Day</button>
+          <button type="button" id="cancelProgressBtn" class="btn btn-secondary">Cancel</button>
+        </div>
+      </div>
 
-      <button id="startDayBtn" class="success">Start Day</button>
-      <button id="endDayBtn" class="danger" style="display: none;">End Day</button>
-      <button id="logoutBtn" class="secondary">Logout</button>
+      <!-- Workday Controls -->
+      <div class="actions-stack">
+        <button id="startDayBtn" class="btn btn-primary">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="6 4 20 12 6 20 6 4"/>
+          </svg>
+          <span>Start Day</span>
+        </button>
+
+        <button id="endDayBtn" class="btn btn-danger" style="display: none;">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <rect x="6" y="6" width="12" height="12" rx="2"/>
+          </svg>
+          <span>End Day</span>
+        </button>
+      </div>
+
+      <div class="footer-note">Syncs live with Infiverse Dashboard</div>
     </div>
   </div>
 
