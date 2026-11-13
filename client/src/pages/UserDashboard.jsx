@@ -19,6 +19,12 @@ import {
   ChevronRight,
   Bot,
   ArrowRight,
+  Target,
+  TrendingUp,
+  Activity,
+  CheckCircle2,
+  Zap,
+  Sparkles,
 } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import { useToast } from "../hooks/use-toast"
@@ -155,7 +161,7 @@ function UserDashboard() {
       const [statsResponse, tasksResponse, submissionsResponse] = await Promise.all([
         api.dashboard.getUserStats(storedUser.id),
         api.users.getUserTasks(storedUser.id),
-        api.get(`/users/${storedUser.id}/submissions`)
+        api.get(`/users/${storedUser.id}/submissions`),
       ])
 
       console.log('Dashboard data fetched:', {
@@ -358,6 +364,8 @@ function UserDashboard() {
             </AlertDescription>
           </Alert>
         )}
+
+
 
         {/* Enhanced Stats Cards */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -587,22 +595,22 @@ function UserDashboard() {
         </div>
 
         <Tabs defaultValue="tasks" className="w-full">
-          <TabsList className="grid w-full max-w-2xl grid-cols-2 mx-auto neo-card p-2 gap-2 bg-gradient-to-r from-primary/5 via-accent/5 to-primary/5 border border-border shadow-lg">
+          <TabsList className="grid w-full max-w-2xl grid-cols-2 mx-auto h-auto items-stretch p-1.5 gap-2 rounded-xl bg-card/90 border border-border shadow-md">
             <TabsTrigger 
               value="tasks" 
-              className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md transition-all duration-300 hover:scale-105 font-semibold text-base py-3 rounded-lg"
+              className="flex items-center justify-center gap-2 w-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md transition-all duration-200 font-semibold text-sm sm:text-base py-2.5 px-4 rounded-lg"
             >
               📋 My Tasks
             </TabsTrigger>
             <TabsTrigger 
               value="submissions" 
-              className="relative data-[state=active]:bg-accent data-[state=active]:text-accent-foreground data-[state=active]:shadow-md transition-all duration-300 hover:scale-105 font-semibold text-base py-3 rounded-lg"
+              className="relative flex items-center justify-center gap-2 w-full data-[state=active]:bg-accent data-[state=active]:text-accent-foreground data-[state=active]:shadow-md transition-all duration-200 font-semibold text-sm sm:text-base py-2.5 px-4 rounded-lg"
             >
               📤 My Submissions
               {hasNewReviews && (
-                <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                <span className="absolute top-2 right-2 flex h-2.5 w-2.5">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-500"></span>
                 </span>
               )}
             </TabsTrigger>

@@ -189,8 +189,8 @@ router.post(
       const { user, task, progressPercentage, notes, blockers, achievements, date } = req.body;
 
       // Check if user is active
-      const userDoc = await User.findOne({ _id: user, stillExist: 1 });
-      if (!userDoc) {
+      const userDoc = await User.findById(user);
+      if (!userDoc || userDoc.stillExist === 0) {
         return res.status(404).json({ error: "User not found or no longer active" });
       }
 
@@ -243,10 +243,10 @@ router.post(
       // Update task progress and auto-change status to "In Progress" if pending
       taskDoc.progress = progressPercentage;
       
-      // 🔄 AUTO STATUS UPDATE: If task is Pending, change to In Progress
-      if (taskDoc.status === 'Pending') {
+      // 🔄 AUTO STATUS UPDATE: If task is Pending, Pending Validation, or Approved, change to In Progress
+      if (['Pending', 'Pending Validation', 'Approved'].includes(taskDoc.status)) {
         taskDoc.status = 'In Progress';
-        console.log(`✅ Auto-updated task ${task} status: Pending → In Progress (User started working)`);
+        console.log(`✅ Auto-updated task ${task} status to In Progress (User started working)`);
       }
       
       await taskDoc.save();
@@ -258,7 +258,7 @@ router.post(
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
 
-      const todayAim = await Aim.findOne({
+      let todayAim = await Aim.findOne({
         user: user,
         date: {
           $gte: today,
@@ -272,9 +272,29 @@ router.post(
         todayAim.progressNotes = notes;
         todayAim.achievements = achievements;
         todayAim.blockers = blockers;
+        if (progressPercentage >= 100) {
+          todayAim.completionStatus = 'Completed';
+          todayAim.completed = true;
+        }
         await todayAim.save();
 
         console.log(`📊 Updated aim progress for user ${user}: ${progressPercentage}%`);
+      } else {
+        // Auto-create Today's Aim so Aim record is synchronized
+        todayAim = new Aim({
+          user: user,
+          department: userDoc.department || taskDoc.department,
+          aims: taskDoc.title || notes || "Daily Task Execution",
+          completionStatus: progressPercentage >= 100 ? 'Completed' : 'Pending',
+          completed: progressPercentage >= 100,
+          progressPercentage: progressPercentage,
+          progressNotes: notes || '',
+          blockers: blockers || '',
+          achievements: achievements || '',
+          date: new Date()
+        });
+        await todayAim.save();
+        console.log(`📊 Auto-created Today's Aim for user ${user} from progress update`);
       }
 
       // Notify via Socket.IO

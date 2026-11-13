@@ -41,6 +41,7 @@ import axios from "axios";
 import { API_URL } from "./lib/api";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+import { Toaster as HotToaster } from "react-hot-toast";
 import { usePushNotifications } from "./hooks/usePushNotifications";
 import EMSDashboard from "./pages/EMSDashboard";
 import ProcurementDashboard from "./pages/ProcurementDashboard";
@@ -206,6 +207,14 @@ function AppContent() {
                   element={
                     <ProtectedRoute>
                       <TodaysAim />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/todaysaim"
+                  element={
+                    <ProtectedRoute>
+                      <Navigate to="/aims" replace />
                     </ProtectedRoute>
                   }
                 />
@@ -497,14 +506,30 @@ function App() {
       </Router>
       <ToastContainer
         position="top-right"
-        autoClose={2000}
+        autoClose={4500}
         hideProgressBar={false}
-        newestOnTop={false}
+        newestOnTop={true}
         closeOnClick
         rtl={false}
         pauseOnFocusLoss
         draggable
         pauseOnHover
+        theme="colored"
+        style={{ zIndex: 99999 }}
+      />
+      <HotToaster
+        position="top-right"
+        containerStyle={{ zIndex: 99999 }}
+        toastOptions={{
+          duration: 4500,
+          style: {
+            background: "hsl(var(--popover))",
+            color: "hsl(var(--popover-foreground))",
+            border: "1px solid hsl(var(--border))",
+            borderRadius: "14px",
+            boxShadow: "0 18px 40px -12px rgba(0, 0, 0, 0.35)",
+          },
+        }}
       />
     </ThemeProvider>
   );

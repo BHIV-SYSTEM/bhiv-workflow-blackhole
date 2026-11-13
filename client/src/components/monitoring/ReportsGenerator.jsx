@@ -358,7 +358,12 @@ export function ReportsGenerator({
       csv += `"${empIdFormatted}","${empName}",${totalActivities},${avgScore}%,${totalScreenshots},${flaggedScreenshots},${totalAlerts}\n\n`;
 
       csv += 'DAILY PERFORMANCE BREAKDOWN\n';
-      csv += 'Employee ID,Date,Total Activities,Productivity Score (%),Active Hours,Total Keystrokes,Mouse Activity (%),Efficiency Rating\n';
+      csv += 'Emp ID,Date,AIM,Blocker,Achievement,Total Activities,Productivity Score (%),Active Hours,Total Keystrokes,Mouse Activity (%),Efficiency Rating\n';
+
+      const cleanIndividualField = (txt) => {
+        if (!txt || txt === '-') return '-';
+        return String(txt).replace(/"/g, '""').replace(/[\r\n\t]+/g, ' ').trim();
+      };
 
       if (reportData?.dailyMetrics && reportData.dailyMetrics.length > 0) {
         reportData.dailyMetrics.forEach(day => {
@@ -369,7 +374,10 @@ export function ReportsGenerator({
           const activeText = (day.totalActivities > 0 || day.activeSeconds > 0 || day.activeHours > 0)
             ? (day.activeHoursFormatted || `${day.activeHours}h`)
             : '-';
-          csv += `"${empIdFormatted}","${day.date}",${day.totalActivities > 0 ? day.totalActivities : '-'},"${day.totalActivities > 0 ? `${day.avgProductivityScore}%` : '-'}","${activeText}",${day.totalKeystroke > 0 ? day.totalKeystroke : '-'},"${day.totalActivities > 0 ? `${day.avgMouseActivity}%` : '-'}","${day.totalActivities > 0 ? eff : '-'}"\n`;
+          const aim = cleanIndividualField(day.aim || day.aims || day.todayAim);
+          const blocker = cleanIndividualField(day.blocker || day.blockers);
+          const achievement = cleanIndividualField(day.achievement || day.achievements);
+          csv += `"${empIdFormatted}","${day.date}","${aim}","${blocker}","${achievement}",${day.totalActivities > 0 ? day.totalActivities : '-'},"${day.totalActivities > 0 ? `${day.avgProductivityScore}%` : '-'}","${activeText}",${day.totalKeystroke > 0 ? day.totalKeystroke : '-'},"${day.totalActivities > 0 ? `${day.avgMouseActivity}%` : '-'}","${day.totalActivities > 0 ? eff : '-'}"\n`;
         });
       } else {
         csv += 'No daily activity logs recorded for this period\n';
@@ -601,20 +609,28 @@ export function ReportsGenerator({
         }
       }
 
-      // Exact columns matching specification with Employee ID:
-      // Employee ID, Name, Date, Activities, Productivity, Active Hour, Key Strokes, Mouse Score, Efficiency
-      let csv = 'Employee ID,Name,Date,Activities,Productivity,Active Hour,Key Strokes,Mouse Score,Efficiency\n';
+      // Exact columns matching specification with Employee ID, AIM, Blocker, Achievement:
+      // Emp ID,Name,Date,AIM,Blocker,Achievement,Activities,Productivity,Active Hour,Key Strokes,Mouse Score,Efficiency
+      let csv = 'Emp ID,Name,Date,AIM,Blocker,Achievement,Activities,Productivity,Active Hour,Key Strokes,Mouse Score,Efficiency\n';
+
+      const cleanTeamField = (txt) => {
+        if (!txt || txt === '-') return '-';
+        return String(txt).replace(/"/g, '""').replace(/[\r\n\t]+/g, ' ').trim();
+      };
 
       (members || []).forEach(m => {
         const empId = (m.employeeId || formatEmployeeId(m.email) || 'N/A').replace(/"/g, '""');
         const name = (m.name || 'Employee').replace(/"/g, '""');
+        const aim = cleanTeamField(m.aim || m.aims);
+        const blocker = cleanTeamField(m.blocker || m.blockers);
+        const achievement = cleanTeamField(m.achievement || m.achievements);
         const acts = m.totalActivities > 0 ? m.totalActivities : '-';
         const prod = m.totalActivities > 0 ? `${m.avgProductivity}%` : '-';
         const hours = (m.totalActivities > 0 || m.activeSeconds > 0) ? (m.activeHoursFormatted || `${m.activeHours}h`) : '-';
         const keys = m.totalKeystrokes > 0 ? m.totalKeystrokes : '-';
         const mouse = m.totalActivities > 0 ? `${m.avgMouse}%` : '-';
         const eff = m.efficiency === 'No Activity' ? '-' : m.efficiency;
-        csv += `"${empId}","${name}","${dateDisplay}",${acts},"${prod}","${hours}","${keys}","${mouse}","${eff}"\n`;
+        csv += `"${empId}","${name}","${dateDisplay}","${aim}","${blocker}","${achievement}",${acts},"${prod}","${hours}","${keys}","${mouse}","${eff}"\n`;
       });
 
       const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });

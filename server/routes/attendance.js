@@ -524,10 +524,13 @@ router.post('/end-day/:userId', auth, async (req, res) => {
       todayProgress.percentageCompleted !== undefined
     );
     
-    // RELAXED VALIDATION: Only warn, don't block
+    // MANDATORY VALIDATION: Block end day if user has not updated daily progress
     if (!hasProgressContent) {
-      console.log(`⚠️ User ${userId} is ending day without detailed progress - allowing anyway`);
-      // Don't block - just log the warning
+      console.log(`⛔ User ${userId} attempted to end day without progress update - blocking`);
+      return res.status(400).json({
+        error: 'Please submit your daily progress in the Progress tab before ending your work day.',
+        code: 'PROGRESS_NOT_SET'
+      });
     }
     
     // 🎯 Get aim for reference but don't block end-day if not completed

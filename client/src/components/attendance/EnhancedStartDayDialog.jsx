@@ -354,9 +354,16 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess }) => {
         OFFICE_COORDINATES.longitude
       );
       
+      const inRange = distance <= OFFICE_RADIUS;
       setLocation(coords);
       setDistanceFromOffice(distance);
-      setIsInOfficeRange(distance <= OFFICE_RADIUS || !isMobileDevice);
+      setIsInOfficeRange(inRange);
+      // Auto-select Work From Home if outside office radius (allowed: 2000m)
+      if (!inRange) {
+        setWorkFromHome(true);
+      } else {
+        setWorkFromHome(false);
+      }
       setStep('validation');
       
     } catch (error) {
@@ -424,6 +431,12 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess }) => {
   const handleStartDay = async () => {
     if (!location) {
       toast.error('Please get your location first');
+      return;
+    }
+
+    if (!workFromHome && !isInOfficeRange) {
+      toast.error(`You are outside office range (${distanceFromOffice ? Math.round(distanceFromOffice / 1000) + 'km away' : ''}). Please select Work From Home.`);
+      setWorkFromHome(true);
       return;
     }
 
@@ -499,7 +512,7 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess }) => {
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto bg-gray-700/90 dark:bg-gray-800/90 backdrop-blur-xl border-none shadow-2xl rounded-2xl">
+      <DialogContent className="w-[95vw] sm:max-w-md max-h-[90vh] overflow-y-auto bg-gray-800/95 backdrop-blur-xl border border-white/10 shadow-2xl rounded-2xl">
         <DialogHeader className="relative pb-2">
           <DialogTitle className="text-lg font-semibold text-white">
             Start Your Work Day
@@ -660,14 +673,16 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess }) => {
                         Distance from Office:
                       </span>
                       <span className="text-sm font-bold text-green-400">
-                        {distanceFromOffice}m
+                        {distanceFromOffice >= 1000 
+                          ? `${(distanceFromOffice / 1000).toFixed(1)} km (${distanceFromOffice.toLocaleString()}m)`
+                          : `${distanceFromOffice}m`}
                       </span>
                     </div>
                   )}
                 </div>
 
                 {/* Office Range Validation */}
-                {!workFromHome && (
+                {!workFromHome ? (
                   <div className={`relative overflow-hidden rounded-xl p-5 shadow-lg backdrop-blur-sm border ${
                     isInOfficeRange 
                       ? 'border-green-500/30 bg-green-600/20' 
@@ -700,7 +715,7 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess }) => {
                         }`}>
                           {isInOfficeRange ? 
                             '🏢 You are at Blackhole Infiverse LLP office location and can start your day.' :
-                            `📍 You are ${distanceFromOffice}m away from office (allowed: ${OFFICE_RADIUS}m). Please reach office or work from home.`
+                            `📍 You are ${distanceFromOffice >= 1000 ? `${(distanceFromOffice / 1000).toFixed(1)}km` : `${distanceFromOffice}m`} away from office (allowed: ${OFFICE_RADIUS}m). You cannot start day as Office from this location.`
                           }
                         </p>
                         
@@ -718,6 +733,24 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess }) => {
                       </div>
                     </div>
                   </div>
+                ) : (
+                  <div className="relative overflow-hidden rounded-xl p-4 shadow-lg backdrop-blur-sm border border-blue-500/30 bg-blue-600/20">
+                    <div className="flex items-start space-x-3">
+                      <div className="p-2.5 rounded-xl bg-blue-500 shadow-md">
+                        <Home className="w-6 h-6 text-white" />
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="font-bold text-base text-blue-300 mb-1">
+                          🏠 Work From Home Active
+                        </h4>
+                        <p className="text-xs text-blue-200 leading-relaxed">
+                          {!isInOfficeRange 
+                            ? `📍 You are ${distanceFromOffice >= 1000 ? `${(distanceFromOffice / 1000).toFixed(1)}km` : `${distanceFromOffice}m`} away from office premises. You can start your day remotely from home.`
+                            : '📍 You are within office range, but opted to start work from home today.'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 )}
 
                 {/* Work Options */}
@@ -730,20 +763,26 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess }) => {
                   <div className="grid grid-cols-2 gap-3">
                     <Button
                       variant={!workFromHome ? "default" : "outline"}
-                      onClick={() => setWorkFromHome(false)}
-                      disabled={!isInOfficeRange && !workFromHome}
+                      onClick={() => {
+                        if (isInOfficeRange) setWorkFromHome(false);
+                      }}
+                      disabled={!isInOfficeRange}
                       className={`relative h-20 flex-col space-y-2 transition-all duration-200 ${
-                        !workFromHome 
-                          ? 'bg-blue-500/90 hover:bg-blue-600/90 text-white shadow-lg border border-blue-400/50' 
-                          : 'border border-gray-500/30 bg-gray-600/50 hover:bg-gray-600/60 text-white backdrop-blur-sm'
+                        !isInOfficeRange 
+                          ? 'border border-gray-600/40 bg-gray-700/30 text-gray-400 cursor-not-allowed opacity-40'
+                          : !workFromHome 
+                            ? 'bg-blue-500/90 hover:bg-blue-600/90 text-white shadow-lg border border-blue-400/50' 
+                            : 'border border-gray-500/30 bg-gray-600/50 hover:bg-gray-600/60 text-white backdrop-blur-sm'
                       }`}
                     >
                       <Building className="w-7 h-7" />
                       <span className="font-semibold text-sm">Office</span>
-                      {!isInOfficeRange && !workFromHome && (
-                        <span className="text-xs font-semibold bg-red-500/30 px-2 py-0.5 rounded-full text-red-200">Too far</span>
+                      {!isInOfficeRange && (
+                        <span className="text-[10px] font-bold bg-red-500/40 text-red-200 px-2 py-0.5 rounded-full">
+                          Too far ({distanceFromOffice ? `${Math.round(distanceFromOffice / 1000)}km` : 'outside range'})
+                        </span>
                       )}
-                      {!workFromHome && (
+                      {!workFromHome && isInOfficeRange && (
                         <div className="absolute top-2 right-2 w-2.5 h-2.5 bg-green-400 rounded-full animate-pulse shadow-lg"></div>
                       )}
                     </Button>

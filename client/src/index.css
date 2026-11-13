@@ -1,10 +1,6 @@
 @import "tailwindcss";
-/* stylelint-disable-next-line at-rule-no-unknown */
-@tailwind base;
-/* stylelint-disable-next-line at-rule-no-unknown */
-@tailwind components;
-/* stylelint-disable-next-line at-rule-no-unknown */
-@tailwind utilities;
+@config "../tailwind.config.js";
+@custom-variant dark (&:where(.dark, .dark *, .universe, .universe *));
 
 @layer base {
   * {
@@ -178,10 +174,12 @@
   /* Gradients & glows */
   --gradient-primary: linear-gradient(135deg, hsl(275 95% 60%), hsl(290 90% 65%));
   --gradient-secondary: linear-gradient(135deg, hsl(288 86% 60%), hsl(320 80% 50%));
-  --gradient-card: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.25));
+  --gradient-accent: linear-gradient(135deg, hsl(200 95% 62%), hsl(275 95% 65%));
+  --gradient-card: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0.28));
 
   --shadow-glow-primary: 0 0 40px -6px hsl(275 95% 65% / 0.6);
   --shadow-glow-secondary: 0 0 36px -6px hsl(288 86% 60% / 0.45);
+  --shadow-glow-accent: 0 0 36px -6px hsl(200 95% 62% / 0.45);
 
   /* Sidebar tweaks */
   --sidebar-background: 234 14% 10%;
@@ -742,4 +740,97 @@ html, body {
 
 .animate-pulse-glow-primary {
   animation: pulse-glow-primary 3s ease-in-out infinite;
+}
+
+/* Theme-Adaptive Toast Popups (Light / Dark / Universe) */
+.Toastify__toast-container {
+  z-index: 99999 !important;
+  padding: 12px !important;
+}
+
+.Toastify__toast,
+.Toastify__toast.Toastify__toast-theme--light,
+.Toastify__toast.Toastify__toast-theme--dark,
+.Toastify__toast.Toastify__toast-theme--colored {
+  border-radius: 14px !important;
+  border: 1px solid hsl(var(--border) / 0.85) !important;
+  background: hsl(var(--popover) / 0.96) !important;
+  color: hsl(var(--popover-foreground)) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  box-shadow: 0 20px 45px -12px rgba(0, 0, 0, 0.32) !important;
+  padding: 14px 16px !important;
+  min-height: 58px !important;
+  font-family: 'Inter', sans-serif !important;
+}
+
+.Toastify__toast.Toastify__toast--success {
+  border-color: hsl(var(--success) / 0.45) !important;
+  background: linear-gradient(135deg, hsl(var(--popover) / 0.96), hsl(var(--success) / 0.14)) !important;
+  color: hsl(var(--popover-foreground)) !important;
+}
+
+.Toastify__toast.Toastify__toast--error {
+  border-color: hsl(var(--destructive) / 0.55) !important;
+  background: linear-gradient(135deg, hsl(var(--popover) / 0.96), hsl(var(--destructive) / 0.16)) !important;
+  color: hsl(var(--popover-foreground)) !important;
+}
+
+.Toastify__toast.Toastify__toast--warning {
+  border-color: hsl(var(--warning) / 0.5) !important;
+  background: linear-gradient(135deg, hsl(var(--popover) / 0.96), hsl(var(--warning) / 0.14)) !important;
+  color: hsl(var(--popover-foreground)) !important;
+}
+
+.Toastify__toast.Toastify__toast--info {
+  border-color: hsl(var(--primary) / 0.45) !important;
+  background: linear-gradient(135deg, hsl(var(--popover) / 0.96), hsl(var(--primary) / 0.12)) !important;
+  color: hsl(var(--popover-foreground)) !important;
+}
+
+.Toastify__toast-icon svg {
+  fill: currentColor;
+}
+
+.Toastify__toast--success .Toastify__toast-icon svg {
+  fill: hsl(var(--success)) !important;
+}
+
+.Toastify__toast--error .Toastify__toast-icon svg {
+  fill: hsl(var(--destructive)) !important;
+}
+
+.Toastify__toast--warning .Toastify__toast-icon svg {
+  fill: hsl(var(--warning)) !important;
+}
+
+.Toastify__toast--info .Toastify__toast-icon svg {
+  fill: hsl(var(--primary)) !important;
+}
+
+.Toastify__close-button {
+  color: hsl(var(--muted-foreground)) !important;
+  opacity: 0.85 !important;
+}
+
+.Toastify__close-button:hover {
+  color: hsl(var(--foreground)) !important;
+  opacity: 1 !important;
+}
+
+.Toastify__progress-bar--success {
+  background: hsl(var(--success)) !important;
+}
+
+.Toastify__progress-bar--error {
+  background: hsl(var(--destructive)) !important;
+}
+
+.Toastify__progress-bar--warning {
+  background: hsl(var(--warning)) !important;
+}
+
+.Toastify__progress-bar--info,
+.Toastify__progress-bar--default {
+  background: hsl(var(--primary)) !important;
 }

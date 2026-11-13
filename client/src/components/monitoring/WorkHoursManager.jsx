@@ -1,8 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { 
   Clock, 
   Play, 
@@ -12,15 +21,19 @@ import {
   Calendar,
   CheckCircle,
   AlertCircle,
-  AlertTriangle
+  AlertTriangle,
+  FileText,
+  ArrowRight
 } from 'lucide-react';
 import { format, differenceInMinutes, startOfDay, isSameDay } from 'date-fns';
 import { api } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '../../context/auth-context';
 import EnhancedStartDayDialog from '../attendance/EnhancedStartDayDialog';
+import { DayEndReportDialog } from './DayEndReportDialog';
 
 export function WorkHoursManager({ employee }) {
+  const navigate = useNavigate();
   const [workSession, setWorkSession] = useState(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [loading, setLoading] = useState(false);
@@ -29,11 +42,30 @@ export function WorkHoursManager({ employee }) {
   const [clientBreakMinutes, setClientBreakMinutes] = useState(0); // extra break tracking when backend has no session
   const [lastCheckedDate, setLastCheckedDate] = useState(null); // track date for midnight reset
   const [spamWarning, setSpamWarning] = useState(null); // warning for unended days
+  const [showDayEndReport, setShowDayEndReport] = useState(false);
+  const [dayEndReportData, setDayEndReportData] = useState(null);
+  const [loadingReport, setLoadingReport] = useState(false);
+  const [endDayAlert, setEndDayAlert] = useState(null);
   const { toast } = useToast();
   const { user } = useAuth();
 
   // Use current user if no employee prop is provided (for user dashboard)
   const currentEmployee = employee || user;
+
+  const fetchDayEndReport = async () => {
+    const empId = currentEmployee?._id || currentEmployee?.id;
+    if (!empId) return;
+    try {
+      setLoadingReport(true);
+      setShowDayEndReport(true);
+      const summary = await api.get(`/users/${empId}/daily-summary`);
+      setDayEndReportData(summary);
+    } catch (err) {
+      console.error('Failed to load day-end performance summary:', err);
+    } finally {
+      setLoadingReport(false);
+    }
+  };
 
   /**
    * Handle midnight reset - work session resets at 12 AM
@@ -420,6 +452,9 @@ export function WorkHoursManager({ employee }) {
           description: response.message || response.data?.message || "Your work session has been completed.",
         });
         
+        // Immediately fetch and display the Day-End Performance Report dialog
+        fetchDayEndReport();
+
         // Force refresh
         setTimeout(() => {
           fetchWorkSession();
@@ -429,10 +464,27 @@ export function WorkHoursManager({ employee }) {
         return;
       }
     } catch (error) {
-      console.log('Monitoring session end failed, trying attendance system...', error);
-      
       const errorData = error.response?.data || error;
       const errorMessage = errorData?.error || errorData?.message || error.message || '';
+
+      // If progress is not set, stop immediately and ask user to log progress
+      if (errorData?.code === 'PROGRESS_NOT_SET' || errorMessage.includes('PROGRESS_NOT_SET') || errorMessage.includes('daily progress')) {
+        setLoading(false);
+        setEndDayAlert({
+          title: "Daily Progress Update Required",
+          message: "Please submit your daily progress (notes, achievements, or blockers) in the Progress tab before ending your work day.",
+          actionLabel: "Go to Progress Tab",
+          actionPath: "/progress"
+        });
+        toast({
+          title: "❌ Progress Update Required",
+          description: "Please update your daily progress in the Progress tab before ending your work day.",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      console.log('Monitoring session end failed, trying attendance system...', error);
       
       // If no monitoring session found (check for various error messages), try to end via attendance system
       const noSessionErrors = [
@@ -471,6 +523,9 @@ export function WorkHoursManager({ employee }) {
               description: attendanceResponse.message || attendanceResponse.data?.message || "Your work day has been completed.",
             });
             
+            // Immediately fetch and display the Day-End Performance Report dialog
+            fetchDayEndReport();
+
             // Force refresh
             setTimeout(() => {
               fetchWorkSession();
@@ -491,6 +546,12 @@ export function WorkHoursManager({ employee }) {
           if (attendanceErrorData?.code === 'PROGRESS_NOT_SET' || 
               attendanceErrorMessage.includes('set your daily progress') ||
               attendanceErrorMessage.includes('PROGRESS_NOT_SET')) {
+            setEndDayAlert({
+              title: "Daily Progress Update Required",
+              message: "Please submit your daily progress (notes, achievements, or blockers) in the Progress tab before ending your work day.",
+              actionLabel: "Go to Progress Tab",
+              actionPath: "/progress"
+            });
             toast({
               title: "❌ Progress Required",
               description: "Please set your daily progress before ending your work day.",
@@ -498,21 +559,38 @@ export function WorkHoursManager({ employee }) {
             });
           } else if (attendanceErrorData?.code === 'AIM_NOT_COMPLETED') {
             console.log('Aim details from backend:', attendanceErrorData.aim);
+            setEndDayAlert({
+              title: "Daily Aim Not Completed",
+              message: `Please update or complete your daily aim before ending your work day. Current status: ${attendanceErrorData.aim?.completionStatus || 'Pending'}`,
+              actionLabel: "Go to Set Aims",
+              actionPath: "/aims"
+            });
             toast({
               title: "❌ Aim Not Completed",
               description: `Please complete your daily aim before ending your work day. Current status: ${attendanceErrorData.aim?.completionStatus || 'Unknown'}`,
               variant: "destructive"
             });
           } else if (attendanceErrorData?.code === 'AIM_COMMENT_MISSING') {
+            setEndDayAlert({
+              title: "Completion Comment Required",
+              message: "Please add a completion comment for your daily aim before ending your work day.",
+              actionLabel: "Go to Set Aims",
+              actionPath: "/aims"
+            });
             toast({
               title: "❌ Completion Comment Required",
               description: "Please add a completion comment for your aim.",
               variant: "destructive"
             });
           } else {
+            const errDesc = attendanceErrorData?.error || attendanceErrorData?.message || "Failed to end work day.";
+            setEndDayAlert({
+              title: "Unable to End Work Day",
+              message: errDesc,
+            });
             toast({
               title: "❌ Error",
-              description: attendanceErrorData?.error || attendanceErrorData?.message || "Failed to end work day.",
+              description: errDesc,
               variant: "destructive"
             });
           }
@@ -524,6 +602,12 @@ export function WorkHoursManager({ employee }) {
       
       // Handle other monitoring system errors
       if (errorData?.code === 'PROGRESS_NOT_SET') {
+        setEndDayAlert({
+          title: "Daily Progress Update Required",
+          message: "Please submit your daily progress in the Progress tab before ending your work session.",
+          actionLabel: "Go to Progress Tab",
+          actionPath: "/progress"
+        });
         toast({
           title: "❌ Progress Required",
           description: "Please set your daily progress before ending your work session.",
@@ -540,9 +624,14 @@ export function WorkHoursManager({ employee }) {
           fetchWorkSession();
         }, 500);
       } else {
+        const errDesc = errorData?.error || errorData?.message || "Failed to end work day. Check console for details.";
+        setEndDayAlert({
+          title: "Unable to End Work Day",
+          message: errDesc,
+        });
         toast({
           title: "❌ Error",
-          description: errorData?.error || errorData?.message || "Failed to end work day. Check console for details.",
+          description: errDesc,
           variant: "destructive"
         });
       }
@@ -740,14 +829,24 @@ export function WorkHoursManager({ employee }) {
           )}
           
           {isWorkDayCompleted && (
-            <Button 
-              onClick={handleStartWorkDayClick} 
-              disabled={loading}
-              className="flex-1"
-            >
-              <Play className="h-4 w-4 mr-2" />
-              Start New Day
-            </Button>
+            <div className="flex flex-col sm:flex-row gap-2 w-full">
+              <Button 
+                onClick={fetchDayEndReport} 
+                variant="outline"
+                className="flex-1 border-primary/40 hover:bg-primary/10 text-primary font-medium flex items-center justify-center gap-1.5"
+              >
+                <FileText className="h-4 w-4" />
+                View Day-End Report
+              </Button>
+              <Button 
+                onClick={handleStartWorkDayClick} 
+                disabled={loading}
+                className="flex-1"
+              >
+                <Play className="h-4 w-4 mr-2" />
+                Start New Day
+              </Button>
+            </div>
           )}
         </div>
 
@@ -769,6 +868,57 @@ export function WorkHoursManager({ employee }) {
         onStartDay={onStartDaySuccess}
         user={currentEmployee}
       />
+
+      {/* Day-End Performance & Output Report Dialog */}
+      <DayEndReportDialog
+        isOpen={showDayEndReport}
+        onClose={() => setShowDayEndReport(false)}
+        reportData={dayEndReportData}
+        isLoading={loadingReport}
+      />
+
+      {/* End-Day Validation / Blocking Alert Dialog */}
+      <Dialog open={!!endDayAlert} onOpenChange={(open) => !open && setEndDayAlert(null)}>
+        <DialogContent className="w-[95vw] max-w-md border border-border bg-card text-card-foreground shadow-2xl rounded-2xl p-6">
+          <DialogHeader>
+            <div className="flex items-center gap-3 mb-1">
+              <div className="h-10 w-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-500 shrink-0">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <DialogTitle className="text-lg font-bold text-foreground">
+                {endDayAlert?.title || "Action Required"}
+              </DialogTitle>
+            </div>
+            <DialogDescription className="text-sm text-muted-foreground pt-1 leading-relaxed">
+              {endDayAlert?.message}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="pt-4 flex flex-col sm:flex-row gap-2 sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setEndDayAlert(null)}
+              className="w-full sm:w-auto"
+            >
+              Close
+            </Button>
+            {endDayAlert?.actionPath && (
+              <Button
+                type="button"
+                onClick={() => {
+                  const target = endDayAlert.actionPath;
+                  setEndDayAlert(null);
+                  navigate(target);
+                }}
+                className="w-full sm:w-auto flex items-center justify-center gap-1.5 font-semibold"
+              >
+                {endDayAlert.actionLabel || "Continue"}
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

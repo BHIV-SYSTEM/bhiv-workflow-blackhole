@@ -736,7 +736,7 @@ router.post("/register-intake", auth, async (req, res) => {
         "Deliver verified REVIEW_PACKET.md and CODE_PACKET.md"
       ],
       intakeAttachments: Array.isArray(attachments) ? attachments : [],
-      status: "Pending Validation",
+      status: req.body.status || (sourceType.toUpperCase() === "WHATSAPP" ? "In Progress" : "Pending Validation"),
       priority: priority || "Medium",
       department: targetDept,
       assignee: candidateUser._id,

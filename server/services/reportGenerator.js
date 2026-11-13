@@ -10,6 +10,8 @@ const EmployeeActivity = require('../models/EmployeeActivity');
 const MonitoringAlert = require('../models/MonitoringAlert');
 const Attendance = require('../models/Attendance');
 const DailyAttendance = require('../models/DailyAttendance');
+const Aim = require('../models/Aim');
+const Progress = require('../models/Progress');
 const { formatEmployeeId } = require('../utils/employeeId');
 
 function formatActiveTime(seconds) {
@@ -137,7 +139,7 @@ class ReportGenerator {
   async gatherReportData(employeeId, startDate, endDate) {
     const { start, end } = this.parseDateRange(startDate, endDate);
 
-    const [screenshots, activities, alerts, attendances] = await Promise.all([
+    const [screenshots, activities, alerts, attendances, aims, progresses] = await Promise.all([
       ScreenCapture.find({
         employee: employeeId,
         timestamp: { $gte: start, $lte: end }
@@ -187,7 +189,17 @@ class ReportGenerator {
         } catch (e) {
           return [];
         }
-      })()
+      })(),
+
+      Aim.find({
+        user: employeeId,
+        date: { $gte: start, $lte: end }
+      }).select('date aims blockers achievements progressPercentage').sort({ date: -1 }).lean(),
+
+      Progress.find({
+        user: employeeId,
+        date: { $gte: start, $lte: end }
+      }).select('date notes blockers achievements progressPercentage').sort({ date: -1 }).lean()
     ]);
 
     return {
@@ -195,6 +207,8 @@ class ReportGenerator {
       activities: activities || [],
       alerts: alerts || [],
       attendances: attendances || [],
+      aims: aims || [],
+      progresses: progresses || [],
       period: { startDate, endDate }
     };
   }
@@ -1003,6 +1017,105 @@ class ReportGenerator {
       csv += 'Employee ID,Employee Name,Total Activities,Average Productivity Score (%),Active Hours,Total Keystrokes,Total Alerts\n';
       csv += `"${empIdFormatted}","${employee.name}",${reportData.activities.length},${summary.productivityScore}%,${summary.activeHoursFormatted || `${summary.activeHours}h`},${summary.totalKeystrokes},${summary.violations}\n\n`;
 
+      // Build daily map for breakdown
+      const dailyMap = {};
+      const { start: pStart, end: pEnd } = this.parseDateRange(startDate, endDate);
+      for (let d = new Date(pStart); d <= pEnd; d.setDate(d.getDate() + 1)) {
+        const dStr = getLocalDateString(d);
+        dailyMap[dStr] = {
+          date: dStr,
+          activitiesCount: 0,
+          keystrokes: 0,
+          mouseSum: 0,
+          activeSeconds: 0,
+          prodSum: 0
+        };
+      }
+
+      reportData.activities.forEach(act => {
+        const dStr = getLocalDateString(act.timestamp);
+        if (dailyMap[dStr]) {
+          dailyMap[dStr].activitiesCount++;
+          dailyMap[dStr].keystrokes += (act.keystroke_count || 0);
+          dailyMap[dStr].mouseSum += (act.mouse_activity_score || 0);
+          const isActive = (act.keystroke_count || 0) > 0 || (act.mouse_activity_score || 0) >= 15;
+          let idle = 0;
+          if (!isActive) {
+            let raw = act.idle_duration || 0;
+            if (raw > 10000) raw = Math.round(raw / 1000);
+            idle = Math.min(30, Math.max(0, raw));
+          }
+          dailyMap[dStr].activeSeconds += Math.max(0, 30 - idle);
+          if (act.productivity_score > 0) dailyMap[dStr].prodSum += act.productivity_score;
+        }
+      });
+
+      reportData.attendances?.forEach(att => {
+        const dStr = getLocalDateString(att.date || att.startDayTime);
+        if (dStr && dailyMap[dStr]) {
+          let sec = 0;
+          if (att.hoursWorked > 0) {
+            sec = Math.round(att.hoursWorked * 3600);
+          } else if (att.startDayTime) {
+            const isToday = getLocalDateString(new Date()) === dStr;
+            const endSession = att.endDayTime 
+              ? new Date(att.endDayTime) 
+              : (isToday ? new Date() : new Date(new Date(att.startDayTime).getTime() + 8 * 3600 * 1000));
+            sec = Math.min(10 * 3600, Math.max(0, Math.floor((endSession - new Date(att.startDayTime)) / 1000)));
+          }
+          if (sec > 0) {
+            dailyMap[dStr].activeSeconds = Math.max(dailyMap[dStr].activeSeconds, sec);
+          }
+        }
+      });
+
+      // Build daily aim & progress lookup
+      const dailyAimMap = {};
+      const dailyBlockerMap = {};
+      const dailyAchieveMap = {};
+
+      (reportData.aims || []).forEach(a => {
+        const dStr = getLocalDateString(a.date);
+        if (dStr) {
+          if (!dailyAimMap[dStr] && a.aims) dailyAimMap[dStr] = a.aims;
+          if (!dailyBlockerMap[dStr] && a.blockers) dailyBlockerMap[dStr] = a.blockers;
+          if (!dailyAchieveMap[dStr] && a.achievements) dailyAchieveMap[dStr] = a.achievements;
+        }
+      });
+
+      (reportData.progresses || []).forEach(p => {
+        const dStr = getLocalDateString(p.date);
+        if (dStr) {
+          if (!dailyAimMap[dStr] && p.notes) dailyAimMap[dStr] = p.notes;
+          if (!dailyBlockerMap[dStr] && p.blockers) dailyBlockerMap[dStr] = p.blockers;
+          if (!dailyAchieveMap[dStr] && p.achievements) dailyAchieveMap[dStr] = p.achievements;
+        }
+      });
+
+      const cleanField = (txt) => {
+        if (!txt || txt === '-') return '-';
+        return String(txt).replace(/"/g, '""').replace(/[\r\n\t]+/g, ' ').trim();
+      };
+
+      csv += 'DAILY PERFORMANCE BREAKDOWN\n';
+      csv += 'Employee ID,Date,AIM,Blocker,Achievement,Total Activities,Productivity Score (%),Active Hours,Total Keystrokes,Mouse Activity (%),Efficiency Rating\n';
+
+      const dailyRows = Object.values(dailyMap).sort((a, b) => a.date.localeCompare(b.date));
+      dailyRows.forEach(day => {
+        const aim = cleanField(dailyAimMap[day.date]);
+        const blocker = cleanField(dailyBlockerMap[day.date]);
+        const achievement = cleanField(dailyAchieveMap[day.date]);
+        const prod = day.activitiesCount > 0 ? Math.round(day.prodSum / day.activitiesCount) : 0;
+        let eff = 'Low Efficiency';
+        if (prod >= 60) eff = 'High Efficiency';
+        else if (prod >= 40) eff = 'Moderate Efficiency';
+        const activeText = (day.activitiesCount > 0 || day.activeSeconds > 0) ? formatActiveTime(day.activeSeconds) : '-';
+        const avgMouse = day.activitiesCount > 0 ? Math.round(day.mouseSum / day.activitiesCount) : 0;
+
+        csv += `"${empIdFormatted}","${day.date}","${aim}","${blocker}","${achievement}",${day.activitiesCount > 0 ? day.activitiesCount : '-'},"${day.activitiesCount > 0 ? `${prod}%` : '-'}","${activeText}",${day.keystrokes > 0 ? day.keystrokes : '-'},"${day.activitiesCount > 0 ? `${avgMouse}%` : '-'}","${day.activitiesCount > 0 ? eff : '-'}"\n`;
+      });
+      csv += '\n';
+
       csv += 'DETAILED ACTIVITY LOGS\n';
       csv += 'Employee ID,Timestamp,Application,Window Title,Productivity Score (%),Idle Duration (s),Keystrokes,Mouse Score (%)\n';
 
@@ -1110,7 +1223,7 @@ class ReportGenerator {
       ]
     };
 
-    const [empStats, workedDaysData, topAppsData, dailyTeamData, alertTypesData, empAlertsData, attendancesData] = await Promise.all([
+    const [empStats, workedDaysData, topAppsData, dailyTeamData, alertTypesData, empAlertsData, attendancesData, aimsData, progressesData] = await Promise.all([
       // 1. Employee activity stats
       EmployeeActivity.aggregate([
         {
@@ -1267,8 +1380,40 @@ class ReportGenerator {
           }
         });
         return combined;
-      })
+      }),
+
+      // 8. Team daily aims
+      Aim.find({
+        user: { $in: empIds },
+        date: { $gte: start, $lte: end }
+      }).select('user date aims blockers achievements progressPercentage').sort({ date: -1 }).lean(),
+
+      // 9. Team progress updates
+      Progress.find({
+        user: { $in: empIds },
+        date: { $gte: start, $lte: end }
+      }).select('user date notes blockers achievements progressPercentage').sort({ date: -1 }).lean()
     ]);
+
+    const empAimMap = new Map();
+    const empBlockerMap = new Map();
+    const empAchieveMap = new Map();
+
+    (aimsData || []).forEach(a => {
+      const uId = a.user ? a.user.toString() : null;
+      if (!uId) return;
+      if (!empAimMap.has(uId) && a.aims) empAimMap.set(uId, a.aims);
+      if (!empBlockerMap.has(uId) && a.blockers) empBlockerMap.set(uId, a.blockers);
+      if (!empAchieveMap.has(uId) && a.achievements) empAchieveMap.set(uId, a.achievements);
+    });
+
+    (progressesData || []).forEach(p => {
+      const uId = p.user ? p.user.toString() : null;
+      if (!uId) return;
+      if (!empAimMap.has(uId) && p.notes) empAimMap.set(uId, p.notes);
+      if (!empBlockerMap.has(uId) && p.blockers) empBlockerMap.set(uId, p.blockers);
+      if (!empAchieveMap.has(uId) && p.achievements) empAchieveMap.set(uId, p.achievements);
+    });
 
     const statsMap = new Map();
     empStats.forEach(s => {
@@ -1385,7 +1530,10 @@ class ReportGenerator {
         avgMouse,
         alertsCount,
         efficiency,
-        effColor
+        effColor,
+        aim: empAimMap.get(idStr) || '-',
+        blocker: empBlockerMap.get(idStr) || '-',
+        achievement: empAchieveMap.get(idStr) || '-'
       };
     });
 
@@ -1722,20 +1870,28 @@ class ReportGenerator {
       const eMonth = String(eDate.getMonth() + 1).padStart(2, '0');
       const dateDisplay = isSameDay ? `${sDay}/${sMonth}` : `${sDay}/${sMonth} - ${eDay}/${eMonth}`;
 
-      // Exact Columns matching specification with Employee ID:
-      // Employee ID, Name, Date, Activities, Productivity, Active Hour, Key Strokes, Mouse Score, Efficiency
-      let csv = 'Employee ID,Name,Date,Activities,Productivity,Active Hour,Key Strokes,Mouse Score,Efficiency\n';
+      // Exact Columns matching specification with Employee ID, AIM, Blocker, Achievement:
+      // Emp ID,Name,Date,AIM,Blocker,Achievement,Activities,Productivity,Active Hour,Key Strokes,Mouse Score,Efficiency
+      let csv = 'Emp ID,Name,Date,AIM,Blocker,Achievement,Activities,Productivity,Active Hour,Key Strokes,Mouse Score,Efficiency\n';
+
+      const cleanField = (txt) => {
+        if (!txt || txt === '-') return '-';
+        return String(txt).replace(/"/g, '""').replace(/[\r\n\t]+/g, ' ').trim();
+      };
 
       data.members.forEach(m => {
         const empId = (m.employeeId || formatEmployeeId(m.email) || 'N/A').replace(/"/g, '""');
         const name = (m.name || 'Employee').replace(/"/g, '""');
+        const aim = cleanField(m.aim);
+        const blocker = cleanField(m.blocker);
+        const achievement = cleanField(m.achievement);
         const acts = m.totalActivities > 0 ? m.totalActivities : '-';
         const prod = m.totalActivities > 0 ? `${m.avgProductivity}%` : '-';
         const hours = (m.totalActivities > 0 || m.activeSeconds > 0) ? (m.activeHoursFormatted || `${m.activeHours}h`) : '-';
         const keys = m.totalKeystrokes > 0 ? m.totalKeystrokes : '-';
         const mouse = m.totalActivities > 0 ? `${m.avgMouse}%` : '-';
         const eff = m.efficiency === 'No Activity' ? '-' : m.efficiency;
-        csv += `"${empId}","${name}","${dateDisplay}",${acts},"${prod}","${hours}","${keys}","${mouse}","${eff}"\n`;
+        csv += `"${empId}","${name}","${dateDisplay}","${aim}","${blocker}","${achievement}",${acts},"${prod}","${hours}","${keys}","${mouse}","${eff}"\n`;
       });
 
       const filename = `team_export_${Date.now()}.csv`;

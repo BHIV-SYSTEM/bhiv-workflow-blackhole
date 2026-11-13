@@ -1378,8 +1378,12 @@ router.post('/work-session/start', async (req, res) => {
     });
 
     if (session) {
-      // Update existing session
+      // Reset session fields for a fresh start today
       session.startTime = startTime;
+      session.endTime = undefined;
+      session.pausedAt = undefined;
+      session.resumedAt = undefined;
+      session.totalBreakTime = 0;
       session.status = 'active';
       session.targetHours = targetHours;
     } else {
@@ -1553,10 +1557,14 @@ router.post('/work-session/end', async (req, res) => {
       hasProgressContent
     });
     
-    // RELAXED VALIDATION: Only warn, don't block
+    // MANDATORY VALIDATION: Block end session if user has not updated daily progress
     if (!hasProgressContent) {
-      console.log(`⚠️ User ${employeeId} is ending session without detailed progress - allowing anyway`);
-      // Don't block - just log the warning
+      console.log(`⛔ User ${employeeId} attempted to end session without progress update - blocking`);
+      return res.status(400).json({
+        success: false,
+        error: 'Please submit your daily progress in the Progress tab before ending your work day.',
+        code: 'PROGRESS_NOT_SET'
+      });
     }
     
     console.log(`✅ Progress validation passed for work session end - Employee: ${employeeId}, Progress content found: ${hasProgressContent}`);

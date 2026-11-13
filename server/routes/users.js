@@ -125,12 +125,11 @@ router.get("/", async (req, res) => {
 // Get user by ID - SHOW ALL USERS
 router.get("/:id", auth, async (req, res) => {
   try {
-    const user = await User.findOne({
-      _id: req.params.id,
-      stillExist: 1 // Only return active users
-    }).select("-password").populate("department", "name")
+    const user = await User.findById(req.params.id)
+      .select("-password")
+      .populate("department", "name");
 
-    if (!user) {
+    if (!user || user.stillExist === 0) {
       return res.status(404).json({ error: "User not found or no longer active" })
     }
 
@@ -143,6 +142,285 @@ router.get("/:id", auth, async (req, res) => {
   } catch (error) {
     console.error("Error fetching user:", error)
     res.status(500).json({ error: "Server error" })
+  }
+})
+
+// @route   GET api/users/:id/daily-summary
+// @desc    Get comprehensive daily work summary & performance telemetry for employee self-visibility
+// @access  Private
+router.get("/:id/daily-summary", auth, async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    // Security: Only user or Admin/Manager can view
+    if (req.user.id !== userId && !['Admin', 'Manager', 'Lead', 'Governor'].includes(req.user.role)) {
+      return res.status(403).json({ error: "Not authorized to view another user's daily summary" });
+    }
+
+    const user = await User.findById(userId).populate("department", "name").lean();
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const now = new Date();
+    const localYear = now.getFullYear();
+    const localMonth = String(now.getMonth() + 1).padStart(2, '0');
+    const localDay = String(now.getDate()).padStart(2, '0');
+    const localDateStr = `${localYear}-${localMonth}-${localDay}`;
+
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const Aim = require("../models/Aim");
+    const Progress = require("../models/Progress");
+    const Attendance = require("../models/Attendance");
+    const DailyAttendance = require("../models/DailyAttendance");
+    const EmployeeActivity = require("../models/EmployeeActivity");
+    const WorkSession = require("../models/WorkSession");
+
+    const [todayAim, todayProgresses, todayActivities, attendanceRecords, dailyAttendanceRecords, workSessionRecords, userTasks] = await Promise.all([
+      Aim.findOne({
+        user: userId,
+        date: { $gte: today, $lt: tomorrow }
+      }).lean(),
+
+      Progress.find({
+        user: userId,
+        date: { $gte: today, $lt: tomorrow }
+      }).populate('task', 'title status priority').sort({ date: -1 }).lean(),
+
+      EmployeeActivity.find({
+        employee: userId,
+        timestamp: { $gte: today, $lt: tomorrow }
+      }).select('timestamp keystroke_count mouse_activity_score mouse_event_count mouse_cadence keystroke_cadence idle_duration productivity_score active_application interval_seconds').lean(),
+
+      Attendance.find({
+        user: userId,
+        $or: [
+          { date: { $gte: today, $lt: tomorrow } },
+          { startDayTime: { $gte: today, $lt: tomorrow } },
+          { createdAt: { $gte: today, $lt: tomorrow } }
+        ]
+      }).sort({ createdAt: -1 }).lean(),
+
+      DailyAttendance.find({
+        user: userId,
+        $or: [
+          { date: { $gte: today, $lt: tomorrow } },
+          { startDayTime: { $gte: today, $lt: tomorrow } }
+        ]
+      }).sort({ createdAt: -1 }).lean(),
+
+      WorkSession.find({
+        employee: userId,
+        $or: [
+          { date: { $gte: today, $lt: tomorrow } },
+          { startTime: { $gte: today, $lt: tomorrow } }
+        ]
+      }).sort({ updatedAt: -1, startTime: -1 }).lean(),
+
+      Task.find({ assignee: userId }).select('status priority dueDate title progress').lean()
+    ]);
+
+    // 1. Determine the authoritative latest WorkSession / Attendance window (matches WorkHoursManager exactly)
+    let sessionSeconds = 0;
+    let sessionStart = null;
+    let sessionEnd = null;
+
+    const latestWorkSession = (workSessionRecords || [])[0];
+    const allAttendance = [...(attendanceRecords || []), ...(dailyAttendanceRecords || [])]
+      .sort((a, b) => new Date(b.startDayTime || b.createdAt || 0) - new Date(a.startDayTime || a.createdAt || 0));
+    const latestAttendance = allAttendance[0];
+
+    if (latestWorkSession && latestWorkSession.startTime) {
+      sessionStart = new Date(latestWorkSession.startTime);
+      sessionEnd = (latestWorkSession.status === 'completed' && latestWorkSession.endTime)
+        ? new Date(latestWorkSession.endTime)
+        : new Date();
+      const totalMinutes = Math.max(Math.floor((sessionEnd - sessionStart) / 60000), 0);
+      let breakMinutes = latestWorkSession.totalBreakTime || 0;
+      if (latestWorkSession.status === 'paused' && latestWorkSession.pausedAt) {
+        breakMinutes += Math.max(Math.floor((Date.now() - new Date(latestWorkSession.pausedAt).getTime()) / 60000), 0);
+      }
+      const activeMinutes = Math.max(totalMinutes - breakMinutes, 0);
+      sessionSeconds = activeMinutes * 60;
+    } else if (latestAttendance && latestAttendance.startDayTime) {
+      sessionStart = new Date(latestAttendance.startDayTime);
+      sessionEnd = latestAttendance.endDayTime ? new Date(latestAttendance.endDayTime) : new Date();
+      const totalMinutes = Math.max(Math.floor((sessionEnd - sessionStart) / 60000), 0);
+      const breakMinutes = latestAttendance.breakTime || 0;
+      const activeMinutes = Math.max(totalMinutes - breakMinutes, 0);
+      sessionSeconds = activeMinutes * 60;
+    } else if (latestAttendance && (latestAttendance.totalHoursWorked > 0 || latestAttendance.hoursWorked > 0)) {
+      sessionSeconds = Math.round((latestAttendance.totalHoursWorked || latestAttendance.hoursWorked) * 3600);
+    }
+
+    // 2. Scope telemetry activities to the active/latest work session window if available
+    //    (prevents earlier test pings / previous sessions today from inflating current session metrics)
+    let scopedActivities = todayActivities;
+    if (sessionStart && sessionEnd) {
+      const startMs = sessionStart.getTime() - 60000;
+      const endMs = sessionEnd.getTime() + 60000;
+      scopedActivities = todayActivities.filter(act => {
+        const ts = new Date(act.timestamp).getTime();
+        return ts >= startMs && ts <= endMs;
+      });
+    }
+
+    // Calculate telemetry metrics from scoped activities
+    let totalKeystrokes = 0;
+    let totalMouseScore = 0;
+    let totalMouseEvents = 0;
+    let totalIdleSeconds = 0;
+    let productivitySum = 0;
+    let productivityCount = 0;
+    let telemetryActiveSeconds = 0;
+
+    scopedActivities.forEach(act => {
+      totalKeystrokes += (act.keystroke_count || 0);
+      totalMouseScore += (act.mouse_activity_score || 0);
+      totalMouseEvents += (act.mouse_event_count || 0);
+
+      if (act.productivity_score > 0) {
+        productivitySum += act.productivity_score;
+        productivityCount++;
+      }
+      const isActive = (act.keystroke_count || 0) > 0 || (act.mouse_activity_score || 0) >= 15 || (act.mouse_event_count || 0) > 0;
+      let idle = 0;
+      if (!isActive) {
+        let raw = act.idle_duration || 0;
+        if (raw > 10000) raw = Math.round(raw / 1000);
+        idle = Math.min(30, Math.max(0, raw));
+      }
+      totalIdleSeconds += idle;
+      telemetryActiveSeconds += Math.max(0, 30 - idle);
+    });
+
+    // If mouse events weren't logged separately but mouse score was, estimate realistic count
+    if (totalMouseEvents === 0 && (totalMouseScore > 0 || scopedActivities.length > 0)) {
+      totalMouseEvents = Math.round(totalMouseScore * 2.5);
+    }
+
+    // Authoritative active working hours: strictly match WorkHoursManager session duration when a session exists;
+    // fallback to telemetryActiveSeconds only if no work session/attendance was started.
+    const effectiveActiveSeconds = (sessionStart || sessionSeconds > 0) ? sessionSeconds : telemetryActiveSeconds;
+    const totalHours = Math.round((effectiveActiveSeconds / 3600) * 10) / 10;
+    const h = Math.floor(effectiveActiveSeconds / 3600);
+    const m = Math.floor((effectiveActiveSeconds % 3600) / 60);
+    const activeHoursFormatted = `${h}h ${m}m`;
+
+    const sessionH = Math.floor(sessionSeconds / 3600);
+    const sessionM = Math.floor((sessionSeconds % 3600) / 60);
+    const sessionHoursFormatted = `${sessionH}h ${sessionM}m`;
+
+    const avgProductivity = productivityCount > 0 ? Math.round(productivitySum / productivityCount) : (scopedActivities.length > 0 || effectiveActiveSeconds > 0 ? 65 : 0);
+    const avgMouse = scopedActivities.length > 0 ? Math.round(totalMouseScore / scopedActivities.length) : (totalMouseEvents > 0 ? 50 : 0);
+
+    // Calculate Efficiency
+    let efficiencyScore = 0;
+    if (effectiveActiveSeconds > 0) {
+      const activeRatio = Math.min(1.0, Math.max(0.1, (effectiveActiveSeconds - Math.min(effectiveActiveSeconds * 0.7, totalIdleSeconds)) / effectiveActiveSeconds));
+      const prodFactor = (avgProductivity > 0 ? avgProductivity : 60) / 100;
+      efficiencyScore = Math.min(100, Math.max(10, Math.round((activeRatio * 0.5 + prodFactor * 0.5) * 100)));
+    } else {
+      efficiencyScore = 0;
+    }
+
+    let efficiencyLabel = 'No Activity';
+    if (efficiencyScore >= 75) {
+      efficiencyLabel = 'High Efficiency';
+    } else if (efficiencyScore >= 45) {
+      efficiencyLabel = 'Moderate Efficiency';
+    } else if (effectiveActiveSeconds > 0) {
+      efficiencyLabel = 'Low Efficiency';
+    }
+
+    // Task counts
+    const taskCounts = {
+      total: userTasks.length,
+      completed: userTasks.filter(t => ['Completed', 'Submitted for Review', 'Closed'].includes(t.status)).length,
+      inProgress: userTasks.filter(t => t.status === 'In Progress').length,
+      pending: userTasks.filter(t => ['Pending', 'Pending Validation', 'Approved'].includes(t.status)).length
+    };
+
+    // Determine current Aim, Blocker, Achievement
+    const latestProgress = todayProgresses[0] || {};
+    let aimText = "No aim set for today";
+    let blockerText = "No blockers reported";
+    let achievementText = "In progress";
+    let progressPct = 0;
+    let completionStatus = "Not Set";
+
+    if (todayAim?.aims && todayAim.aims.trim() !== '') {
+      aimText = todayAim.aims;
+      completionStatus = todayAim.completionStatus || 'Pending';
+      progressPct = todayAim.progressPercentage || 0;
+      if (todayAim.blockers) blockerText = todayAim.blockers;
+      if (todayAim.achievements) achievementText = todayAim.achievements;
+    }
+
+    if (latestProgress?.blockers && latestProgress.blockers.trim() !== '') {
+      blockerText = latestProgress.blockers;
+    }
+    if (latestProgress?.achievements && latestProgress.achievements.trim() !== '') {
+      achievementText = latestProgress.achievements;
+    }
+    if (latestProgress?.progressPercentage !== undefined && latestProgress?.progressPercentage !== null) {
+      progressPct = latestProgress.progressPercentage;
+    }
+    if ((!todayAim || !todayAim.aims) && latestProgress?.notes && latestProgress.notes.trim() !== '') {
+      aimText = latestProgress.notes;
+      completionStatus = 'Logged in Progress';
+    }
+
+    res.json({
+      date: localDateStr,
+      employee: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        employeeId: user.employeeId,
+        department: user.department?.name || 'General'
+      },
+      workSummary: {
+        aim: aimText,
+        blockers: blockerText,
+        achievements: achievementText,
+        progressPercentage: progressPct,
+        completionStatus,
+        hasAimToday: !!todayAim,
+        hasProgressToday: todayProgresses.length > 0 && !!(latestProgress?.notes || latestProgress?.achievements),
+        updatesCount: todayProgresses.length
+      },
+      metrics: {
+        activeSeconds: effectiveActiveSeconds,
+        activeHours: totalHours,
+        activeHoursFormatted,
+        sessionHoursFormatted,
+        productivityScore: avgProductivity,
+        efficiencyScore,
+        efficiencyLabel,
+        keystrokes: totalKeystrokes,
+        mouseScore: avgMouse,
+        mouseEvents: totalMouseEvents,
+        idleDurationMinutes: Math.round(totalIdleSeconds / 60),
+        activitiesCount: scopedActivities.length
+      },
+      taskCounts,
+      todayProgresses: todayProgresses.map(p => ({
+        id: p._id,
+        taskTitle: p.task?.title || 'Direct/WhatsApp Task',
+        progressPercentage: p.progressPercentage,
+        notes: p.notes,
+        blockers: p.blockers,
+        achievements: p.achievements,
+        time: p.date
+      }))
+    });
+  } catch (error) {
+    console.error("Error in get daily summary:", error);
+    res.status(500).json({ error: error.message || "Failed to fetch daily summary" });
   }
 })
 

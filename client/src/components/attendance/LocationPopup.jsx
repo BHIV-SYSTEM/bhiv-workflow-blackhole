@@ -77,9 +77,15 @@ const LocationPopup = ({ isOpen, onClose, onLocationConfirmed, loading }) => {
           OFFICE_COORDINATES.longitude
         );
         
+        const inRange = distance <= OFFICE_RADIUS;
         setLocation(coords);
         setDistanceFromOffice(distance);
-        setIsInOfficeRange(distance <= OFFICE_RADIUS);
+        setIsInOfficeRange(inRange);
+        if (!inRange) {
+          setWorkFromHome(true);
+        } else {
+          setWorkFromHome(false);
+        }
         setLocationLoading(false);
       },
       (error) => {
@@ -151,14 +157,7 @@ const LocationPopup = ({ isOpen, onClose, onLocationConfirmed, loading }) => {
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent
-        className="max-w-lg p-0 overflow-hidden rounded-2xl border-2 border-blue-300 dark:border-blue-800 shadow-2xl"
-        style={{
-          background: 'linear-gradient(135deg, rgba(255,255,255,0.65) 0%, rgba(200,220,255,0.35) 100%)',
-          backdropFilter: 'blur(32px) saturate(1.5)',
-          WebkitBackdropFilter: 'blur(32px) saturate(1.5)',
-          boxShadow: '0 8px 32px 0 rgba(31, 38, 135, 0.18), 0 1.5px 8px 0 rgba(80, 120, 255, 0.10) inset',
-          border: '2px solid rgba(120,180,255,0.25)',
-        }}
+        className="w-[95vw] max-w-lg max-h-[90vh] overflow-y-auto p-6 rounded-2xl border-2 border-border bg-card text-card-foreground shadow-2xl"
       >
         <DialogHeader>
           <DialogTitle className="flex items-center space-x-2 text-xl">
@@ -282,14 +281,16 @@ const LocationPopup = ({ isOpen, onClose, onLocationConfirmed, loading }) => {
               <div className="grid grid-cols-2 gap-3">
                 <Button
                   variant={!workFromHome ? "default" : "outline"}
-                  onClick={() => setWorkFromHome(false)}
-                  disabled={!isInOfficeRange && !workFromHome}
+                  onClick={() => {
+                    if (isInOfficeRange) setWorkFromHome(false);
+                  }}
+                  disabled={!isInOfficeRange}
                   className="h-20 flex-col space-y-2"
                 >
                   <Building className="w-6 h-6" />
                   <span>Office</span>
-                  {!isInOfficeRange && !workFromHome && (
-                    <span className="text-xs text-red-600">Too far</span>
+                  {!isInOfficeRange && (
+                    <span className="text-xs text-red-600">Too far ({distanceFromOffice ? `${Math.round(distanceFromOffice / 1000)}km` : ''})</span>
                   )}
                 </Button>
                 

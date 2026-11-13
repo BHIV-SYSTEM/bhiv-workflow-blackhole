@@ -1,39 +1,45 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Link } from "react-router-dom"
+import { Link, useSearchParams } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Loader2, Eye, EyeOff, Lock, Mail, Sparkles } from "lucide-react"
-import { useAuth } from "../context/auth-context" // Import the context
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Loader2, Eye, EyeOff, Lock, Mail, Sparkles, AlertCircle, ArrowRight } from "lucide-react"
+import { useAuth } from "../context/auth-context"
+import { AuthLayoutShell } from "../components/auth/AuthLayoutShell"
 
 export default function Login() {
+  const [searchParams] = useSearchParams()
   const [formData, setFormData] = useState({
     email: "",
     password: "",
   })
   const [errors, setErrors] = useState({})
+  const [authError, setAuthError] = useState("")
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
 
-  // Use login from AuthContext
   const { login } = useAuth()
 
   useEffect(() => {
-    const isSystemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    // Force theme detection (optional future use)
-    const _ = isSystemDark ? "light" : "dark";
-  }, []);
+    const queryError = searchParams.get("error")
+    if (queryError) {
+      setAuthError(queryError)
+    }
+  }, [searchParams])
 
   const handleChange = (e) => {
     const { name, value } = e.target
-    setFormData({ ...formData, [name]: value })
+    setFormData((prev) => ({ ...prev, [name]: value }))
 
-    // Clear error when user types
     if (errors[name]) {
-      setErrors({ ...errors, [name]: "" })
+      setErrors((prev) => ({ ...prev, [name]: "" }))
+    }
+    if (authError) {
+      setAuthError("")
     }
   }
 
@@ -56,169 +62,174 @@ export default function Login() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-  
+    setAuthError("")
+
     if (validateForm()) {
       setLoading(true)
-  
+
       try {
-        await login(formData) // The login function handles navigation automatically
-        console.log("Login successful - user data stored in localStorage")
+        await login(formData)
       } catch (error) {
-        console.error("Login error:", error)
-        setErrors({ password: "Invalid email or password" })
+        const message =
+          error?.response?.data?.message ||
+          error?.response?.data?.error ||
+          "Invalid email or password"
+        setAuthError(message)
+        setErrors((prev) => ({ ...prev, password: message }))
       } finally {
         setLoading(false)
       }
     }
   }
-  
 
   return (
-    <div className="h-screen w-full flex items-center justify-center px-4 py-4 relative overflow-hidden bg-background">
-      {/* Enhanced Cyber Background */}
-      <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-background to-accent/10"></div>
-      <div className="absolute inset-0">
-        <div className="absolute inset-0 opacity-20" style={{
-          backgroundImage: `radial-gradient(circle at 2px 2px, hsl(var(--primary) / 0.15) 1px, transparent 0)`,
-          backgroundSize: '40px 40px'
-        }}></div>
-      </div>
+    <AuthLayoutShell maxWidth="max-w-md">
+      <Card className="w-full relative overflow-hidden rounded-2xl border border-border/80 dark:border-white/10 bg-card/90 backdrop-blur-xl shadow-[0_24px_60px_-15px_rgba(15,23,42,0.14)] dark:shadow-[0_24px_60px_-15px_rgba(0,0,0,0.65)]">
+        {/* Subtle top accent hairline */}
+        <div className="h-1 w-full gradient-primary" />
 
-      {/* Animated Floating Elements */}
-      <div className="absolute top-20 left-20 w-32 h-32 bg-primary/20 rounded-full blur-3xl animate-float-cyber"></div>
-      <div className="absolute bottom-20 right-20 w-40 h-40 bg-accent/20 rounded-full blur-3xl animate-float-cyber" style={{animationDelay: '2s'}}></div>
-      <div className="absolute top-1/2 left-10 w-24 h-24 bg-secondary/15 rounded-full blur-3xl animate-float-cyber" style={{animationDelay: '4s'}}></div>
-      <div className="absolute bottom-1/3 right-1/3 w-28 h-28 bg-info/15 rounded-full blur-3xl animate-float-cyber" style={{animationDelay: '1s'}}></div>
-
-      <Card className="w-full max-w-md relative z-10 neo-card animate-scale-in shadow-2xl border-border/50 my-auto">
-        <CardHeader className="space-y-1 text-center pb-8">
-          {/* Logo with enhanced animation */}
-          <div className="mx-auto w-20 h-20 gradient-primary rounded-2xl flex items-center justify-center mb-6 shadow-glow-primary animate-glow-pulse transform hover:scale-110 transition-all duration-300 relative">
-            <div className="absolute inset-0 bg-gradient-to-tr from-primary/50 to-transparent rounded-2xl animate-pulse-cyber"></div>
-            <Lock className="w-10 h-10 text-primary-foreground relative z-10" />
+        <CardHeader className="space-y-2 text-center pt-8 pb-5 px-6 sm:px-8">
+          <div className="mx-auto w-14 h-14 gradient-primary rounded-2xl flex items-center justify-center mb-2 shadow-glow-primary relative">
+            <Lock className="w-7 h-7 text-primary-foreground relative z-10" />
           </div>
-          
-          <CardTitle className="text-4xl font-bold text-foreground mb-2 bg-gradient-to-r from-primary via-secondary to-accent bg-clip-text text-transparent">
+
+          <CardTitle className="text-3xl font-bold tracking-tight text-foreground">
             Welcome Back
           </CardTitle>
-          <CardDescription className="text-muted-foreground text-base flex items-center justify-center gap-2">
-            <Sparkles className="w-4 h-4 text-accent" />
-            Sign in to your workspace
+          <CardDescription className="text-muted-foreground text-sm flex items-center justify-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5 text-primary" />
+            <span>Sign in to access your Infiverse workspace</span>
           </CardDescription>
         </CardHeader>
-        
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <CardContent className="space-y-6 px-8">
+
+        <form onSubmit={handleSubmit}>
+          <CardContent className="space-y-5 px-6 sm:px-8">
+            {authError && (
+              <Alert
+                variant="destructive"
+                className="border-destructive/40 bg-destructive/10 text-destructive animate-fade-in rounded-xl"
+              >
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription className="text-xs sm:text-sm font-medium text-destructive">
+                  {authError}
+                </AlertDescription>
+              </Alert>
+            )}
+
             {/* Email Field */}
-            <div className="space-y-2 group">
-              <Label htmlFor="email" className="text-sm font-medium text-foreground flex items-center gap-2">
-                <Mail className="w-4 h-4 text-primary" />
+            <div className="space-y-2">
+              <Label htmlFor="email" className="text-sm font-medium text-foreground">
                 Email Address
               </Label>
               <div className="relative">
+                <Mail className="w-4 h-4 text-muted-foreground absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <Input
                   id="email"
                   name="email"
                   type="email"
-                  placeholder="you@example.com"
+                  autoComplete="email"
+                  placeholder="you@blackholeinfiverse.com"
                   value={formData.email}
                   onChange={handleChange}
                   disabled={loading}
-                  className={`pl-4 pr-4 h-12 transition-all duration-300 bg-background/50 backdrop-blur-sm border-border hover:border-primary/50 focus:border-primary focus:ring-2 focus:ring-primary/20 ${
-                    errors.email ? "border-destructive focus:border-destructive focus:ring-destructive/20" : ""
+                  className={`pl-10 pr-4 h-11 rounded-xl bg-background/70 border-border/90 hover:border-primary/50 focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 transition-all duration-200 ${
+                    errors.email
+                      ? "border-destructive focus-visible:border-destructive focus-visible:ring-destructive/20"
+                      : ""
                   }`}
                 />
               </div>
               {errors.email && (
-                <p className="text-sm text-destructive animate-slide-up flex items-center gap-1">
-                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                  </svg>
-                  {errors.email}
+                <p className="text-xs text-destructive flex items-center gap-1.5 font-medium">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{errors.email}</span>
                 </p>
               )}
             </div>
 
             {/* Password Field */}
-            <div className="space-y-2 group">
+            <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label htmlFor="password" className="text-sm font-medium text-foreground flex items-center gap-2">
-                  <Lock className="w-4 h-4 text-primary" />
+                <Label htmlFor="password" className="text-sm font-medium text-foreground">
                   Password
                 </Label>
-                <Link to="/forgot-password" className="text-sm text-primary hover:text-primary/80 transition-colors duration-200 font-medium">
-                  Forgot?
+                <Link
+                  to="/forgot-password"
+                  className="text-xs sm:text-sm text-primary hover:text-primary/80 transition-colors duration-200 font-medium"
+                >
+                  Forgot password?
                 </Link>
               </div>
               <div className="relative">
+                <Lock className="w-4 h-4 text-muted-foreground absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <Input
                   id="password"
                   name="password"
                   type={showPassword ? "text" : "password"}
-                  placeholder="••••••••••"
+                  autoComplete="current-password"
+                  placeholder="Enter your password"
                   value={formData.password}
                   onChange={handleChange}
                   disabled={loading}
-                  className={`pl-4 pr-12 h-12 transition-all duration-300 bg-background/50 backdrop-blur-sm border-border hover:border-primary/50 focus:border-primary focus:ring-2 focus:ring-primary/20 ${
-                    errors.password ? "border-destructive focus:border-destructive focus:ring-destructive/20" : ""
+                  className={`pl-10 pr-11 h-11 rounded-xl bg-background/70 border-border/90 hover:border-primary/50 focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 transition-all duration-200 ${
+                    errors.password
+                      ? "border-destructive focus-visible:border-destructive focus-visible:ring-destructive/20"
+                      : ""
                   }`}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md"
                   disabled={loading}
                 >
-                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
               {errors.password && (
-                <p className="text-sm text-destructive animate-slide-up flex items-center gap-1">
-                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                  </svg>
-                  {errors.password}
+                <p className="text-xs text-destructive flex items-center gap-1.5 font-medium">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{errors.password}</span>
                 </p>
               )}
             </div>
           </CardContent>
 
-          <CardFooter className="flex flex-col space-y-4 px-8 pb-8">
+          <CardFooter className="flex flex-col space-y-5 px-6 sm:px-8 pt-6 pb-8">
             <Button
               type="submit"
-              className="w-full h-12 relative overflow-hidden group gradient-primary hover:shadow-glow-primary transition-all duration-300 transform hover:scale-[1.02] text-primary-foreground font-semibold text-base"
+              className="w-full h-11 relative overflow-hidden group gradient-primary hover:brightness-110 hover:scale-[1.01] active:scale-[0.99] hover:shadow-glow-primary transition-all duration-200 text-primary-foreground font-semibold text-sm sm:text-base rounded-xl"
               disabled={loading}
             >
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-700"></div>
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-700" />
               {loading ? (
                 <>
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Signing In...
                 </>
               ) : (
                 <>
-                  <Lock className="mr-2 h-5 w-5" />
-                  Sign In
+                  <span>Sign In</span>
+                  <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
                 </>
               )}
             </Button>
 
-            {/* Google sign-in removed: using email/password only */}
-
-            <div className="text-center">
-              <Link
-                to="/register"
-                className="text-sm text-muted-foreground hover:text-foreground transition-colors duration-200"
-              >
-                Don't have an account?{" "}
-                <span className="text-primary hover:text-primary/80 font-semibold underline-offset-4 hover:underline">
+            <div className="w-full pt-4 border-t border-border/60 text-center">
+              <p className="text-sm text-muted-foreground">
+                Don&apos;t have an account?{" "}
+                <Link
+                  to="/register"
+                  className="text-primary hover:text-primary/80 font-semibold underline-offset-4 hover:underline transition-colors"
+                >
                   Create one now
-                </span>
-              </Link>
+                </Link>
+              </p>
             </div>
           </CardFooter>
         </form>
       </Card>
-    </div>
+    </AuthLayoutShell>
   )
 }

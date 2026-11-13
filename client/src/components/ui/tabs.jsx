@@ -7,12 +7,14 @@ const Tabs = TabsPrimitive.Root
 
 const TabsList = React.forwardRef(({ className, ...props }, ref) => {
   const isGrid = className?.includes("grid")
+  const hasCustomPadding = className?.includes("p-") || className?.includes("py-") || className?.includes("px-")
   return (
     <TabsPrimitive.List
       ref={ref}
       className={cn(
         !isGrid && "inline-flex",
-        "h-9 items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground",
+        !hasCustomPadding && "p-1",
+        "min-h-9 h-auto items-center justify-center rounded-lg bg-muted text-muted-foreground",
         className
       )}
       {...props} />

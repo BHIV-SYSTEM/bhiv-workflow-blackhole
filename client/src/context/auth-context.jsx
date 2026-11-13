@@ -43,6 +43,7 @@ const AuthContext = createContext();
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -164,7 +165,7 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const register = async (userData) => {
-    setLoading(true);
+    setActionLoading(true);
   
     const filteredUserData = { ...userData };
     if (filteredUserData.role === "Admin" || filteredUserData.role === "Manager") {
@@ -187,21 +188,26 @@ export const AuthProvider = ({ children }) => {
         variant: "success",
       });
   
-      navigate(user.role === "User" ? "/userdashboard" : "/dashboard");
+      navigate(
+        user.role === "User" ? "/userdashboard" :
+        user.role === "Tester" ? "/tester-dashboard" :
+        "/dashboard"
+      );
     } catch (error) {
       toast({
         title: "Registration failed",
-        description: error.response?.data?.error || error.message,
+        description: error.response?.data?.message || error.response?.data?.error || error.message,
         variant: "destructive",
       });
       console.error("Registration error:", error);
+      throw error;
     } finally {
-      setLoading(false);
+      setActionLoading(false);
     }
   };
 
   const login = async (credentials) => {
-    setLoading(true);
+    setActionLoading(true);
     try {
       const response = await axiosInstance.post("/auth/login", credentials);
       const { token, user } = response.data;
@@ -227,12 +233,13 @@ export const AuthProvider = ({ children }) => {
     } catch (error) {
       toast({
         title: "Login failed",
-        description: error.response?.data?.error || error.message,
+        description: error.response?.data?.message || error.response?.data?.error || error.message,
         variant: "destructive",
       });
       console.error("Login error:", error);
+      throw error;
     } finally {
-      setLoading(false);
+      setActionLoading(false);
     }
   };
 
@@ -268,7 +275,7 @@ export const AuthProvider = ({ children }) => {
   const getToken = () => localStorage.getItem("WorkflowToken");
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, getToken }}>
+    <AuthContext.Provider value={{ user, loading, actionLoading, login, register, logout, getToken }}>
       {children}
     </AuthContext.Provider>
   );
