@@ -36,7 +36,8 @@ export function MonitoringDashboard({ employee, monitoringStatus }) {
 
   const fetchDashboardData = async () => {
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const now = new Date();
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
       
       // Fetch today's activity data
       const activityResponse = await axios.get(
@@ -78,16 +79,20 @@ export function MonitoringDashboard({ employee, monitoringStatus }) {
           hour: `${hour}:00`,
           keystroke_count: 0,
           mouse_activity_score: 0,
+          mouse_samples: 0,
           productivity_score: 0,
           idle_duration: 0,
           count: 0
         };
       }
       
-      hourlyData[hour].keystroke_count += activity.keystroke_count;
-      hourlyData[hour].mouse_activity_score += activity.mouse_activity_score;
-      hourlyData[hour].productivity_score += activity.productivity_score;
-      hourlyData[hour].idle_duration += activity.idle_duration;
+      hourlyData[hour].keystroke_count += (activity.keystroke_count || 0);
+      hourlyData[hour].mouse_activity_score += (activity.mouse_activity_score || 0);
+      if ((activity.mouse_activity_score || 0) > 0) {
+        hourlyData[hour].mouse_samples++;
+      }
+      hourlyData[hour].productivity_score += (activity.productivity_score || 0);
+      hourlyData[hour].idle_duration += (activity.idle_duration || 0);
       hourlyData[hour].count++;
     });
 
@@ -95,7 +100,7 @@ export function MonitoringDashboard({ employee, monitoringStatus }) {
     return Object.values(hourlyData)
       .map(data => ({
         ...data,
-        mouse_activity_score: Math.round(data.mouse_activity_score / data.count),
+        mouse_activity_score: data.mouse_samples > 0 ? Math.round(data.mouse_activity_score / data.mouse_samples) : 0,
         productivity_score: Math.round(data.productivity_score / data.count),
         idle_duration: Math.round(data.idle_duration / data.count)
       }))
@@ -114,10 +119,13 @@ export function MonitoringDashboard({ employee, monitoringStatus }) {
       };
     }
 
-    const totalKeystroke = activities.reduce((sum, a) => sum + a.keystroke_count, 0);
-    const avgMouseActivity = activities.reduce((sum, a) => sum + a.mouse_activity_score, 0) / activities.length;
-    const avgProductivityScore = activities.reduce((sum, a) => sum + a.productivity_score, 0) / activities.length;
-    const totalIdleTime = activities.reduce((sum, a) => sum + a.idle_duration, 0);
+    const totalKeystroke = activities.reduce((sum, a) => sum + (a.keystroke_count || 0), 0);
+    const activeMouseEntries = activities.filter(a => (a.mouse_activity_score || 0) > 0);
+    const avgMouseActivity = activeMouseEntries.length > 0
+      ? activeMouseEntries.reduce((sum, a) => sum + (a.mouse_activity_score || 0), 0) / activeMouseEntries.length
+      : 0;
+    const avgProductivityScore = activities.reduce((sum, a) => sum + (a.productivity_score || 0), 0) / activities.length;
+    const totalIdleTime = activities.reduce((sum, a) => sum + (a.idle_duration || 0), 0);
     
     // Calculate active hours
     const firstActivity = activities[activities.length - 1]?.timestamp;

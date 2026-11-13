@@ -271,6 +271,7 @@ router.get("/:id/daily-summary", auth, async (req, res) => {
     // Calculate telemetry metrics from scoped activities
     let totalKeystrokes = 0;
     let totalMouseScore = 0;
+    let activeMouseCount = 0;
     let totalMouseEvents = 0;
     let totalIdleSeconds = 0;
     let productivitySum = 0;
@@ -280,6 +281,9 @@ router.get("/:id/daily-summary", auth, async (req, res) => {
     scopedActivities.forEach(act => {
       totalKeystrokes += (act.keystroke_count || 0);
       totalMouseScore += (act.mouse_activity_score || 0);
+      if ((act.mouse_activity_score || 0) > 0) {
+        activeMouseCount++;
+      }
       totalMouseEvents += (act.mouse_event_count || 0);
 
       if (act.productivity_score > 0) {
@@ -315,7 +319,7 @@ router.get("/:id/daily-summary", auth, async (req, res) => {
     const sessionHoursFormatted = `${sessionH}h ${sessionM}m`;
 
     const avgProductivity = productivityCount > 0 ? Math.round(productivitySum / productivityCount) : (scopedActivities.length > 0 || effectiveActiveSeconds > 0 ? 65 : 0);
-    const avgMouse = scopedActivities.length > 0 ? Math.round(totalMouseScore / scopedActivities.length) : (totalMouseEvents > 0 ? 50 : 0);
+    const avgMouse = activeMouseCount > 0 ? Math.round(totalMouseScore / activeMouseCount) : (totalMouseEvents > 0 ? 50 : 0);
 
     // Calculate Efficiency
     let efficiencyScore = 0;

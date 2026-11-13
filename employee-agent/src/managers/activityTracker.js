@@ -39,6 +39,7 @@ class ActivityTracker {
       mouseEvents: 0,
       keyboardEvents: 0
     };
+    this.lastAttendanceId = null;
     
     this.sendInterval = null;
 
@@ -112,11 +113,15 @@ class ActivityTracker {
     }
 
     console.log('🟢 Starting REAL activity tracking for attendance:', attendanceId);
+    const isSameSession = this.lastAttendanceId && String(this.lastAttendanceId) === String(attendanceId);
     this.attendanceId = attendanceId;
+    this.lastAttendanceId = attendanceId;
     this.isTracking = true;
     
     this.resetStats();
-    this.sessionTotals = { mouseEvents: 0, keyboardEvents: 0 };
+    if (!isSameSession) {
+      this.sessionTotals = { mouseEvents: 0, keyboardEvents: 0 };
+    }
     
     // Register uiohook listeners (keyboard, clicks, movement, scrolling)
     uIOhook.on('keydown', this.handleKeyDown);

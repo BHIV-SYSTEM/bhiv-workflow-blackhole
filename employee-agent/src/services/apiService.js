@@ -328,6 +328,8 @@ class ApiService {
       console.error('❌ Failed to check attendance status:', error.response?.data || error.message);
       const tokenUser = this.getUserFromToken();
       return { 
+        error: true,
+        errorMessage: error.response?.data?.error || error.message,
         dayStarted: false,
         attendanceId: null,
         startTime: null,

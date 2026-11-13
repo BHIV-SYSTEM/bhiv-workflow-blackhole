@@ -99,23 +99,27 @@ export function ActivityChart({ employee }) {
             time: key,
             keystroke_count: 0,
             mouse_activity_score: 0,
+            mouse_samples: 0,
             productivity_score: 0,
             idle_duration: 0,
             count: 0
           };
         }
         
-        hourlyData[key].keystroke_count += activity.keystroke_count;
-        hourlyData[key].mouse_activity_score += activity.mouse_activity_score;
-        hourlyData[key].productivity_score += activity.productivity_score;
-        hourlyData[key].idle_duration += activity.idle_duration;
+        hourlyData[key].keystroke_count += (activity.keystroke_count || 0);
+        hourlyData[key].mouse_activity_score += (activity.mouse_activity_score || 0);
+        if ((activity.mouse_activity_score || 0) > 0) {
+          hourlyData[key].mouse_samples++;
+        }
+        hourlyData[key].productivity_score += (activity.productivity_score || 0);
+        hourlyData[key].idle_duration += (activity.idle_duration || 0);
         hourlyData[key].count++;
       });
 
       return Object.values(hourlyData)
         .map(data => ({
           ...data,
-          mouse_activity_score: Math.round(data.mouse_activity_score / data.count),
+          mouse_activity_score: data.mouse_samples > 0 ? Math.round(data.mouse_activity_score / data.mouse_samples) : 0,
           productivity_score: Math.round(data.productivity_score / data.count),
           idle_duration: Math.round(data.idle_duration / data.count / 60) // Convert to minutes
         }))
@@ -131,23 +135,27 @@ export function ActivityChart({ employee }) {
             time: date,
             keystroke_count: 0,
             mouse_activity_score: 0,
+            mouse_samples: 0,
             productivity_score: 0,
             idle_duration: 0,
             count: 0
           };
         }
         
-        dailyData[date].keystroke_count += activity.keystroke_count;
-        dailyData[date].mouse_activity_score += activity.mouse_activity_score;
-        dailyData[date].productivity_score += activity.productivity_score;
-        dailyData[date].idle_duration += activity.idle_duration;
+        dailyData[date].keystroke_count += (activity.keystroke_count || 0);
+        dailyData[date].mouse_activity_score += (activity.mouse_activity_score || 0);
+        if ((activity.mouse_activity_score || 0) > 0) {
+          dailyData[date].mouse_samples++;
+        }
+        dailyData[date].productivity_score += (activity.productivity_score || 0);
+        dailyData[date].idle_duration += (activity.idle_duration || 0);
         dailyData[date].count++;
       });
 
       return Object.values(dailyData)
         .map(data => ({
           ...data,
-          mouse_activity_score: Math.round(data.mouse_activity_score / data.count),
+          mouse_activity_score: data.mouse_samples > 0 ? Math.round(data.mouse_activity_score / data.mouse_samples) : 0,
           productivity_score: Math.round(data.productivity_score / data.count),
           idle_duration: Math.round(data.idle_duration / data.count / 60)
         }))
@@ -167,10 +175,13 @@ export function ActivityChart({ employee }) {
       };
     }
 
-    const totalKeystroke = activities.reduce((sum, a) => sum + a.keystroke_count, 0);
-    const avgProductivity = activities.reduce((sum, a) => sum + a.productivity_score, 0) / activities.length;
-    const avgMouseActivity = activities.reduce((sum, a) => sum + a.mouse_activity_score, 0) / activities.length;
-    const totalIdleTime = activities.reduce((sum, a) => sum + a.idle_duration, 0);
+    const totalKeystroke = activities.reduce((sum, a) => sum + (a.keystroke_count || 0), 0);
+    const avgProductivity = activities.reduce((sum, a) => sum + (a.productivity_score || 0), 0) / activities.length;
+    const activeMouseEntries = activities.filter(a => (a.mouse_activity_score || 0) > 0);
+    const avgMouseActivity = activeMouseEntries.length > 0
+      ? activeMouseEntries.reduce((sum, a) => sum + (a.mouse_activity_score || 0), 0) / activeMouseEntries.length
+      : 0;
+    const totalIdleTime = activities.reduce((sum, a) => sum + (a.idle_duration || 0), 0);
 
     // Find peak productivity hour
     const hourlyProductivity = {};

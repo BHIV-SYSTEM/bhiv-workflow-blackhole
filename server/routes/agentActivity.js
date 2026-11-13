@@ -115,7 +115,7 @@ router.post('/activity/ingest', auth, async (req, res) => {
     const mousePerMinute = (validMouseEvents / validIntervalDuration) * 60;
     const mouseActivityScore = (idleSeconds >= 30 || validMouseEvents === 0)
       ? 0
-      : Math.min(100, Math.round((mousePerMinute / 600) * 100));
+      : Math.min(100, Math.round((mousePerMinute / 240) * 100));
     
     // Create EmployeeActivity document
     const activityData = new EmployeeActivity({

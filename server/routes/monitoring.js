@@ -1725,6 +1725,7 @@ router.get('/team-summary', async (req, res) => {
       
       let totalKeystrokes = 0;
       let totalMouseScore = 0;
+      let activeMouseSamples = 0;
       let totalIdleSeconds = 0;
       let totalProductivityScore = 0;
       let activeSeconds = 0;
@@ -1733,6 +1734,9 @@ router.get('/team-summary', async (req, res) => {
         logsToProcess.forEach(act => {
           totalKeystrokes += (act.keystroke_count || 0);
           totalMouseScore += (act.mouse_activity_score || 0);
+          if ((act.mouse_activity_score || 0) > 0) {
+            activeMouseSamples++;
+          }
           
           // If employee had keystrokes or mouse movement in this 30s window, they were active!
           const isActActive = (act.keystroke_count || 0) > 0 || (act.mouse_activity_score || 0) >= 15;
@@ -1776,7 +1780,7 @@ router.get('/team-summary', async (req, res) => {
       let productivityEfficiency = 'No Activity';
 
       if (logsToProcess.length > 0) {
-        avgMouseActivity = Math.round(totalMouseScore / logsToProcess.length);
+        avgMouseActivity = activeMouseSamples > 0 ? Math.round(totalMouseScore / activeMouseSamples) : 0;
         avgProductivityScore = Math.round(totalProductivityScore / logsToProcess.length);
         if (avgProductivityScore >= 60) {
           productivityEfficiency = 'High Efficiency';

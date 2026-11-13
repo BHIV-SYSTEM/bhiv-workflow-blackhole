@@ -65,6 +65,12 @@ class AttendanceStatusPoller extends EventEmitter {
   async poll() {
     try {
       const status = await this.apiService.checkAttendanceStatus();
+
+      // Do not treat temporary network/API errors as an ended workday
+      if (status.error) {
+        console.warn('⚠️  Skipping attendance state transition due to transient poll error:', status.errorMessage || 'Network error');
+        return;
+      }
       
       // Detect state changes
       const previouslyStarted = this.currentStatus.dayStarted;
