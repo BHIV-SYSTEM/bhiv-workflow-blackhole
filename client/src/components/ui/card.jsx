@@ -2,11 +2,12 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
-const Card = React.forwardRef(({ className, ...props }, ref) => (
+const Card = React.forwardRef(({ className, interactive = false, ...props }, ref) => (
   <div
     ref={ref}
     className={cn(
-      "rounded-2xl bg-card text-card-foreground neo-card transition-cyber relative overflow-hidden",
+      "rounded-2xl bg-card text-card-foreground neo-card relative overflow-hidden",
+      interactive && "interactive-card",
       className
     )}
     {...props} />

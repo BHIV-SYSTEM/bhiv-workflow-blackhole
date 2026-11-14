@@ -543,6 +543,14 @@ function Progress() {
 
       let targetTaskId = selectedTask._id;
 
+      const numericProgress = Number(progressValue) || 0;
+      const resolvedTaskStatus = (currentStatus) => {
+        if (["Closed", "Submitted for Review"].includes(currentStatus)) {
+          return currentStatus;
+        }
+        return numericProgress >= 100 ? "Completed" : "In Progress";
+      };
+
       // If logging for a WhatsApp task, register intake first!
       if (selectedTask._id === "whatsapp_task") {
         if (!whatsappTitle || !whatsappTitle.trim()) {
@@ -556,7 +564,8 @@ function Progress() {
           originalInstruction: (whatsappInstruction || whatsappTitle).trim(),
           originatingPerson: whatsappSender.trim() || "Project Lead (WhatsApp)",
           sourceType: "WHATSAPP",
-          status: "In Progress",
+          status: resolvedTaskStatus("In Progress"),
+          progress: numericProgress,
           priority: "Medium"
         }, {
           headers: { 'x-auth-token': token }
@@ -600,12 +609,17 @@ function Progress() {
       // Update the task in the local state
       setTasks(prevTasks => prevTasks.map(task => 
         task._id === targetTaskId 
-          ? { ...task, progress: progressValue, status: 'In Progress' } 
+          ? { ...task, progress: numericProgress, status: resolvedTaskStatus(task.status) } 
           : task
       ));
       
       // Update selected task
-      setSelectedTask(prev => ({ ...(prev || {}), _id: targetTaskId, progress: progressValue, status: 'In Progress' }));
+      setSelectedTask(prev => ({
+        ...(prev || {}),
+        _id: targetTaskId,
+        progress: numericProgress,
+        status: resolvedTaskStatus(prev?.status)
+      }));
       
       // Refresh progress history
       fetchProgressHistory(targetTaskId);
@@ -643,14 +657,14 @@ function Progress() {
   }
 
   return (
-    <div className="container mx-auto py-6 space-y-6">
+    <div className="space-y-6 pb-8">
       <ToastContainer />
 
       {/* Non-blocking Notice when user has no pre-assigned tasks in DB */}
       {tasks.length === 0 && (
-        <div className="p-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-emerald-400">
+        <div className="p-4 rounded-2xl border border-primary/30 bg-primary/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-emerald-500/20 flex items-center justify-center text-emerald-400 flex-shrink-0">
+            <div className="h-10 w-10 rounded-xl bg-primary/20 flex items-center justify-center text-primary flex-shrink-0">
               <MessageSquare className="h-5 w-5" />
             </div>
             <div>
@@ -671,10 +685,10 @@ function Progress() {
         </div>
       )}
 
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 p-5 sm:p-6 rounded-2xl border border-border/60 bg-card/70 shadow-sm">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Task Progress</h1>
-          <p className="text-muted-foreground">
+          <h1 className="text-2xl sm:text-3xl font-heading font-bold tracking-tight">Task Progress</h1>
+          <p className="text-muted-foreground text-sm sm:text-base mt-0.5">
             Track and update your daily progress on assigned or WhatsApp tasks
           </p>
         </div>
@@ -684,12 +698,12 @@ function Progress() {
             value={selectedTask?._id || "whatsapp_task"} 
             onValueChange={handleTaskChange}
           >
-            <SelectTrigger className="h-10 rounded-xl">
+            <SelectTrigger className="h-10 rounded-xl border-border/70 bg-background/80">
               <SelectValue placeholder="Select a task" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="whatsapp_task" className="font-semibold text-emerald-600 dark:text-emerald-400">
-                💬 + Log WhatsApp / Direct Task
+              <SelectItem value="whatsapp_task" className="font-semibold text-primary">
+                + Log WhatsApp / Direct Task
               </SelectItem>
               {tasks.map(task => (
                 <SelectItem key={task._id} value={task._id}>
@@ -767,18 +781,20 @@ function Progress() {
               )}
 
               <div className="space-y-2">
-                <div className="flex justify-between items-center">
-                  <Label>Current Progress: {progressValue}%</Label>
-                  <span className="text-sm text-muted-foreground">
+                <div className="flex justify-between items-center gap-2">
+                  <Label className="text-sm font-semibold">
+                    Current Progress: <span className="text-primary tabular-nums">{progressValue}%</span>
+                  </Label>
+                  <span className="text-xs sm:text-sm text-muted-foreground">
                     Due: {selectedTask.dueDate ? (isNaN(new Date(selectedTask.dueDate).getTime()) ? "Today" : format(new Date(selectedTask.dueDate), "PPP")) : "Today"}
                   </span>
                 </div>
-               <Slider
+                <Slider
                   value={[progressValue]}
                   onValueChange={(values) => setProgressValue(values[0])}
                   max={100}
                   step={1}
-                  className="py-4 [&>span:first-child]:bg-black [&>span:last-child]:bg-white [&>span:first-child]:border-black [&>span:last-child]:border-white-400"
+                  className="py-4 cursor-pointer"
                 />
               </div>
 
@@ -892,24 +908,24 @@ function Progress() {
                   </p>
                 </div>
                 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-sm font-medium">Status</p>
-                    <p className="text-sm font-semibold text-emerald-400">{selectedTask.status || "In Progress"}</p>
+                <div className="grid grid-cols-2 gap-3 pt-1">
+                  <div className="p-3 rounded-xl bg-muted/40 border border-border/50">
+                    <p className="text-xs font-medium text-muted-foreground">Status</p>
+                    <p className="text-sm font-semibold text-primary mt-0.5">{selectedTask.status || "In Progress"}</p>
                   </div>
-                  <div>
-                    <p className="text-sm font-medium">Priority</p>
-                    <p className="text-sm">{selectedTask.priority || "Medium"}</p>
+                  <div className="p-3 rounded-xl bg-muted/40 border border-border/50">
+                    <p className="text-xs font-medium text-muted-foreground">Priority</p>
+                    <p className="text-sm font-semibold mt-0.5">{selectedTask.priority || "Medium"}</p>
                   </div>
-                  <div>
-                    <p className="text-sm font-medium">Due Date</p>
-                    <p className="text-sm">
+                  <div className="p-3 rounded-xl bg-muted/40 border border-border/50">
+                    <p className="text-xs font-medium text-muted-foreground">Due Date</p>
+                    <p className="text-sm font-medium mt-0.5">
                       {selectedTask.dueDate && !isNaN(new Date(selectedTask.dueDate).getTime()) ? format(new Date(selectedTask.dueDate), "PPP") : "Today"}
                     </p>
                   </div>
-                  <div>
-                    <p className="text-sm font-medium">Source</p>
-                    <p className="text-sm font-medium text-foreground">
+                  <div className="p-3 rounded-xl bg-muted/40 border border-border/50">
+                    <p className="text-xs font-medium text-muted-foreground">Source</p>
+                    <p className="text-sm font-medium text-foreground mt-0.5">
                       {selectedTask._id === "whatsapp_task" ? "WhatsApp" : (selectedTask.sourceType || "System Assigned")}
                     </p>
                   </div>

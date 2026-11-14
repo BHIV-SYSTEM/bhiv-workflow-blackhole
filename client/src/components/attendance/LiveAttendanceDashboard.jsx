@@ -180,7 +180,7 @@ const LiveAttendanceDashboard = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-white">
+      <div className="flex items-center justify-center min-h-screen bg-background">
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -191,23 +191,23 @@ const LiveAttendanceDashboard = () => {
             transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
             className="mx-auto"
           >
-            <Activity className="w-12 h-12 text-blue-600" />
+            <Activity className="w-12 h-12 text-blue-500" />
           </motion.div>
           <div className="space-y-2">
-            <p className="text-lg font-semibold text-gray-900">Loading Live Attendance</p>
-            <p className="text-sm text-gray-500">Fetching real-time data...</p>
-        </div>
+            <p className="text-lg font-semibold text-foreground">Loading Live Attendance</p>
+            <p className="text-sm text-muted-foreground">Fetching real-time data...</p>
+          </div>
         </motion.div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="min-h-screen">
       {/* Professional SaaS Header */}
-      <div className="sticky top-0 z-50 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-sm">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+      <div className="sticky top-0 z-30 bg-card/90 backdrop-blur-xl border-b border-border/70 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
             <motion.div
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
@@ -216,118 +216,118 @@ const LiveAttendanceDashboard = () => {
               <div className="p-2.5 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl shadow-lg">
                 <Activity className="w-6 h-6 text-white" />
               </div>
-        <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight">
+              <div>
+                <h1 className="text-2xl font-bold text-foreground tracking-tight">
                   Live Attendance Dashboard
                 </h1>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5 flex items-center gap-2">
+                <p className="text-sm text-muted-foreground mt-0.5 flex items-center gap-2">
                   <motion.div
                     animate={{ scale: [1, 1.2, 1] }}
                     transition={{ duration: 2, repeat: Infinity }}
                   >
-                    <Radio className="w-3 h-3 text-green-500" />
+                    <Radio className="w-3 h-3 text-emerald-500" />
                   </motion.div>
                   Real-time monitoring • Updated {lastUpdated.toLocaleTimeString()}
-          </p>
-        </div>
+                </p>
+              </div>
             </motion.div>
-            
+
             <motion.div
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
-              className="flex items-center gap-3"
+              className="flex flex-wrap items-center gap-3"
             >
-          <Button 
+              <Button
                 onClick={() => fetchLiveAttendance(true)}
-            variant="outline"
-            size="sm"
-                className="border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-gray-200 shadow-sm"
+                variant="outline"
+                size="sm"
+                className="border-border/70 hover:bg-muted/60 shadow-sm"
                 disabled={refreshing}
-          >
+              >
                 <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
                 {refreshing ? 'Refreshing...' : 'Refresh'}
-          </Button>
-          
-              <div className="flex items-center gap-2 text-sm text-gray-700 bg-green-50 px-4 py-2 rounded-lg border border-green-200">
+              </Button>
+
+              <div className="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 px-4 py-2 rounded-lg border border-emerald-500/30">
                 <motion.div
                   animate={{ scale: [1, 1.2, 1] }}
                   transition={{ duration: 2, repeat: Infinity }}
                 >
-                  <Activity className="w-4 h-4 text-green-600" />
+                  <Activity className="w-4 h-4 text-emerald-500" />
                 </motion.div>
-                <span className="font-medium text-green-700">Live Updates Active</span>
+                <span className="font-medium">Live Updates Active</span>
               </div>
             </motion.div>
           </div>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-6 py-8 space-y-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-8">
         {/* Professional Stats Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
           {[
-            { label: 'Total Employees', value: stats.totalEmployees, icon: Users, color: 'blue', bgColor: 'bg-blue-50', iconBg: 'bg-blue-100', textColor: 'text-blue-700', iconColor: 'text-blue-600' },
-            { label: 'Present Today', value: stats.presentToday, icon: UserCheck, color: 'green', bgColor: 'bg-green-50', iconBg: 'bg-green-100', textColor: 'text-green-700', iconColor: 'text-green-600' },
-            { label: 'Absent Today', value: stats.absentToday, icon: UserX, color: 'red', bgColor: 'bg-red-50', iconBg: 'bg-red-100', textColor: 'text-red-700', iconColor: 'text-red-600' },
-            { label: 'Avg Attendance', value: `${stats.avgAttendance}%`, icon: TrendingUp, color: 'purple', bgColor: 'bg-purple-50', iconBg: 'bg-purple-100', textColor: 'text-purple-700', iconColor: 'text-purple-600' },
-            { label: 'Late Arrivals', value: stats.lateArrivals, icon: Clock, color: 'orange', bgColor: 'bg-orange-50', iconBg: 'bg-orange-100', textColor: 'text-orange-700', iconColor: 'text-orange-600' },
-            { label: 'Early Departures', value: stats.earlyDepartures, icon: Timer, color: 'pink', bgColor: 'bg-pink-50', iconBg: 'bg-pink-100', textColor: 'text-pink-700', iconColor: 'text-pink-600' }
+            { label: 'Total Employees', value: stats.totalEmployees, icon: Users, iconBg: 'bg-blue-500/15', textColor: 'text-blue-600 dark:text-blue-400', iconColor: 'text-blue-500' },
+            { label: 'Present Today', value: stats.presentToday, icon: UserCheck, iconBg: 'bg-emerald-500/15', textColor: 'text-emerald-600 dark:text-emerald-400', iconColor: 'text-emerald-500' },
+            { label: 'Absent Today', value: stats.absentToday, icon: UserX, iconBg: 'bg-red-500/15', textColor: 'text-red-600 dark:text-red-400', iconColor: 'text-red-500' },
+            { label: 'Avg Attendance', value: `${stats.avgAttendance}%`, icon: TrendingUp, iconBg: 'bg-purple-500/15', textColor: 'text-purple-600 dark:text-purple-400', iconColor: 'text-purple-500' },
+            { label: 'Late Arrivals', value: stats.lateArrivals, icon: Clock, iconBg: 'bg-orange-500/15', textColor: 'text-orange-600 dark:text-orange-400', iconColor: 'text-orange-500' },
+            { label: 'Early Departures', value: stats.earlyDepartures, icon: Timer, iconBg: 'bg-pink-500/15', textColor: 'text-pink-600 dark:text-pink-400', iconColor: 'text-pink-500' }
           ].map((stat, idx) => {
             const Icon = stat.icon;
             return (
-        <motion.div
+              <motion.div
                 key={stat.label}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.05 }}
                 whileHover={{ y: -4 }}
-        >
-                <Card className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden">
+              >
+                <Card interactive className="border-border/70 overflow-hidden">
                   <CardContent className="p-5">
-              <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between">
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 truncate">
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 truncate">
                           {stat.label}
                         </p>
-                        <p className={`text-2xl font-bold ${stat.textColor} leading-none`}>
+                        <p className={`text-2xl font-bold ${stat.textColor} leading-none tabular-nums`}>
                           {stat.value}
                         </p>
-                </div>
+                      </div>
                       <div className={`${stat.iconBg} p-3 rounded-lg flex-shrink-0 ml-3`}>
                         <Icon className={`w-5 h-5 ${stat.iconColor}`} />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
             );
           })}
-              </div>
+        </div>
 
         {/* Professional Filters */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          <Card className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm">
+          <Card className="border-border/70">
             <CardContent className="p-5">
               <div className="flex flex-col lg:flex-row gap-4">
                 <div className="flex-1 relative">
-                  <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-5 h-5" />
+                  <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-muted-foreground w-5 h-5" />
                   <Input
                     placeholder="Search employees by name or email..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-12 h-11 bg-white dark:bg-gray-700 dark:text-white border-gray-300 dark:border-gray-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                    className="pl-12 h-11 bg-background/70 border-border/70 focus:border-primary focus:ring-2 focus:ring-primary/20"
                   />
                 </div>
 
                 <Select value={filterType} onValueChange={setFilterType}>
-                  <SelectTrigger className="w-full lg:w-56 h-11 bg-white border-gray-300">
-                    <Filter className="w-4 h-4 mr-2 text-gray-500" />
+                  <SelectTrigger className="w-full lg:w-56 h-11 bg-background/70 border-border/70">
+                    <Filter className="w-4 h-4 mr-2 text-muted-foreground" />
                     <SelectValue placeholder="Filter by status" />
                   </SelectTrigger>
-                  <SelectContent className="bg-white">
+                  <SelectContent className="bg-popover border-border/70">
                     <SelectItem value="all">All Employees</SelectItem>
                     <SelectItem value="present">✅ Present</SelectItem>
                     <SelectItem value="absent">❌ Absent</SelectItem>
@@ -342,77 +342,77 @@ const LiveAttendanceDashboard = () => {
 
         {/* Professional Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 bg-white border border-gray-200 shadow-sm p-1.5 rounded-lg h-auto">
-            <TabsTrigger 
-              value="overview" 
-              className="flex items-center gap-2 data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-sm transition-all rounded-md py-2.5"
+          <TabsList className="grid w-full grid-cols-3 bg-muted/50 border border-border/60 p-1.5 rounded-xl h-auto gap-1">
+            <TabsTrigger
+              value="overview"
+              className="flex items-center gap-2 data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-sm transition-all rounded-lg py-2.5"
             >
-            <Activity className="w-4 h-4" />
+              <Activity className="w-4 h-4" />
               <span className="font-medium">Live Overview</span>
-          </TabsTrigger>
-            <TabsTrigger 
-              value="grid" 
-              className="flex items-center gap-2 data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-sm transition-all rounded-md py-2.5"
+            </TabsTrigger>
+            <TabsTrigger
+              value="grid"
+              className="flex items-center gap-2 data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-sm transition-all rounded-lg py-2.5"
             >
-            <Users className="w-4 h-4" />
+              <Users className="w-4 h-4" />
               <span className="font-medium">Employee Grid</span>
-          </TabsTrigger>
-            <TabsTrigger 
-              value="analytics" 
-              className="flex items-center gap-2 data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-sm transition-all rounded-md py-2.5"
+            </TabsTrigger>
+            <TabsTrigger
+              value="analytics"
+              className="flex items-center gap-2 data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-sm transition-all rounded-lg py-2.5"
             >
-            <BarChart3 className="w-4 h-4" />
+              <BarChart3 className="w-4 h-4" />
               <span className="font-medium">Analytics</span>
-          </TabsTrigger>
-        </TabsList>
+            </TabsTrigger>
+          </TabsList>
 
-        {/* Live Overview Tab */}
+          {/* Live Overview Tab */}
           <TabsContent value="overview" className="space-y-6 mt-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Attendance Progress Card */}
               <motion.div
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
               >
-                <Card className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm">
-                  <CardHeader className="pb-4 border-b border-gray-100 dark:border-gray-700">
-                    <CardTitle className="flex items-center gap-3 text-gray-900 dark:text-white\">
-                      <div className="p-2 bg-blue-100 rounded-lg">
-                        <PieChart className="w-5 h-5 text-blue-600" />
+                <Card className="border-border/70">
+                  <CardHeader className="pb-4 border-b border-border/60">
+                    <CardTitle className="flex items-center gap-3 text-foreground">
+                      <div className="p-2 bg-blue-500/15 rounded-lg">
+                        <PieChart className="w-5 h-5 text-blue-500" />
                       </div>
                       <span className="text-lg font-semibold">Today's Attendance</span>
-                </CardTitle>
-              </CardHeader>
+                    </CardTitle>
+                  </CardHeader>
                   <CardContent className="pt-6 space-y-6">
                     <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Present</span>
-                        <span className="text-sm font-semibold text-gray-900 dark:text-white">{stats.presentToday}/{stats.totalEmployees}</span>
-                  </div>
-                  <Progress
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-muted-foreground">Present</span>
+                        <span className="text-sm font-semibold text-foreground tabular-nums">{stats.presentToday}/{stats.totalEmployees}</span>
+                      </div>
+                      <Progress
                         value={stats.totalEmployees > 0 ? (stats.presentToday / stats.totalEmployees) * 100 : 0}
-                        className="h-2.5 bg-gray-200 dark:bg-gray-700"
-                  />
+                        className="h-2.5"
+                      />
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
-                      <motion.div 
+                      <motion.div
                         whileHover={{ scale: 1.02 }}
-                        className="text-center p-4 bg-green-50 rounded-xl border border-green-200"
+                        className="text-center p-4 bg-emerald-500/10 rounded-xl border border-emerald-500/25"
                       >
-                        <div className="text-3xl font-bold text-green-700">{stats.presentToday}</div>
-                        <div className="text-sm font-medium text-green-600 mt-1">Present</div>
+                        <div className="text-3xl font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">{stats.presentToday}</div>
+                        <div className="text-sm font-medium text-emerald-700 dark:text-emerald-300 mt-1">Present</div>
                       </motion.div>
-                      <motion.div 
+                      <motion.div
                         whileHover={{ scale: 1.02 }}
-                        className="text-center p-4 bg-red-50 rounded-xl border border-red-200"
+                        className="text-center p-4 bg-destructive/10 rounded-xl border border-destructive/25"
                       >
-                        <div className="text-3xl font-bold text-red-700">{stats.absentToday}</div>
-                        <div className="text-sm font-medium text-red-600 mt-1">Absent</div>
+                        <div className="text-3xl font-bold text-destructive tabular-nums">{stats.absentToday}</div>
+                        <div className="text-sm font-medium text-destructive mt-1">Absent</div>
                       </motion.div>
-                </div>
-              </CardContent>
-            </Card>
+                    </div>
+                  </CardContent>
+                </Card>
               </motion.div>
 
               {/* Recent Activity Card */}
@@ -420,272 +420,255 @@ const LiveAttendanceDashboard = () => {
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
               >
-                <Card className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm">
-                  <CardHeader className="pb-4 border-b border-gray-100 dark:border-gray-700">
-                    <CardTitle className="flex items-center gap-3 text-gray-900 dark:text-white">
-                      <div className="p-2 bg-green-100 rounded-lg">
-                        <Zap className="w-5 h-5 text-green-600" />
+                <Card className="border-border/70">
+                  <CardHeader className="pb-4 border-b border-border/60">
+                    <CardTitle className="flex items-center gap-3 text-foreground">
+                      <div className="p-2 bg-emerald-500/15 rounded-lg">
+                        <Zap className="w-5 h-5 text-emerald-500" />
                       </div>
                       <span className="text-lg font-semibold">Recent Activity</span>
-                </CardTitle>
-              </CardHeader>
+                    </CardTitle>
+                  </CardHeader>
                   <CardContent className="pt-6">
                     <div className="space-y-3 max-h-80 overflow-y-auto custom-scrollbar">
                       <AnimatePresence>
-                  {filteredAttendance
-                    .filter(record => record.startDayTime)
-                    .sort((a, b) => new Date(b.startDayTime) - new Date(a.startDayTime))
-                    .slice(0, 5)
-                    .map((record, index) => (
-                      <motion.div
-                        key={record._id}
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
+                        {filteredAttendance
+                          .filter(record => record.startDayTime)
+                          .sort((a, b) => new Date(b.startDayTime) - new Date(a.startDayTime))
+                          .slice(0, 5)
+                          .map((record, index) => (
+                            <motion.div
+                              key={record._id}
+                              initial={{ opacity: 0, x: -20 }}
+                              animate={{ opacity: 1, x: 0 }}
                               exit={{ opacity: 0, x: 20 }}
                               transition={{ delay: index * 0.05 }}
                               whileHover={{ x: 4 }}
-                              className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-100 dark:border-gray-600 hover:border-blue-200 dark:hover:border-blue-500 hover:bg-blue-50/50 dark:hover:bg-blue-900/20 transition-all cursor-pointer"
-                      >
-                              <Avatar className="w-10 h-10 ring-2 ring-white shadow-sm">
-                          <AvatarImage src={record.user.avatar} />
+                              className="flex items-center gap-3 p-3 bg-muted/40 rounded-xl border border-border/60 hover:border-blue-500/40 hover:bg-blue-500/5 transition-all cursor-pointer"
+                            >
+                              <Avatar className="w-10 h-10 ring-2 ring-border/70 shadow-sm">
+                                <AvatarImage src={record.user.avatar} />
                                 <AvatarFallback className="bg-gradient-to-br from-blue-500 to-indigo-600 text-white text-sm font-semibold">
-                            {record.user.name.split(' ').map(n => n[0]).join('')}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1 min-w-0">
-                                <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
-                            {record.user.name}
-                          </p>
-                                <p className="text-xs text-gray-500 dark:text-gray-300 flex items-center gap-1 mt-0.5">
+                                  {record.user.name.split(' ').map(n => n[0]).join('')}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-semibold text-foreground truncate">
+                                  {record.user.name}
+                                </p>
+                                <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
                                   <Clock className="w-3 h-3" />
                                   Started at {new Date(record.startDayTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </p>
-                        </div>
-                              <Badge 
+                                </p>
+                              </div>
+                              <Badge
                                 variant={getStatusBadgeVariant(record)}
                                 className="text-xs font-medium flex-shrink-0"
                               >
-                          {getStatusText(record)}
-                        </Badge>
-                      </motion.div>
-                    ))}
+                                {getStatusText(record)}
+                              </Badge>
+                            </motion.div>
+                          ))}
                         {filteredAttendance.filter(record => record.startDayTime).length === 0 && (
-                          <div className="text-center py-12 text-gray-500">
+                          <div className="text-center py-12 text-muted-foreground">
                             <Activity className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                            <p className="font-medium">No recent activity</p>
+                            <p className="font-medium text-foreground">No recent activity</p>
                             <p className="text-sm mt-1">Activity will appear here when employees start their day</p>
                           </div>
                         )}
                       </AnimatePresence>
-                </div>
-              </CardContent>
-            </Card>
+                    </div>
+                  </CardContent>
+                </Card>
               </motion.div>
-          </div>
-        </TabsContent>
+            </div>
+          </TabsContent>
 
-        {/* Employee Grid Tab */}
+          {/* Employee Grid Tab */}
           <TabsContent value="grid" className="space-y-6 mt-6">
             {filteredAttendance.length === 0 ? (
-              <Card className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm">
+              <Card className="border-border/70">
                 <CardContent className="py-16 text-center">
-                  <UserX className="w-16 h-16 mx-auto mb-4 text-gray-300 dark:text-gray-500" />
-                  <p className="text-lg font-semibold text-gray-700 dark:text-white mb-2">No employees found</p>
-                  <p className="text-sm text-gray-500 dark:text-gray-300">Try adjusting your search or filter criteria</p>
+                  <UserX className="w-16 h-16 mx-auto mb-4 text-muted-foreground/40" />
+                  <p className="text-lg font-semibold text-foreground mb-2">No employees found</p>
+                  <p className="text-sm text-muted-foreground">Try adjusting your search or filter criteria</p>
                 </CardContent>
               </Card>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-            <AnimatePresence>
-              {filteredAttendance.map((record, index) => {
-                const workingHours = calculateWorkingHours(record.startDayTime, record.endDayTime);
-                const isOnline = record.isPresent && !record.endDayTime;
+                <AnimatePresence>
+                  {filteredAttendance.map((record, index) => {
+                    const workingHours = calculateWorkingHours(record.startDayTime, record.endDayTime);
+                    const isOnline = record.isPresent && !record.endDayTime;
                     const progress = Math.min(100, (workingHours / 8) * 100);
 
-                return (
-                  <motion.div
-                    key={record._id}
+                    return (
+                      <motion.div
+                        key={record._id}
                         initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
+                        animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.95 }}
                         transition={{ delay: index * 0.03 }}
                         whileHover={{ y: -4 }}
-                  >
-                        <Card className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden h-full">
+                      >
+                        <Card interactive className="border-border/70 overflow-hidden h-full">
                           <CardContent className="p-5">
                             {/* Header with Avatar */}
                             <div className="flex items-start justify-between mb-5">
                               <div className="flex items-center gap-3 flex-1 min-w-0">
                                 <div className="relative flex-shrink-0">
-                                  <Avatar className="w-12 h-12 ring-2 ring-gray-100 shadow-sm">
-                                <AvatarImage src={record.user.avatar} />
+                                  <Avatar className="w-12 h-12 ring-2 ring-border/70 shadow-sm">
+                                    <AvatarImage src={record.user.avatar} />
                                     <AvatarFallback className="bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600 text-white font-semibold text-sm">
-                                  {record.user.name.split(' ').map(n => n[0]).join('')}
-                                </AvatarFallback>
-                              </Avatar>
+                                      {record.user.name.split(' ').map(n => n[0]).join('')}
+                                    </AvatarFallback>
+                                  </Avatar>
                                   <motion.div
                                     animate={{ scale: [1, 1.2, 1] }}
                                     transition={{ duration: 2, repeat: Infinity }}
-                                    className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-white shadow-sm ${getStatusColor(record)}`}
+                                    className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-card shadow-sm ${getStatusColor(record)}`}
                                   />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                  <h3 className="font-bold text-gray-900 dark:text-white truncate text-base leading-tight">
-                                {record.user.name}
-                              </h3>
-                                  <p className="text-xs text-gray-500 dark:text-gray-300 truncate mt-0.5">
-                                {record.user.email}
-                              </p>
-                            </div>
-                          </div>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <h3 className="font-bold text-foreground truncate text-base leading-tight">
+                                    {record.user.name}
+                                  </h3>
+                                  <p className="text-xs text-muted-foreground truncate mt-0.5">
+                                    {record.user.email}
+                                  </p>
+                                </div>
+                              </div>
 
                               <div className="flex-shrink-0">
-                            {isOnline ? (
+                                {isOnline ? (
                                   <motion.div
                                     animate={{ scale: [1, 1.2, 1] }}
                                     transition={{ duration: 2, repeat: Infinity }}
                                   >
-                                    <Wifi className="w-5 h-5 text-green-500" />
+                                    <Wifi className="w-5 h-5 text-emerald-500" />
                                   </motion.div>
-                            ) : (
-                                  <WifiOff className="w-5 h-5 text-gray-300" />
-                            )}
-                          </div>
-                        </div>
+                                ) : (
+                                  <WifiOff className="w-5 h-5 text-muted-foreground/40" />
+                                )}
+                              </div>
+                            </div>
 
                             {/* Status and Info */}
                             <div className="space-y-3.5">
                               <div className="flex items-center justify-between">
-                                <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Status</span>
-                            <Badge
+                                <span className="text-xs font-medium text-muted-foreground">Status</span>
+                                <Badge
                                   variant={getStatusBadgeVariant(record)}
                                   className="text-xs font-semibold"
-                            >
-                              {getStatusText(record)}
-                            </Badge>
-                          </div>
+                                >
+                                  {getStatusText(record)}
+                                </Badge>
+                              </div>
 
-                          {record.startDayTime && (
-                                <div className="flex items-center justify-between text-sm py-1.5 border-b border-gray-100 dark:border-gray-700">
-                                  <span className="text-gray-600 dark:text-gray-300 flex items-center gap-1.5">
+                              {record.startDayTime && (
+                                <div className="flex items-center justify-between text-sm py-1.5 border-b border-border/60">
+                                  <span className="text-muted-foreground flex items-center gap-1.5">
                                     <Clock className="w-3.5 h-3.5" />
                                     Start:
                                   </span>
-                                  <span className="font-semibold text-gray-900 dark:text-white">
-                                {new Date(record.startDayTime).toLocaleTimeString([], {
-                                  hour: '2-digit',
-                                  minute: '2-digit'
-                                })}
-                              </span>
-                            </div>
-                          )}
+                                  <span className="font-semibold text-foreground tabular-nums">
+                                    {new Date(record.startDayTime).toLocaleTimeString([], {
+                                      hour: '2-digit',
+                                      minute: '2-digit'
+                                    })}
+                                  </span>
+                                </div>
+                              )}
 
-                          {record.endDayTime && (
-                                <div className="flex items-center justify-between text-sm py-1.5 border-b border-gray-100 dark:border-gray-700">
-                                  <span className="text-gray-600 dark:text-gray-300 flex items-center gap-1.5">
+                              {record.endDayTime && (
+                                <div className="flex items-center justify-between text-sm py-1.5 border-b border-border/60">
+                                  <span className="text-muted-foreground flex items-center gap-1.5">
                                     <CheckCircle className="w-3.5 h-3.5" />
                                     End:
                                   </span>
-                                  <span className="font-semibold text-gray-900 dark:text-white">
-                                {new Date(record.endDayTime).toLocaleTimeString([], {
-                                  hour: '2-digit',
-                                  minute: '2-digit'
-                                })}
-                              </span>
-                            </div>
-                          )}
+                                  <span className="font-semibold text-foreground tabular-nums">
+                                    {new Date(record.endDayTime).toLocaleTimeString([], {
+                                      hour: '2-digit',
+                                      minute: '2-digit'
+                                    })}
+                                  </span>
+                                </div>
+                              )}
 
                               <div className="flex items-center justify-between text-sm pt-1">
-                                <span className="text-gray-600 dark:text-gray-400 font-medium">Hours Worked</span>
-                                <span className={`font-bold text-lg ${workingHours >= 8 ? 'text-green-600' : workingHours >= 6 ? 'text-orange-600' : 'text-red-600'}`}>
-                              {workingHours.toFixed(1)}h
-                            </span>
-                          </div>
+                                <span className="text-muted-foreground font-medium">Hours Worked</span>
+                                <span className={`font-bold text-lg tabular-nums ${workingHours >= 8 ? 'text-emerald-600 dark:text-emerald-400' : workingHours >= 6 ? 'text-orange-600 dark:text-orange-400' : 'text-destructive'}`}>
+                                  {workingHours.toFixed(1)}h
+                                </span>
+                              </div>
 
                               {record.isPresent && !record.endDayTime && (
-                                <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
-                                  <div className="flex items-center justify-between text-xs text-gray-600 dark:text-gray-400 mb-2">
+                                <div className="mt-4 pt-3 border-t border-border/60">
+                                  <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
                                     <span className="font-medium">Daily Progress</span>
-                                    <span className="font-bold">{progress.toFixed(0)}%</span>
-                              </div>
-                              <Progress
+                                    <span className="font-bold tabular-nums">{progress.toFixed(0)}%</span>
+                                  </div>
+                                  <Progress
                                     value={progress}
-                                    className="h-2 bg-gray-200 dark:bg-gray-700"
-                              />
+                                    className="h-2"
+                                  />
+                                </div>
+                              )}
                             </div>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </motion.div>
-                );
-              })}
-            </AnimatePresence>
-          </div>
+                          </CardContent>
+                        </Card>
+                      </motion.div>
+                    );
+                  })}
+                </AnimatePresence>
+              </div>
             )}
-        </TabsContent>
+          </TabsContent>
 
-        {/* Analytics Tab */}
+          {/* Analytics Tab */}
           <TabsContent value="analytics" className="space-y-6 mt-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <Card className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm">
-                <CardHeader className="border-b border-gray-100 dark:border-gray-700">
-                  <CardTitle className="flex items-center gap-3 text-gray-900 dark:text-white">
-                    <div className="p-2 bg-blue-100 rounded-lg">
-                      <BarChart3 className="w-5 h-5 text-blue-600" />
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <Card className="border-border/70">
+                <CardHeader className="border-b border-border/60">
+                  <CardTitle className="flex items-center gap-3 text-foreground">
+                    <div className="p-2 bg-blue-500/15 rounded-lg">
+                      <BarChart3 className="w-5 h-5 text-blue-500" />
                     </div>
                     <span className="text-lg font-semibold">Attendance Trends</span>
                   </CardTitle>
                   <CardDescription className="mt-2">Weekly attendance patterns</CardDescription>
-              </CardHeader>
+                </CardHeader>
                 <CardContent className="pt-6">
-                  <div className="text-center py-16 text-gray-500 dark:text-gray-400">
+                  <div className="text-center py-16 text-muted-foreground">
                     <BarChart3 className="w-16 h-16 mx-auto mb-4 opacity-20" />
-                    <p className="font-medium text-gray-700 dark:text-white">Analytics charts coming soon</p>
-                    <p className="text-sm mt-2 text-gray-500 dark:text-gray-400">Visual insights will be displayed here</p>
-                </div>
-              </CardContent>
-            </Card>
+                    <p className="font-medium text-foreground">Analytics charts coming soon</p>
+                    <p className="text-sm mt-2">Visual insights will be displayed here</p>
+                  </div>
+                </CardContent>
+              </Card>
 
-              <Card className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm">
-                <CardHeader className="border-b border-gray-100 dark:border-gray-700">
-                  <CardTitle className="flex items-center gap-3 text-gray-900 dark:text-white">
-                    <div className="p-2 bg-purple-100 rounded-lg">
-                      <PieChart className="w-5 h-5 text-purple-600" />
+              <Card className="border-border/70">
+                <CardHeader className="border-b border-border/60">
+                  <CardTitle className="flex items-center gap-3 text-foreground">
+                    <div className="p-2 bg-purple-500/15 rounded-lg">
+                      <PieChart className="w-5 h-5 text-purple-500" />
                     </div>
                     <span className="text-lg font-semibold">Department Breakdown</span>
                   </CardTitle>
                   <CardDescription className="mt-2">Attendance by department</CardDescription>
-              </CardHeader>
+                </CardHeader>
                 <CardContent className="pt-6">
-                  <div className="text-center py-16 text-gray-500 dark:text-gray-400">
+                  <div className="text-center py-16 text-muted-foreground">
                     <PieChart className="w-16 h-16 mx-auto mb-4 opacity-20" />
-                    <p className="font-medium text-gray-700 dark:text-gray-300">Department analytics coming soon</p>
-                    <p className="text-sm mt-2 text-gray-500 dark:text-gray-400">Detailed breakdowns will be available here</p>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-      </Tabs>
+                    <p className="font-medium text-foreground">Department analytics coming soon</p>
+                    <p className="text-sm mt-2">Detailed breakdowns will be available here</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+        </Tabs>
       </div>
-
-      <style jsx>{`
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 6px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: #f1f5f9;
-          border-radius: 3px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: #cbd5e1;
-          border-radius: 3px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: #94a3b8;
-        }
-      `}</style>
     </div>
   );
 };

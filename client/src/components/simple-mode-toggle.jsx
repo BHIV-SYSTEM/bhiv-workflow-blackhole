@@ -16,6 +16,7 @@ export function SimpleModeToggle({ className = "" }) {
   const Icon = theme === "dark" ? Moon : theme === "universe" ? Star : Sun
 
   const label = theme === 'universe' ? 'Universe theme' : theme === 'dark' ? 'Dark theme' : 'Light theme'
+  const nextLabel = theme === 'light' ? 'Dark' : theme === 'dark' ? 'Universe' : 'Light'
 
   return (
     <Button
@@ -23,9 +24,10 @@ export function SimpleModeToggle({ className = "" }) {
       size="icon"
       onClick={handleToggle}
       aria-label={`Toggle theme - ${label}`}
-      className={className}
+      title={`${label} (Click for ${nextLabel})`}
+      className={`border-border/70 bg-card/80 hover:bg-primary/10 hover:border-primary/40 transition-all duration-200 ${className}`}
     >
-      <Icon className="h-5 w-5 text-primary" />
+      <Icon className="h-[18px] w-[18px] text-primary transition-transform duration-200" />
     </Button>
   )
 }

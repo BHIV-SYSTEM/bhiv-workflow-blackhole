@@ -38,6 +38,59 @@ function getLocalDateString(d) {
   return `${y}-${m}-${day}`;
 }
 
+function normalizeGoalSnippet(text, maxLen = 240) {
+  if (!text) return '';
+  const cleaned = String(text).replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!cleaned || cleaned === '-') return '';
+  return cleaned.length > maxLen ? `${cleaned.slice(0, maxLen - 3)}...` : cleaned;
+}
+
+/**
+ * Collect unique, non-empty Aim, Blocker, and Key Achievement entries grouped by keyFn
+ * across both Aim and Progress documents.
+ */
+function collectGoalFieldsMap(aims = [], progresses = [], keyFn) {
+  const bucket = new Map();
+
+  const appendUnique = (key, field, rawVal) => {
+    const snippet = normalizeGoalSnippet(rawVal);
+    if (!key || !snippet) return;
+    if (!bucket.has(key)) {
+      bucket.set(key, { aim: [], blocker: [], achievement: [] });
+    }
+    const entry = bucket.get(key);
+    if (!entry[field].includes(snippet)) {
+      entry[field].push(snippet);
+    }
+  };
+
+  (aims || []).forEach((a) => {
+    const key = keyFn(a);
+    appendUnique(key, 'aim', a.aims);
+    appendUnique(key, 'blocker', a.blockers);
+    appendUnique(key, 'achievement', a.achievements);
+  });
+
+  (progresses || []).forEach((p) => {
+    const key = keyFn(p);
+    appendUnique(key, 'aim', p.notes);
+    appendUnique(key, 'blocker', p.blockers);
+    appendUnique(key, 'achievement', p.achievements);
+  });
+
+  const aimMap = new Map();
+  const blockerMap = new Map();
+  const achievementMap = new Map();
+
+  bucket.forEach((val, key) => {
+    aimMap.set(key, val.aim.length > 0 ? val.aim.slice(0, 2).join('; ') : '-');
+    blockerMap.set(key, val.blocker.length > 0 ? val.blocker.slice(0, 2).join('; ') : '-');
+    achievementMap.set(key, val.achievement.length > 0 ? val.achievement.slice(0, 2).join('; ') : '-');
+  });
+
+  return { aimMap, blockerMap, achievementMap };
+}
+
 class ReportGenerator {
   constructor() {
     this.chartRenderer = new ChartJSNodeCanvas({ 
@@ -87,8 +140,9 @@ class ReportGenerator {
       const reportData = await this.gatherReportData(employeeId, startDate, endDate);
       
       const doc = new PDFDocument({ 
-        size: 'A4', 
-        margin: 40,
+        size: 'A4',
+        layout: 'landscape',
+        margin: 35,
         info: {
           Title: `Employee Monitoring Report - ${employee.name}`,
           Author: 'Niyantran Workflow Monitoring System',
@@ -237,29 +291,29 @@ class ReportGenerator {
   }
 
   /**
-   * PAGE 1: Header Banner with crisp typography (No overlap, proper branding)
+   * PAGE 1: Header Banner with crisp typography (Landscape A4: 841.89pt wide)
    */
   async addReportHeader(doc, employee, startDate, endDate) {
-    const pageWidth = doc.page.width; // 595 for A4
+    const pageWidth = doc.page.width;
 
     // Header Background Banner
-    doc.rect(0, 0, pageWidth, 95)
+    doc.rect(0, 0, pageWidth, 88)
        .fill('#0f172a'); // Deep slate
 
     // Left Accent Bar
-    doc.rect(0, 0, 6, 95)
+    doc.rect(0, 0, 6, 88)
        .fill('#3b82f6'); // Bright blue
 
     // Title
     doc.fillColor('#ffffff')
        .fontSize(18)
        .font('Helvetica-Bold')
-       .text('NIYANTRAN WORKFLOW', 40, 22);
+       .text('NIYANTRAN WORKFLOW', 35, 18);
 
     doc.fillColor('#94a3b8')
        .fontSize(10)
        .font('Helvetica')
-       .text('Employee Telemetry & Activity Monitoring Report', 40, 44);
+       .text('Employee Telemetry & Activity Monitoring Report', 35, 40);
 
     // Metadata Row
     const deptName = typeof employee.department === 'object' ? (employee.department?.name || 'General') : (employee.department || 'General');
@@ -270,7 +324,7 @@ class ReportGenerator {
     doc.fontSize(9)
        .fillColor('#e2e8f0')
        .font('Helvetica-Bold')
-       .text(`Employee: `, 40, 68, { continued: true })
+       .text(`Employee: `, 35, 60, { continued: true })
        .font('Helvetica')
        .text(`${employee.name} (${empIdStr} • ${employee.email || 'N/A'})`, { continued: true })
        .font('Helvetica-Bold')
@@ -280,28 +334,28 @@ class ReportGenerator {
 
     doc.fontSize(8.5)
        .fillColor('#94a3b8')
-       .text(`Period: ${startStr} to ${endStr}   •   Status: ${employee.stillExist === 0 ? 'Exited Account' : 'Active Employee'}`, 40, 81);
+       .text(`Period: ${startStr} to ${endStr}   •   Status: ${employee.stillExist === 0 ? 'Exited Account' : 'Active Employee'}`, 35, 73);
 
     // Set document cursor below banner
-    doc.y = 110;
+    doc.y = 102;
   }
 
   /**
-   * PAGE 1: Executive KPI Cards (Row of 4 perfectly aligned cards)
+   * PAGE 1: Executive KPI Cards (Row of 4 aligned cards across landscape width)
    */
   async addExecutiveSummary(doc, reportData) {
     const summary = this.calculateExecutiveSummary(reportData);
 
-    doc.fontSize(12)
+    doc.fontSize(11.5)
        .font('Helvetica-Bold')
        .fillColor('#0f172a')
-       .text('EXECUTIVE KPI SUMMARY', 40, doc.y);
+       .text('EXECUTIVE KPI SUMMARY', 35, doc.y);
 
     const boxY = doc.y + 6;
-    const boxWidth = 117;
-    const boxHeight = 58;
-    const gap = 15;
-    const startX = 40;
+    const boxWidth = 180;
+    const boxHeight = 54;
+    const gap = 17;
+    const startX = 35;
 
     const summaryItems = [
       {
@@ -337,145 +391,82 @@ class ReportGenerator {
       doc.fillColor(item.color)
          .fontSize(18)
          .font('Helvetica-Bold')
-         .text(item.value, currentX, boxY + 12, { width: boxWidth, align: 'center' });
+         .text(item.value, currentX, boxY + 10, { width: boxWidth, align: 'center' });
 
       // Label
       doc.fillColor('#64748b')
          .fontSize(8.5)
          .font('Helvetica')
-         .text(item.label, currentX, boxY + 36, { width: boxWidth, align: 'center' });
+         .text(item.label, currentX, boxY + 34, { width: boxWidth, align: 'center' });
     });
 
     // Advance cursor safely
-    doc.y = boxY + boxHeight + 18;
+    doc.y = boxY + boxHeight + 16;
   }
 
   /**
-   * PAGE 1: Daily Breakdown Table
+   * Build unified daily breakdown rows shared across Individual PDF, CSV, and Chart
    */
-  async addDailyBreakdownTable(doc, reportData) {
-    doc.fontSize(12)
-       .font('Helvetica-Bold')
-       .fillColor('#0f172a')
-       .text('DAILY PERFORMANCE BREAKDOWN', 40, doc.y);
-
-    doc.moveDown(0.5);
-
-    // Group activities by date
-    const dailyMap = {};
+  buildIndividualDailyRows(reportData) {
     const { start, end } = this.parseDateRange(reportData.period.startDate, reportData.period.endDate);
+    const activitiesByDay = new Map();
 
-    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      const dStr = getLocalDateString(d);
-      dailyMap[dStr] = {
-        date: dStr,
-        activitiesCount: 0,
-        keystrokes: 0,
-        mouseSum: 0,
-        activeSeconds: 0,
-        prodSum: 0,
-        topApps: {}
-      };
-    }
-
-    reportData.activities.forEach(act => {
+    (reportData.activities || []).forEach(act => {
       const dStr = getLocalDateString(act.timestamp);
-      if (dailyMap[dStr]) {
-        dailyMap[dStr].activitiesCount++;
-        dailyMap[dStr].keystrokes += (act.keystroke_count || 0);
-        dailyMap[dStr].mouseSum += (act.mouse_activity_score || 0);
-        
-        const isActive = (act.keystroke_count || 0) > 0 || (act.mouse_activity_score || 0) >= 15;
-        let idle = 0;
-        if (!isActive) {
-          let raw = act.idle_duration || 0;
-          if (raw > 10000) raw = Math.round(raw / 1000);
-          idle = Math.min(30, Math.max(0, raw));
-        }
-        dailyMap[dStr].activeSeconds += Math.max(0, 30 - idle);
-
-        if (act.productivity_score > 0) {
-          dailyMap[dStr].prodSum += act.productivity_score;
-        }
-
-        let appName = act.active_application?.name;
-        if (!appName || appName === 'Unknown' || appName === 'null') {
-          appName = isActive ? 'Desktop Workspace' : 'System Background';
-        }
-        dailyMap[dStr].topApps[appName] = (dailyMap[dStr].topApps[appName] || 0) + 1;
-      }
+      if (!dStr) return;
+      if (!activitiesByDay.has(dStr)) activitiesByDay.set(dStr, []);
+      activitiesByDay.get(dStr).push(act);
     });
 
-    // Merge official attendance for each day
-    reportData.attendances?.forEach(att => {
-      const dStr = getLocalDateString(att.date || att.startDayTime);
-      if (dStr && dailyMap[dStr]) {
+    const sessionByDay = new Map();
+    if (reportData.sessionsMap instanceof Map) {
+      reportData.sessionsMap.forEach((val) => {
+        if (val && val.dateKey) {
+          sessionByDay.set(val.dateKey, val);
+        }
+      });
+    }
+
+    if (sessionByDay.size === 0 && reportData.attendances?.length > 0) {
+      reportData.attendances.forEach(att => {
+        const dKey = getLocalDateString(att.startDayTime || att.date);
+        if (!dKey) return;
         let sec = 0;
         if (att.hoursWorked > 0) {
           sec = Math.round(att.hoursWorked * 3600);
         } else if (att.startDayTime) {
-          const isToday = getLocalDateString(new Date()) === dStr;
-          const endSession = att.endDayTime 
-            ? new Date(att.endDayTime) 
+          const isToday = dKey === getLocalDateString(new Date());
+          const endSession = att.endDayTime
+            ? new Date(att.endDayTime)
             : (isToday ? new Date() : new Date(new Date(att.startDayTime).getTime() + 8 * 3600 * 1000));
-          sec = Math.min(10 * 3600, Math.max(0, Math.floor((endSession - new Date(att.startDayTime)) / 1000)));
+          sec = Math.max(0, Math.floor((endSession - new Date(att.startDayTime)) / 1000));
         }
-        if (sec > 0) {
-          dailyMap[dStr].activeSeconds = Math.max(dailyMap[dStr].activeSeconds, sec);
+        if (sec > 0 && !sessionByDay.has(dKey)) {
+          sessionByDay.set(dKey, { sessionSeconds: sec, startTime: att.startDayTime || null, dateKey: dKey });
         }
-      }
-    });
+      });
+    }
 
-    const dailyRows = Object.values(dailyMap).sort((a, b) => a.date.localeCompare(b.date));
+    const { aimMap, blockerMap, achievementMap } = collectGoalFieldsMap(
+      reportData.aims,
+      reportData.progresses,
+      (docItem) => getLocalDateString(docItem.date)
+    );
 
-    // Table Column Coordinates (Total width = 515)
-    const tableX = 40;
-    const tableWidth = 515;
-    let currentY = doc.y;
-
-    // Table Header
-    doc.rect(tableX, currentY, tableWidth, 22)
-       .fill('#1e293b');
-
-    doc.fillColor('#ffffff')
-       .fontSize(8.5)
-       .font('Helvetica-Bold');
-
-    doc.text('Date', tableX + 8, currentY + 6, { width: 75 });
-    doc.text('Activities', tableX + 85, currentY + 6, { width: 60, align: 'center' });
-    doc.text('Productivity', tableX + 150, currentY + 6, { width: 70, align: 'center' });
-    doc.text('Active Hours', tableX + 225, currentY + 6, { width: 65, align: 'center' });
-    doc.text('Keystrokes', tableX + 295, currentY + 6, { width: 65, align: 'center' });
-    doc.text('Mouse Score', tableX + 365, currentY + 6, { width: 65, align: 'center' });
-    doc.text('Efficiency', tableX + 435, currentY + 6, { width: 75, align: 'right' });
-
-    currentY += 22;
-
-    // Render table rows
-    dailyRows.forEach((row, idx) => {
-      const isZebra = idx % 2 === 1;
-      const rowHeight = 20;
-
-      // Background
-      doc.rect(tableX, currentY, tableWidth, rowHeight)
-         .fill(isZebra ? '#f8fafc' : '#ffffff');
-
-      // Thin bottom border
-      doc.rect(tableX, currentY + rowHeight - 1, tableWidth, 1)
-         .fill('#e2e8f0');
-
-      const count = row.activitiesCount;
-      const avgProd = count > 0 ? Math.round(row.prodSum / count) : 0;
-      const activeHoursStr = (count > 0 || row.activeSeconds > 0) ? formatActiveTime(row.activeSeconds) : '-';
-      const avgMouse = count > 0 ? Math.round(row.mouseSum / count) : 0;
+    const rows = [];
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const dStr = getLocalDateString(d);
+      const dayLogs = activitiesByDay.get(dStr) || [];
+      const daySession = sessionByDay.get(dStr) || null;
+      const summary = summarizeActivitiesWithSession(dayLogs, daySession);
 
       let eff = 'No Activity';
       let effColor = '#94a3b8';
-      if (count > 0) {
-        if (avgProd >= 60) {
+      if (summary.hasActivity) {
+        if (summary.avgProductivityScore >= 60) {
           eff = 'High Efficiency';
           effColor = '#10b981';
-        } else if (avgProd >= 40) {
+        } else if (summary.avgProductivityScore >= 40) {
           eff = 'Moderate';
           effColor = '#f59e0b';
         } else {
@@ -484,38 +475,103 @@ class ReportGenerator {
         }
       }
 
-      doc.fontSize(8).font('Helvetica');
+      rows.push({
+        date: dStr,
+        aim: aimMap.get(dStr) || '-',
+        blocker: blockerMap.get(dStr) || '-',
+        achievement: achievementMap.get(dStr) || '-',
+        activitiesCount: summary.logCount,
+        avgProd: summary.avgProductivityScore,
+        activeSeconds: summary.activeSeconds,
+        activeHoursFormatted: summary.hasActivity ? formatActiveTime(summary.activeSeconds) : '-',
+        keystrokes: summary.totalKeystrokes,
+        avgMouse: summary.avgMouseActivity,
+        hasActivity: summary.hasActivity,
+        eff,
+        effColor
+      });
+    }
 
-      // Date
-      doc.fillColor('#0f172a')
-         .text(row.date, tableX + 8, currentY + 5);
+    return rows.sort((a, b) => a.date.localeCompare(b.date));
+  }
 
-      // Activities
+  /**
+   * PAGE 1: Daily Breakdown Table (Landscape A4 with AIM, Blocker, Key Achievements)
+   */
+  async addDailyBreakdownTable(doc, reportData) {
+    doc.fontSize(11.5)
+       .font('Helvetica-Bold')
+       .fillColor('#0f172a')
+       .text('DAILY PERFORMANCE BREAKDOWN', 35, doc.y);
+
+    doc.moveDown(0.5);
+
+    const dailyRows = this.buildIndividualDailyRows(reportData);
+    const pageWidth = doc.page.width;
+    const pageHeight = doc.page.height;
+    const tableX = 35;
+    const tableWidth = 772;
+    let currentY = doc.y;
+
+    const printTableHeader = (yPos) => {
+      doc.rect(tableX, yPos, tableWidth, 22).fill('#1e293b');
+      doc.fillColor('#ffffff').fontSize(8).font('Helvetica-Bold');
+      doc.text('Date', tableX + 6, yPos + 7, { width: 58 });
+      doc.text('AIM', tableX + 66, yPos + 7, { width: 132 });
+      doc.text('Blocker', tableX + 202, yPos + 7, { width: 105 });
+      doc.text('Key Achievements', tableX + 311, yPos + 7, { width: 132 });
+      doc.text('Activities', tableX + 446, yPos + 7, { width: 48, align: 'center' });
+      doc.text('Productivity', tableX + 498, yPos + 7, { width: 54, align: 'center' });
+      doc.text('Active Hrs', tableX + 556, yPos + 7, { width: 50, align: 'center' });
+      doc.text('Keystrokes', tableX + 610, yPos + 7, { width: 52, align: 'center' });
+      doc.text('Mouse', tableX + 666, yPos + 7, { width: 38, align: 'center' });
+      doc.text('Efficiency', tableX + 706, yPos + 7, { width: 62, align: 'right' });
+      return yPos + 22;
+    };
+
+    currentY = printTableHeader(currentY);
+
+    dailyRows.forEach((row, idx) => {
+      doc.fontSize(7.5).font('Helvetica');
+      const aimH = doc.heightOfString(row.aim, { width: 132 });
+      const blkH = doc.heightOfString(row.blocker, { width: 105 });
+      const achH = doc.heightOfString(row.achievement, { width: 132 });
+      const rowHeight = Math.max(20, Math.ceil(Math.max(aimH, blkH, achH)) + 10);
+
+      if (currentY + rowHeight > pageHeight - 35) {
+        doc.addPage();
+        doc.rect(0, 0, pageWidth, 38).fill('#0f172a');
+        doc.fillColor('#ffffff').fontSize(10).font('Helvetica-Bold')
+           .text('NIYANTRAN WORKFLOW - DAILY PERFORMANCE BREAKDOWN (CONTINUED)', 35, 13);
+        currentY = printTableHeader(52);
+      }
+
+      const isZebra = idx % 2 === 1;
+      doc.rect(tableX, currentY, tableWidth, rowHeight).fill(isZebra ? '#f8fafc' : '#ffffff');
+      doc.rect(tableX, currentY + rowHeight - 1, tableWidth, 1).fill('#e2e8f0');
+
+      const count = row.activitiesCount;
+      const activeMetric = count > 0 || row.hasActivity;
+
+      doc.fontSize(7.5).font('Helvetica');
+      doc.fillColor('#0f172a').text(row.date, tableX + 6, currentY + 5, { width: 58 });
+      doc.fillColor('#1e293b').text(row.aim, tableX + 66, currentY + 5, { width: 132 });
+      doc.fillColor('#475569').text(row.blocker, tableX + 202, currentY + 5, { width: 105 });
+      doc.fillColor('#1e293b').text(row.achievement, tableX + 311, currentY + 5, { width: 132 });
+
+      doc.fillColor('#475569').text(count > 0 ? count.toString() : '-', tableX + 446, currentY + 5, { width: 48, align: 'center' });
+      doc.fillColor(activeMetric ? row.effColor : '#94a3b8')
+         .font(activeMetric ? 'Helvetica-Bold' : 'Helvetica')
+         .text(activeMetric ? `${row.avgProd}%` : '-', tableX + 498, currentY + 5, { width: 54, align: 'center' });
+
+      doc.fillColor('#0f172a').font('Helvetica')
+         .text(row.activeHoursFormatted, tableX + 556, currentY + 5, { width: 50, align: 'center' });
       doc.fillColor('#475569')
-         .text(count.toString(), tableX + 85, currentY + 5, { width: 60, align: 'center' });
-
-      // Productivity %
-      doc.fillColor(count > 0 ? effColor : '#94a3b8')
-         .font(count > 0 ? 'Helvetica-Bold' : 'Helvetica')
-         .text(count > 0 ? `${avgProd}%` : '-', tableX + 150, currentY + 5, { width: 70, align: 'center' });
-
-      // Active Hours
-      doc.fillColor('#0f172a')
-         .font('Helvetica')
-         .text(activeHoursStr, tableX + 225, currentY + 5, { width: 65, align: 'center' });
-
-      // Keystrokes
+         .text(row.keystrokes > 0 ? row.keystrokes.toLocaleString() : '-', tableX + 610, currentY + 5, { width: 52, align: 'center' });
       doc.fillColor('#475569')
-         .text(row.keystrokes > 0 ? row.keystrokes.toLocaleString() : '-', tableX + 295, currentY + 5, { width: 65, align: 'center' });
-
-      // Mouse Score
-      doc.fillColor('#475569')
-         .text(count > 0 ? `${avgMouse}%` : '-', tableX + 365, currentY + 5, { width: 65, align: 'center' });
-
-      // Efficiency Rating
-      doc.fillColor(effColor)
-         .font('Helvetica-Bold')
-         .text(eff, tableX + 435, currentY + 5, { width: 75, align: 'right' });
+         .text(count > 0 ? `${row.avgMouse}%` : '-', tableX + 666, currentY + 5, { width: 38, align: 'center' });
+      doc.fillColor(row.effColor).font('Helvetica-Bold')
+         .text(row.eff, tableX + 706, currentY + 5, { width: 62, align: 'right' });
 
       currentY += rowHeight;
     });
@@ -560,7 +616,7 @@ class ReportGenerator {
       return;
     }
 
-    const startX = 40;
+    const startX = 35;
     let currentY = doc.y;
 
     sortedApps.slice(0, 6).forEach(([appName, count]) => {
@@ -570,15 +626,15 @@ class ReportGenerator {
       doc.fontSize(9)
          .font('Helvetica-Bold')
          .fillColor('#1e293b')
-         .text(appName, startX, currentY, { width: 200 });
+         .text(appName, startX, currentY, { width: 280, ellipsis: true });
 
       doc.font('Helvetica')
          .fillColor('#64748b')
-         .text(`${count} sessions (~${estMinutes} mins)`, startX + 210, currentY, { width: 140 });
+         .text(`${count} sessions (~${estMinutes} mins)`, startX + 290, currentY, { width: 170 });
 
       // Progress bar background
-      const barX = startX + 360;
-      const barWidth = 150;
+      const barX = startX + 470;
+      const barWidth = 250;
       doc.roundedRect(barX, currentY + 2, barWidth, 7, 3)
          .fill('#e2e8f0');
 
@@ -605,7 +661,7 @@ class ReportGenerator {
     doc.fontSize(13)
        .font('Helvetica-Bold')
        .fillColor('#0f172a')
-       .text('POLICY VIOLATIONS & SECURITY ALERTS', 40, doc.y);
+       .text('POLICY VIOLATIONS & SECURITY ALERTS', 35, doc.y);
 
     doc.moveDown(0.6);
 
@@ -614,20 +670,20 @@ class ReportGenerator {
     if (alerts.length === 0) {
       // Clean checkmark card
       const boxY = doc.y;
-      doc.roundedRect(40, boxY, 515, 36, 6)
+      doc.roundedRect(35, boxY, 772, 34, 6)
          .fillAndStroke('#f0fdf4', '#bbf7d0');
 
       doc.fillColor('#15803d')
          .fontSize(9.5)
          .font('Helvetica-Bold')
-         .text('✓ No policy violations or security alerts detected during this period.', 55, boxY + 11);
+         .text('✓ No policy violations or security alerts detected during this period.', 50, boxY + 10);
 
-      doc.y = boxY + 48;
+      doc.y = boxY + 46;
       return;
     }
 
-    const boxWidth = 515;
-    const boxHeight = 50;
+    const boxWidth = 772;
+    const boxHeight = 46;
 
     alerts.slice(0, 4).forEach((alert) => {
       const boxY = doc.y;
@@ -639,31 +695,31 @@ class ReportGenerator {
       const titleColor = isHigh ? '#b91c1c' : (isMed ? '#b45309' : '#1e40af');
 
       // Card Background (Light pastel with clean border)
-      doc.roundedRect(40, boxY, boxWidth, boxHeight, 6)
+      doc.roundedRect(35, boxY, boxWidth, boxHeight, 6)
          .fillAndStroke(bg, border);
 
       // Title
       doc.fillColor(titleColor)
          .fontSize(10)
          .font('Helvetica-Bold')
-         .text(alert.title || 'Security Notification', 52, boxY + 8, { width: boxWidth - 24 });
+         .text(alert.title || 'Security Notification', 47, boxY + 7, { width: boxWidth - 24 });
 
       // Description (Crisp charcoal text)
       doc.fillColor('#1e293b')
          .fontSize(8.5)
          .font('Helvetica')
-         .text(alert.description || 'Automated policy rule triggered', 52, boxY + 22, { width: boxWidth - 24, lineBreak: false });
+         .text(alert.description || 'Automated policy rule triggered', 47, boxY + 20, { width: boxWidth - 24, lineBreak: false });
 
       // Severity and Timestamp
       const tsStr = new Date(alert.timestamp).toLocaleString();
       doc.fillColor('#64748b')
          .fontSize(7.5)
-         .text(`${tsStr}  •  Severity: ${String(alert.severity || 'low').toUpperCase()}`, 52, boxY + 35);
+         .text(`${tsStr}  •  Severity: ${String(alert.severity || 'low').toUpperCase()}`, 47, boxY + 32);
 
-      doc.y = boxY + boxHeight + 8;
+      doc.y = boxY + boxHeight + 7;
     });
 
-    doc.moveDown(0.8);
+    doc.moveDown(0.6);
   }
 
   /**
@@ -673,7 +729,7 @@ class ReportGenerator {
     doc.fontSize(13)
        .font('Helvetica-Bold')
        .fillColor('#0f172a')
-       .text('RECENT ACTIVITY TIMELINE', 40, doc.y);
+       .text('RECENT ACTIVITY TIMELINE', 35, doc.y);
 
     doc.moveDown(0.5);
 
@@ -683,14 +739,14 @@ class ReportGenerator {
       doc.fontSize(9)
          .font('Helvetica')
          .fillColor('#64748b')
-         .text('No activity timeline recorded for this period.', 40, doc.y);
+         .text('No activity timeline recorded for this period.', 35, doc.y);
       return;
     }
 
-    const startX = 40;
+    const startX = 35;
     let currentY = doc.y;
 
-    timeline.slice(0, 10).forEach(entry => {
+    timeline.slice(0, 8).forEach(entry => {
       // Timeline bullet
       doc.circle(startX + 4, currentY + 5, 2.5)
          .fill('#3b82f6');
@@ -699,14 +755,14 @@ class ReportGenerator {
       doc.fontSize(8)
          .font('Helvetica-Bold')
          .fillColor('#0f172a')
-         .text(entry.time, startX + 14, currentY, { width: 80 });
+         .text(entry.time, startX + 14, currentY, { width: 85 });
 
       // Activity Description
       doc.font('Helvetica')
          .fillColor('#334155')
-         .text(entry.activity, startX + 100, currentY, { width: 400 });
+         .text(entry.activity, startX + 105, currentY, { width: 660, ellipsis: true });
 
-      currentY += 16;
+      currentY += 15;
     });
 
     doc.y = currentY + 10;
@@ -719,20 +775,20 @@ class ReportGenerator {
     const pageWidth = doc.page.width;
 
     // Header on Page 3
-    doc.rect(0, 0, pageWidth, 45)
+    doc.rect(0, 0, pageWidth, 42)
        .fill('#0f172a');
 
     doc.fillColor('#ffffff')
        .fontSize(12)
        .font('Helvetica-Bold')
-       .text('NIYANTRAN WORKFLOW - VISUAL ANALYTICS & INSIGHTS', 40, 16);
+       .text('NIYANTRAN WORKFLOW - VISUAL ANALYTICS & INSIGHTS', 35, 14);
 
-    doc.y = 65;
+    doc.y = 58;
 
     doc.fontSize(13)
        .font('Helvetica-Bold')
        .fillColor('#0f172a')
-       .text('PRODUCTIVITY TREND ANALYSIS', 40, doc.y);
+       .text('PRODUCTIVITY TREND ANALYSIS', 35, doc.y);
 
     doc.moveDown(0.5);
 
@@ -740,26 +796,27 @@ class ReportGenerator {
       const productivityChart = await this.generateProductivityChart(reportData);
       if (productivityChart) {
         const chartY = doc.y;
-        doc.image(productivityChart, 40, chartY, { width: 515, height: 180 });
-        doc.y = chartY + 200;
+        doc.image(productivityChart, 35, chartY, { width: 772, height: 210 });
+        doc.y = chartY + 225;
       }
     } catch (error) {
       console.warn('Chart render fallback:', error.message);
     }
 
-    doc.moveDown(0.8);
+    doc.moveDown(0.6);
   }
 
   /**
    * PAGE 3: Recommendations & Official Document Footer
    */
   async addRecommendations(doc, reportData) {
+    const pageHeight = doc.page.height;
     doc.fontSize(13)
        .font('Helvetica-Bold')
        .fillColor('#0f172a')
-       .text('PERFORMANCE RECOMMENDATIONS', 40, doc.y);
+       .text('PERFORMANCE RECOMMENDATIONS', 35, doc.y);
 
-    doc.moveDown(0.6);
+    doc.moveDown(0.5);
 
     const recommendations = this.generateRecommendations(reportData);
 
@@ -767,25 +824,25 @@ class ReportGenerator {
       doc.fontSize(9.5)
          .font('Helvetica-Bold')
          .fillColor('#0f172a')
-         .text(`${index + 1}. ${item.title}`, 45, doc.y);
+         .text(`${index + 1}. ${item.title}`, 40, doc.y);
 
       doc.fontSize(8.5)
          .font('Helvetica')
          .fillColor('#475569')
-         .text(item.description, 60, doc.y, { width: 490 });
+         .text(item.description, 55, doc.y, { width: 740 });
 
-      doc.moveDown(0.6);
+      doc.moveDown(0.5);
     });
 
-    // Official Confidentiality Footer (Positioned within page bounds, preventing accidental extra page)
-    const footerY = Math.min(doc.y + 25, 770);
-    doc.rect(40, footerY, 515, 1)
+    // Official Confidentiality Footer (Positioned within landscape page bounds)
+    const footerY = Math.min(doc.y + 18, pageHeight - 30);
+    doc.rect(35, footerY, 772, 1)
        .fill('#e2e8f0');
 
     doc.fontSize(7.5)
        .font('Helvetica')
        .fillColor('#94a3b8')
-       .text(`Generated on ${new Date().toLocaleString()}  •  Niyantran Workflow Monitoring System  •  Confidential`, 40, footerY + 8, { align: 'center', width: 515, lineBreak: false });
+       .text(`Generated on ${new Date().toLocaleString()}  •  Niyantran Workflow Monitoring System  •  Confidential`, 35, footerY + 7, { align: 'center', width: 772, lineBreak: false });
   }
 
   /**
@@ -992,27 +1049,7 @@ class ReportGenerator {
   }
 
   getProductivityData(reportData) {
-    const dailyMap = {};
-    (reportData.activities || []).forEach(act => {
-      const dStr = new Date(act.timestamp).toISOString().split('T')[0];
-      if (!dailyMap[dStr]) dailyMap[dStr] = { sum: 0, count: 0 };
-      if (act.productivity_score > 0) {
-        dailyMap[dStr].sum += act.productivity_score;
-        dailyMap[dStr].count++;
-      }
-    });
-
-    const start = new Date(reportData.period.startDate);
-    const end = new Date(reportData.period.endDate);
-    const scores = [];
-
-    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      const dStr = d.toISOString().split('T')[0];
-      const day = dailyMap[dStr];
-      scores.push(day && day.count > 0 ? Math.round(day.sum / day.count) : 0);
-    }
-
-    return scores;
+    return this.buildIndividualDailyRows(reportData).map(row => row.avgProd);
   }
 
   /**
@@ -1042,81 +1079,6 @@ class ReportGenerator {
       csv += 'Employee ID,Employee Name,Total Activities,Average Productivity Score (%),Active Hours,Total Keystrokes,Total Alerts\n';
       csv += `"${empIdFormatted}","${employee.name}",${reportData.activities.length},${summary.productivityScore}%,${summary.activeHoursFormatted || `${summary.activeHours}h`},${summary.totalKeystrokes},${summary.violations}\n\n`;
 
-      // Build daily map for breakdown
-      const dailyMap = {};
-      const { start: pStart, end: pEnd } = this.parseDateRange(startDate, endDate);
-      for (let d = new Date(pStart); d <= pEnd; d.setDate(d.getDate() + 1)) {
-        const dStr = getLocalDateString(d);
-        dailyMap[dStr] = {
-          date: dStr,
-          activitiesCount: 0,
-          keystrokes: 0,
-          mouseSum: 0,
-          activeSeconds: 0,
-          prodSum: 0
-        };
-      }
-
-      reportData.activities.forEach(act => {
-        const dStr = getLocalDateString(act.timestamp);
-        if (dailyMap[dStr]) {
-          dailyMap[dStr].activitiesCount++;
-          dailyMap[dStr].keystrokes += (act.keystroke_count || 0);
-          dailyMap[dStr].mouseSum += (act.mouse_activity_score || 0);
-          const isActive = (act.keystroke_count || 0) > 0 || (act.mouse_activity_score || 0) >= 15;
-          let idle = 0;
-          if (!isActive) {
-            let raw = act.idle_duration || 0;
-            if (raw > 10000) raw = Math.round(raw / 1000);
-            idle = Math.min(30, Math.max(0, raw));
-          }
-          dailyMap[dStr].activeSeconds += Math.max(0, 30 - idle);
-          if (act.productivity_score > 0) dailyMap[dStr].prodSum += act.productivity_score;
-        }
-      });
-
-      reportData.attendances?.forEach(att => {
-        const dStr = getLocalDateString(att.date || att.startDayTime);
-        if (dStr && dailyMap[dStr]) {
-          let sec = 0;
-          if (att.hoursWorked > 0) {
-            sec = Math.round(att.hoursWorked * 3600);
-          } else if (att.startDayTime) {
-            const isToday = getLocalDateString(new Date()) === dStr;
-            const endSession = att.endDayTime 
-              ? new Date(att.endDayTime) 
-              : (isToday ? new Date() : new Date(new Date(att.startDayTime).getTime() + 8 * 3600 * 1000));
-            sec = Math.min(10 * 3600, Math.max(0, Math.floor((endSession - new Date(att.startDayTime)) / 1000)));
-          }
-          if (sec > 0) {
-            dailyMap[dStr].activeSeconds = Math.max(dailyMap[dStr].activeSeconds, sec);
-          }
-        }
-      });
-
-      // Build daily aim & progress lookup
-      const dailyAimMap = {};
-      const dailyBlockerMap = {};
-      const dailyAchieveMap = {};
-
-      (reportData.aims || []).forEach(a => {
-        const dStr = getLocalDateString(a.date);
-        if (dStr) {
-          if (!dailyAimMap[dStr] && a.aims) dailyAimMap[dStr] = a.aims;
-          if (!dailyBlockerMap[dStr] && a.blockers) dailyBlockerMap[dStr] = a.blockers;
-          if (!dailyAchieveMap[dStr] && a.achievements) dailyAchieveMap[dStr] = a.achievements;
-        }
-      });
-
-      (reportData.progresses || []).forEach(p => {
-        const dStr = getLocalDateString(p.date);
-        if (dStr) {
-          if (!dailyAimMap[dStr] && p.notes) dailyAimMap[dStr] = p.notes;
-          if (!dailyBlockerMap[dStr] && p.blockers) dailyBlockerMap[dStr] = p.blockers;
-          if (!dailyAchieveMap[dStr] && p.achievements) dailyAchieveMap[dStr] = p.achievements;
-        }
-      });
-
       const cleanField = (txt) => {
         if (!txt || txt === '-') return '-';
         return String(txt).replace(/"/g, '""').replace(/[\r\n\t]+/g, ' ').trim();
@@ -1125,19 +1087,14 @@ class ReportGenerator {
       csv += 'DAILY PERFORMANCE BREAKDOWN\n';
       csv += 'Employee ID,Date,AIM,Blocker,Achievement,Total Activities,Productivity Score (%),Active Hours,Total Keystrokes,Mouse Activity (%),Efficiency Rating\n';
 
-      const dailyRows = Object.values(dailyMap).sort((a, b) => a.date.localeCompare(b.date));
+      const dailyRows = this.buildIndividualDailyRows(reportData);
       dailyRows.forEach(day => {
-        const aim = cleanField(dailyAimMap[day.date]);
-        const blocker = cleanField(dailyBlockerMap[day.date]);
-        const achievement = cleanField(dailyAchieveMap[day.date]);
-        const prod = day.activitiesCount > 0 ? Math.round(day.prodSum / day.activitiesCount) : 0;
-        let eff = 'Low Efficiency';
-        if (prod >= 60) eff = 'High Efficiency';
-        else if (prod >= 40) eff = 'Moderate Efficiency';
-        const activeText = (day.activitiesCount > 0 || day.activeSeconds > 0) ? formatActiveTime(day.activeSeconds) : '-';
-        const avgMouse = day.activitiesCount > 0 ? Math.round(day.mouseSum / day.activitiesCount) : 0;
+        const aim = cleanField(day.aim);
+        const blocker = cleanField(day.blocker);
+        const achievement = cleanField(day.achievement);
+        const hasMetrics = day.activitiesCount > 0 || day.hasActivity;
 
-        csv += `"${empIdFormatted}","${day.date}","${aim}","${blocker}","${achievement}",${day.activitiesCount > 0 ? day.activitiesCount : '-'},"${day.activitiesCount > 0 ? `${prod}%` : '-'}","${activeText}",${day.keystrokes > 0 ? day.keystrokes : '-'},"${day.activitiesCount > 0 ? `${avgMouse}%` : '-'}","${day.activitiesCount > 0 ? eff : '-'}"\n`;
+        csv += `"${empIdFormatted}","${day.date}","${aim}","${blocker}","${achievement}",${day.activitiesCount > 0 ? day.activitiesCount : '-'},"${hasMetrics ? `${day.avgProd}%` : '-'}","${day.activeHoursFormatted}",${day.keystrokes > 0 ? day.keystrokes : '-'},"${day.activitiesCount > 0 ? `${day.avgMouse}%` : '-'}","${hasMetrics ? day.eff : '-'}"\n`;
       });
       csv += '\n';
 
@@ -1248,7 +1205,28 @@ class ReportGenerator {
     const isIdleExpr = {
       $and: [
         { $not: [hasInputExpr] },
-        { $gte: ['$_rawIdle', 30] }
+        { $gte: ['$_rawIdle', 300] }
+      ]
+    };
+    const appNameExpr = { $ifNull: ['$active_application.name', ''] };
+    const hasAppNameExpr = {
+      $and: [
+        { $ne: ['$_appName', ''] },
+        { $ne: ['$_appName', 'Unknown'] },
+        { $ne: ['$_appName', 'null'] }
+      ]
+    };
+    const isBgBrowserPollExpr = {
+      $and: [
+        { $not: [hasInputExpr] },
+        { $gte: ['$_sampleSec', 25] },
+        { $not: [hasAppNameExpr] }
+      ]
+    };
+    const isDesktopSampleExpr = {
+      $or: [
+        { $lte: ['$_sampleSec', 15] },
+        { $and: [hasAppNameExpr, { $ne: ['$_appName', 'Other'] }] }
       ]
     };
     const effectiveMouseScoreExpr = {
@@ -1284,49 +1262,62 @@ class ReportGenerator {
         }
       ]
     };
+    const isDistractionExpr = { $eq: [{ $toUpper: { $ifNull: ['$app_category', ''] } }, 'DISTRACTION'] };
     const qualityScoreExpr = {
       $cond: [
         '$_isIdle',
         0,
         {
-          $min: [
-            100,
+          $cond: [
+            hasInputExpr,
             {
-              $round: [
+              $min: [
+                100,
                 {
-                  $add: [
+                  $round: [
                     {
-                      $cond: [
-                        { $eq: [{ $toUpper: { $ifNull: ['$app_category', ''] } }, 'DISTRACTION'] },
-                        15,
-                        55
-                      ]
-                    },
-                    {
-                      $multiply: [
+                      $add: [
+                        { $cond: [isDistractionExpr, 20, 65] },
                         {
-                          $min: [
-                            1,
+                          $multiply: [
                             {
-                              $divide: [
-                                { $multiply: [{ $divide: [{ $ifNull: ['$keystroke_count', 0] }, '$_sampleSec'] }, 60] },
-                                120
+                              $min: [
+                                1,
+                                {
+                                  $divide: [
+                                    { $multiply: [{ $divide: [{ $ifNull: ['$keystroke_count', 0] }, '$_sampleSec'] }, 60] },
+                                    60
+                                  ]
+                                }
                               ]
-                            }
+                            },
+                            20
                           ]
                         },
-                        30
+                        {
+                          $multiply: [
+                            { $divide: [effectiveMouseScoreExpr, 100] },
+                            15
+                          ]
+                        }
                       ]
                     },
-                    {
-                      $multiply: [
-                        { $divide: [effectiveMouseScoreExpr, 100] },
-                        15
-                      ]
-                    }
+                    0
                   ]
-                },
-                0
+                }
+              ]
+            },
+            {
+              $cond: [
+                { $lt: ['$_rawIdle', 30] },
+                { $cond: [isDistractionExpr, 15, 55] },
+                {
+                  $cond: [
+                    { $lt: ['$_rawIdle', 120] },
+                    { $cond: [isDistractionExpr, 10, 45] },
+                    { $cond: [isDistractionExpr, 5, 25] }
+                  ]
+                }
               ]
             }
           ]
@@ -1346,12 +1337,15 @@ class ReportGenerator {
         {
           $addFields: {
             _sampleSec: sampleSecExpr,
-            _rawIdle: rawIdleExpr
+            _rawIdle: rawIdleExpr,
+            _appName: appNameExpr
           }
         },
         {
           $addFields: {
-            _isIdle: isIdleExpr
+            _isIdle: isIdleExpr,
+            _isBgBrowserPoll: isBgBrowserPollExpr,
+            _isDesktopSample: isDesktopSampleExpr
           }
         },
         {
@@ -1378,6 +1372,17 @@ class ReportGenerator {
             },
             totalTelemetrySec: { $sum: '$_sampleSec' },
             weightedQualitySum: { $sum: { $multiply: ['$_qualityScore', '$_sampleSec'] } },
+            desktopSampleCount: { $sum: { $cond: ['$_isDesktopSample', 1, 0] } },
+            nonBgTelemetrySec: { $sum: { $cond: [{ $not: ['$_isBgBrowserPoll'] }, '$_sampleSec', 0] } },
+            nonBgWeightedSum: {
+              $sum: {
+                $cond: [
+                  { $not: ['$_isBgBrowserPoll'] },
+                  { $multiply: ['$_qualityScore', '$_sampleSec'] },
+                  0
+                ]
+              }
+            },
             activeSeconds: { $sum: '$_activeSec' }
           }
         }
@@ -1451,25 +1456,15 @@ class ReportGenerator {
       }).select('user date notes blockers achievements progressPercentage').sort({ date: -1 }).lean()
     ]);
 
-    const empAimMap = new Map();
-    const empBlockerMap = new Map();
-    const empAchieveMap = new Map();
-
-    (aimsData || []).forEach(a => {
-      const uId = a.user ? a.user.toString() : null;
-      if (!uId) return;
-      if (!empAimMap.has(uId) && a.aims) empAimMap.set(uId, a.aims);
-      if (!empBlockerMap.has(uId) && a.blockers) empBlockerMap.set(uId, a.blockers);
-      if (!empAchieveMap.has(uId) && a.achievements) empAchieveMap.set(uId, a.achievements);
-    });
-
-    (progressesData || []).forEach(p => {
-      const uId = p.user ? p.user.toString() : null;
-      if (!uId) return;
-      if (!empAimMap.has(uId) && p.notes) empAimMap.set(uId, p.notes);
-      if (!empBlockerMap.has(uId) && p.blockers) empBlockerMap.set(uId, p.blockers);
-      if (!empAchieveMap.has(uId) && p.achievements) empAchieveMap.set(uId, p.achievements);
-    });
+    const {
+      aimMap: empAimMap,
+      blockerMap: empBlockerMap,
+      achievementMap: empAchieveMap
+    } = collectGoalFieldsMap(
+      aimsData,
+      progressesData,
+      (docItem) => (docItem.user ? docItem.user.toString() : null)
+    );
 
     const empAlertsMap = new Map();
     empAlertsData.forEach(a => {
@@ -1548,7 +1543,10 @@ class ReportGenerator {
 
         let dayProd = 0;
         if (hasTelemetry && dayTelemetry.totalTelemetrySec > 0) {
-          dayProd = Math.min(100, Math.round(dayTelemetry.weightedQualitySum / dayTelemetry.totalTelemetrySec));
+          const useNonBg = (dayTelemetry.desktopSampleCount || 0) > 0 && (dayTelemetry.nonBgTelemetrySec || 0) > 0;
+          const denom = useNonBg ? dayTelemetry.nonBgTelemetrySec : dayTelemetry.totalTelemetrySec;
+          const numer = useNonBg ? dayTelemetry.nonBgWeightedSum : dayTelemetry.weightedQualitySum;
+          dayProd = Math.min(100, Math.round(numer / denom));
         } else if (sessionSec > 0) {
           dayProd = 50;
         }
@@ -1651,14 +1649,15 @@ class ReportGenerator {
   }
 
   /**
-   * TEAM REPORT: Consolidated All-Members PDF
+   * TEAM REPORT: Consolidated All-Members PDF (Landscape A4 with AIM, Blocker, Key Achievements)
    */
   async generateTeamReport(startDate, endDate, options = {}) {
     try {
       const data = await this.gatherTeamReportData(startDate, endDate, options);
       const doc = new PDFDocument({
         size: 'A4',
-        margin: 40,
+        layout: 'landscape',
+        margin: 35,
         info: {
           Title: 'Consolidated Team Performance Report',
           Author: 'Niyantran Workflow Monitoring System',
@@ -1671,7 +1670,8 @@ class ReportGenerator {
       const writeStream = fs.createWriteStream(filepath);
       doc.pipe(writeStream);
 
-      const pageWidth = doc.page.width;
+      const pageWidth = doc.page.width;   // 841.89pt in landscape A4
+      const pageHeight = doc.page.height; // 595.28pt in landscape A4
       const sDate = new Date(startDate);
       const eDate = new Date(endDate);
       const isSameDay = sDate.toDateString() === eDate.toDateString();
@@ -1684,29 +1684,29 @@ class ReportGenerator {
 
       // ==================== PAGE 1 ====================
       // Header Banner
-      doc.rect(0, 0, pageWidth, 95).fill('#0f172a');
-      doc.rect(0, 0, 6, 95).fill('#6366f1'); // Indigo/purple accent for team report
+      doc.rect(0, 0, pageWidth, 88).fill('#0f172a');
+      doc.rect(0, 0, 6, 88).fill('#6366f1');
 
-      doc.fillColor('#ffffff').fontSize(18).font('Helvetica-Bold').text('NIYANTRAN WORKFLOW', 40, 22);
-      doc.fillColor('#94a3b8').fontSize(10).font('Helvetica').text('Consolidated Team Performance & Telemetry Report', 40, 44);
+      doc.fillColor('#ffffff').fontSize(18).font('Helvetica-Bold').text('NIYANTRAN WORKFLOW', 35, 18);
+      doc.fillColor('#94a3b8').fontSize(10).font('Helvetica').text('Consolidated Team Performance & Telemetry Report', 35, 40);
 
       doc.fontSize(9).fillColor('#e2e8f0').font('Helvetica-Bold')
-         .text('Report Scope: ', 40, 68, { continued: true })
+         .text('Report Scope: ', 35, 60, { continued: true })
          .font('Helvetica').text(`Active Workforce (${data.totalEmployees} Active Members)   •   ${periodLabel}`);
 
       doc.fontSize(8.5).fillColor('#94a3b8')
-         .text(`Generated on ${new Date().toLocaleString()}   •   Scope: Active Employees Only`, 40, 81);
+         .text(`Generated on ${new Date().toLocaleString()}   •   Scope: Active Employees Only`, 35, 73);
 
-      doc.y = 110;
+      doc.y = 102;
 
       // Executive KPI Cards
-      doc.fontSize(12).font('Helvetica-Bold').fillColor('#0f172a').text('TEAM EXECUTIVE KPI SUMMARY', 40, doc.y);
+      doc.fontSize(11.5).font('Helvetica-Bold').fillColor('#0f172a').text('TEAM EXECUTIVE KPI SUMMARY', 35, doc.y);
 
       const boxY = doc.y + 6;
-      const boxWidth = 117;
-      const boxHeight = 58;
-      const gap = 15;
-      const startX = 40;
+      const boxWidth = 180;
+      const boxHeight = 54;
+      const gap = 17;
+      const startX = 35;
 
       const kpiItems = [
         {
@@ -1734,100 +1734,120 @@ class ReportGenerator {
       kpiItems.forEach((item, index) => {
         const currentX = startX + index * (boxWidth + gap);
         doc.roundedRect(currentX, boxY, boxWidth, boxHeight, 6).fillAndStroke('#f8fafc', '#e2e8f0');
-        doc.fillColor(item.color).fontSize(18).font('Helvetica-Bold').text(item.value, currentX, boxY + 12, { width: boxWidth, align: 'center' });
-        doc.fillColor('#64748b').fontSize(8.5).font('Helvetica').text(item.label, currentX, boxY + 36, { width: boxWidth, align: 'center' });
+        doc.fillColor(item.color).fontSize(18).font('Helvetica-Bold').text(item.value, currentX, boxY + 10, { width: boxWidth, align: 'center' });
+        doc.fillColor('#64748b').fontSize(8.5).font('Helvetica').text(item.label, currentX, boxY + 34, { width: boxWidth, align: 'center' });
       });
 
-      doc.y = boxY + boxHeight + 18;
+      doc.y = boxY + boxHeight + 16;
 
-      // All Members Roster Table (8 Exact Columns from Handwritten Specification)
-      doc.fontSize(12).font('Helvetica-Bold').fillColor('#0f172a').text('ALL MEMBERS PERFORMANCE ROSTER', 40, doc.y);
+      // All Members Roster Table (12 Columns matching CSV/Excel: Emp ID, Name, Date, AIM, Blocker, Key Achievements, Activities, Productivity, Active Hr, Key Strokes, Mouse Score, Efficiency)
+      doc.fontSize(11.5).font('Helvetica-Bold').fillColor('#0f172a').text('ALL MEMBERS PERFORMANCE ROSTER', 35, doc.y);
       doc.moveDown(0.5);
 
-      const tableX = 40;
-      const tableWidth = 515;
+      const tableX = 35;
+      const tableWidth = 772;
       let currentY = doc.y;
 
-      // Table Header Function: Emp ID | Name | Date | Activities | Productivity | Active Hour | Key Strokes | Mouse Score | Efficiency
       const printTableHeader = (yPos) => {
         doc.rect(tableX, yPos, tableWidth, 22).fill('#1e293b');
         doc.fillColor('#ffffff').fontSize(7.5).font('Helvetica-Bold');
-        doc.text('Emp ID', tableX + 5, yPos + 6, { width: 52 });
-        doc.text('Name', tableX + 60, yPos + 6, { width: 85 });
-        doc.text('Date', tableX + 148, yPos + 6, { width: 48, align: 'center' });
-        doc.text('Activities', tableX + 200, yPos + 6, { width: 44, align: 'center' });
-        doc.text('Productivity', tableX + 248, yPos + 6, { width: 50, align: 'center' });
-        doc.text('Active Hour', tableX + 302, yPos + 6, { width: 48, align: 'center' });
-        doc.text('Key Strokes', tableX + 354, yPos + 6, { width: 50, align: 'center' });
-        doc.text('Mouse Score', tableX + 408, yPos + 6, { width: 52, align: 'center' });
-        doc.text('Efficiency', tableX + 464, yPos + 6, { width: 46, align: 'right' });
+        doc.text('Emp ID', tableX + 4, yPos + 7, { width: 44 });
+        doc.text('Name', tableX + 50, yPos + 7, { width: 76 });
+        doc.text('Date', tableX + 128, yPos + 7, { width: 36, align: 'center' });
+        doc.text('AIM', tableX + 166, yPos + 7, { width: 112 });
+        doc.text('Blocker', tableX + 280, yPos + 7, { width: 88 });
+        doc.text('Key Achievements', tableX + 370, yPos + 7, { width: 108 });
+        doc.text('Activities', tableX + 480, yPos + 7, { width: 38, align: 'center' });
+        doc.text('Productivity', tableX + 520, yPos + 7, { width: 44, align: 'center' });
+        doc.text('Active Hr', tableX + 566, yPos + 7, { width: 44, align: 'center' });
+        doc.text('Key Strokes', tableX + 612, yPos + 7, { width: 46, align: 'center' });
+        doc.text('Mouse', tableX + 660, yPos + 7, { width: 38, align: 'center' });
+        doc.text('Efficiency', tableX + 700, yPos + 7, { width: 68, align: 'right' });
         return yPos + 22;
       };
 
       currentY = printTableHeader(currentY);
 
       data.members.forEach((m, idx) => {
-        if (currentY > 750) {
+        const aimText = m.aim || '-';
+        const blockerText = m.blocker || '-';
+        const achievementText = m.achievement || '-';
+
+        doc.fontSize(7).font('Helvetica');
+        const aimH = doc.heightOfString(aimText, { width: 112 });
+        const blkH = doc.heightOfString(blockerText, { width: 88 });
+        const achH = doc.heightOfString(achievementText, { width: 108 });
+        const rowHeight = Math.max(20, Math.ceil(Math.max(aimH, blkH, achH)) + 9);
+
+        if (currentY + rowHeight > pageHeight - 35) {
           doc.addPage();
-          doc.rect(0, 0, pageWidth, 40).fill('#0f172a');
-          doc.fillColor('#ffffff').fontSize(10).font('Helvetica-Bold').text('NIYANTRAN WORKFLOW - ALL MEMBERS ROSTER (CONTINUED)', 40, 14);
-          currentY = printTableHeader(55);
+          doc.rect(0, 0, pageWidth, 38).fill('#0f172a');
+          doc.fillColor('#ffffff').fontSize(10).font('Helvetica-Bold').text('NIYANTRAN WORKFLOW - ALL MEMBERS ROSTER (CONTINUED)', 35, 13);
+          currentY = printTableHeader(52);
         }
 
         const isZebra = idx % 2 === 1;
-        const rowHeight = 20;
-
         doc.rect(tableX, currentY, tableWidth, rowHeight).fill(isZebra ? '#f8fafc' : '#ffffff');
         doc.rect(tableX, currentY + rowHeight - 1, tableWidth, 1).fill('#e2e8f0');
 
-        doc.fontSize(7.5).font('Helvetica');
+        doc.fontSize(7).font('Helvetica');
 
         // 0. Emp ID
-        doc.fillColor('#6366f1').font('Helvetica-Bold').text(m.employeeId || 'N/A', tableX + 5, currentY + 5, { width: 52, ellipsis: true });
+        doc.fillColor('#6366f1').font('Helvetica-Bold').text(m.employeeId || 'N/A', tableX + 4, currentY + 5, { width: 44, ellipsis: true });
 
         // 1. Name
-        doc.fillColor('#0f172a').font('Helvetica-Bold').text(m.name, tableX + 60, currentY + 5, { width: 85, ellipsis: true });
+        doc.fillColor('#0f172a').font('Helvetica-Bold').text(m.name, tableX + 50, currentY + 5, { width: 76, ellipsis: true });
 
-        // 2. Date (Respected Date e.g. 24/10 or range 24/10 - 26/10)
-        doc.fillColor('#475569').font('Helvetica').text(dateDisplay, tableX + 148, currentY + 5, { width: 48, align: 'center' });
+        // 2. Date
+        doc.fillColor('#475569').font('Helvetica').text(dateDisplay, tableX + 128, currentY + 5, { width: 36, align: 'center' });
 
-        // 3. Activities
-        doc.fillColor('#475569').text(m.totalActivities > 0 ? m.totalActivities.toString() : '-', tableX + 200, currentY + 5, { width: 44, align: 'center' });
+        // 3. AIM
+        doc.fillColor('#1e293b').text(aimText, tableX + 166, currentY + 5, { width: 112 });
 
-        // 4. Productivity
-        doc.fillColor(m.totalActivities > 0 ? m.effColor : '#94a3b8').font(m.totalActivities > 0 ? 'Helvetica-Bold' : 'Helvetica')
-           .text(m.totalActivities > 0 ? `${m.avgProductivity}%` : '-', tableX + 248, currentY + 5, { width: 50, align: 'center' });
+        // 4. Blocker
+        doc.fillColor(blockerText !== '-' ? '#b45309' : '#94a3b8').text(blockerText, tableX + 280, currentY + 5, { width: 88 });
 
-        // 5. Active Hour
-        const activeText = (m.totalActivities > 0 || m.activeSeconds > 0) ? (m.activeHoursFormatted || `${m.activeHours}h`) : '-';
-        doc.fillColor('#0f172a').font('Helvetica').text(activeText, tableX + 302, currentY + 5, { width: 48, align: 'center' });
+        // 5. Key Achievements
+        doc.fillColor(achievementText !== '-' ? '#047857' : '#94a3b8').text(achievementText, tableX + 370, currentY + 5, { width: 108 });
 
-        // 6. Key Strokes
-        doc.fillColor('#475569').text(m.totalKeystrokes > 0 ? m.totalKeystrokes.toLocaleString() : '-', tableX + 354, currentY + 5, { width: 50, align: 'center' });
+        // 6. Activities
+        doc.fillColor('#475569').text(m.totalActivities > 0 ? m.totalActivities.toString() : '-', tableX + 480, currentY + 5, { width: 38, align: 'center' });
 
-        // 7. Mouse Score
-        doc.fillColor('#475569').text(m.totalActivities > 0 ? `${m.avgMouse}%` : '-', tableX + 408, currentY + 5, { width: 52, align: 'center' });
+        // 7. Productivity
+        const hasMetrics = m.totalActivities > 0 || m.activeSeconds > 0;
+        doc.fillColor(hasMetrics ? m.effColor : '#94a3b8').font(hasMetrics ? 'Helvetica-Bold' : 'Helvetica')
+           .text(hasMetrics ? `${m.avgProductivity}%` : '-', tableX + 520, currentY + 5, { width: 44, align: 'center' });
 
-        // 8. Efficiency Rating
-        doc.fillColor(m.effColor).font('Helvetica-Bold').text(m.efficiency === 'No Activity' ? '-' : m.efficiency, tableX + 464, currentY + 5, { width: 46, align: 'right' });
+        // 8. Active Hour
+        const activeText = hasMetrics ? (m.activeHoursFormatted || `${m.activeHours}h`) : '-';
+        doc.fillColor('#0f172a').font('Helvetica').text(activeText, tableX + 566, currentY + 5, { width: 44, align: 'center' });
+
+        // 9. Key Strokes
+        doc.fillColor('#475569').text(m.totalKeystrokes > 0 ? m.totalKeystrokes.toLocaleString() : '-', tableX + 612, currentY + 5, { width: 46, align: 'center' });
+
+        // 10. Mouse Score
+        doc.fillColor('#475569').text(m.totalActivities > 0 ? `${m.avgMouse}%` : '-', tableX + 660, currentY + 5, { width: 38, align: 'center' });
+
+        // 11. Efficiency Rating
+        doc.fillColor(m.effColor).font('Helvetica-Bold').text(m.efficiency === 'No Activity' ? '-' : m.efficiency, tableX + 700, currentY + 5, { width: 68, align: 'right' });
 
         currentY += rowHeight;
       });
 
       // ==================== PAGE 2: APPLICATION USAGE & AUDIT ====================
       doc.addPage();
-      doc.rect(0, 0, pageWidth, 45).fill('#0f172a');
-      doc.fillColor('#ffffff').fontSize(12).font('Helvetica-Bold').text('NIYANTRAN WORKFLOW - TEAM SOFTWARE & WORKSPACE AUDIT', 40, 16);
+      doc.rect(0, 0, pageWidth, 42).fill('#0f172a');
+      doc.fillColor('#ffffff').fontSize(12).font('Helvetica-Bold').text('NIYANTRAN WORKFLOW - TEAM SOFTWARE & WORKSPACE AUDIT', 35, 14);
 
-      doc.y = 65;
-      doc.fontSize(13).font('Helvetica-Bold').fillColor('#0f172a').text('TOP APPLICATIONS USED ACROSS TEAM', 40, doc.y);
-      doc.moveDown(0.6);
+      doc.y = 58;
+      doc.fontSize(12.5).font('Helvetica-Bold').fillColor('#0f172a').text('TOP APPLICATIONS USED ACROSS TEAM', 35, doc.y);
+      doc.moveDown(0.5);
 
       const sortedTeamApps = Object.entries(data.teamApps || {}).sort((a, b) => b[1] - a[1]);
       const totalTeamActs = data.teamSummary.teamTotalActivities || 1;
 
       if (sortedTeamApps.length === 0) {
-        doc.fontSize(9.5).font('Helvetica').fillColor('#64748b').text('No application activity recorded across the team in this period.', 40, doc.y);
+        doc.fontSize(9.5).font('Helvetica').fillColor('#64748b').text('No application activity recorded across the team in this period.', 35, doc.y);
         doc.moveDown(1);
       } else {
         let appY = doc.y;
@@ -1835,48 +1855,48 @@ class ReportGenerator {
           const pct = Math.round((count / totalTeamActs) * 100);
           const estHours = Math.round((count * 30 / 3600) * 10) / 10;
 
-          doc.fontSize(9).font('Helvetica-Bold').fillColor('#1e293b').text(appName, 40, appY, { width: 200, ellipsis: true });
-          doc.font('Helvetica').fillColor('#64748b').text(`${count} sessions (~${estHours}h total)`, 245, appY, { width: 140 });
+          doc.fontSize(9).font('Helvetica-Bold').fillColor('#1e293b').text(appName, 35, appY, { width: 280, ellipsis: true });
+          doc.font('Helvetica').fillColor('#64748b').text(`${count} sessions (~${estHours}h total)`, 325, appY, { width: 170 });
 
-          const barX = 390;
-          const barWidth = 120;
+          const barX = 505;
+          const barWidth = 250;
           doc.roundedRect(barX, appY + 2, barWidth, 7, 3).fill('#e2e8f0');
           const fillW = Math.max(3, Math.round((pct / 100) * barWidth));
           doc.roundedRect(barX, appY + 2, fillW, 7, 3).fill('#6366f1');
 
-          doc.fontSize(8).fillColor('#1e293b').font('Helvetica-Bold').text(`${pct}%`, barX + barWidth + 6, appY);
-          appY += 18;
+          doc.fontSize(8).fillColor('#1e293b').font('Helvetica-Bold').text(`${pct}%`, barX + barWidth + 8, appY);
+          appY += 17;
         });
-        doc.y = appY + 12;
+        doc.y = appY + 10;
       }
 
       // Team Security & Alerts Breakdown
-      doc.fontSize(13).font('Helvetica-Bold').fillColor('#0f172a').text('TEAM SECURITY ALERTS & NOTIFICATIONS', 40, doc.y);
-      doc.moveDown(0.6);
+      doc.fontSize(12.5).font('Helvetica-Bold').fillColor('#0f172a').text('TEAM SECURITY ALERTS & NOTIFICATIONS', 35, doc.y);
+      doc.moveDown(0.5);
 
       const alertEntries = Object.entries(data.alertStats || {});
       if (alertEntries.length === 0) {
         const boxY = doc.y;
-        doc.roundedRect(40, boxY, 515, 34, 6).fillAndStroke('#f0fdf4', '#bbf7d0');
+        doc.roundedRect(35, boxY, 772, 32, 6).fillAndStroke('#f0fdf4', '#bbf7d0');
         doc.fillColor('#15803d').fontSize(9.5).font('Helvetica-Bold')
-           .text('✓ Zero security violations or policy warnings triggered across the entire team.', 55, boxY + 10);
-        doc.y = boxY + 44;
+           .text('✓ Zero security violations or policy warnings triggered across the entire team.', 50, boxY + 9);
+        doc.y = boxY + 42;
       } else {
         let alertY = doc.y;
-        alertEntries.forEach(([alertType, count]) => {
-          doc.roundedRect(40, alertY, 515, 26, 4).fillAndStroke('#fffbeb', '#fde68a');
+        alertEntries.slice(0, 5).forEach(([alertType, count]) => {
+          doc.roundedRect(35, alertY, 772, 24, 4).fillAndStroke('#fffbeb', '#fde68a');
           doc.fillColor('#b45309').fontSize(9).font('Helvetica-Bold')
-             .text(`Alert Type: ${alertType}`, 52, alertY + 7, { width: 260 });
+             .text(`Alert Type: ${alertType}`, 47, alertY + 6, { width: 420 });
           doc.fillColor('#1e293b').font('Helvetica')
-             .text(`Total Events: ${count} across team`, 320, alertY + 7, { width: 220, align: 'right' });
-          alertY += 31;
+             .text(`Total Events: ${count} across team`, 500, alertY + 6, { width: 295, align: 'right' });
+          alertY += 28;
         });
-        doc.y = alertY + 10;
+        doc.y = alertY + 8;
       }
 
       // Executive Recommendations for the Team
-      doc.fontSize(13).font('Helvetica-Bold').fillColor('#0f172a').text('EXECUTIVE WORKFORCE RECOMMENDATIONS', 40, doc.y);
-      doc.moveDown(0.5);
+      doc.fontSize(12.5).font('Helvetica-Bold').fillColor('#0f172a').text('EXECUTIVE WORKFORCE RECOMMENDATIONS', 35, doc.y);
+      doc.moveDown(0.4);
 
       const teamRecs = [
         {
@@ -1894,16 +1914,16 @@ class ReportGenerator {
       ];
 
       teamRecs.forEach((rec, idx) => {
-        doc.fontSize(9.5).font('Helvetica-Bold').fillColor('#0f172a').text(`${idx + 1}. ${rec.title}`, 45, doc.y);
-        doc.fontSize(8.5).font('Helvetica').fillColor('#475569').text(rec.desc, 60, doc.y, { width: 490 });
-        doc.moveDown(0.5);
+        doc.fontSize(9).font('Helvetica-Bold').fillColor('#0f172a').text(`${idx + 1}. ${rec.title}`, 40, doc.y);
+        doc.fontSize(8.5).font('Helvetica').fillColor('#475569').text(rec.desc, 55, doc.y, { width: 740 });
+        doc.moveDown(0.4);
       });
 
       // Footer
-      const footerY = Math.min(doc.y + 20, 770);
-      doc.rect(40, footerY, 515, 1).fill('#e2e8f0');
+      const footerY = Math.min(doc.y + 15, pageHeight - 28);
+      doc.rect(35, footerY, 772, 1).fill('#e2e8f0');
       doc.fontSize(7.5).font('Helvetica').fillColor('#94a3b8')
-         .text(`Generated on ${new Date().toLocaleString()}  •  Niyantran Workflow Monitoring System  •  Confidential Team Report`, 40, footerY + 8, { align: 'center', width: 515, lineBreak: false });
+         .text(`Generated on ${new Date().toLocaleString()}  •  Niyantran Workflow Monitoring System  •  Confidential Team Report`, 35, footerY + 6, { align: 'center', width: 772, lineBreak: false });
 
       doc.end();
 
@@ -1930,6 +1950,10 @@ class ReportGenerator {
    */
   async generateBulkReport(employeeIds, startDate, endDate, options = {}) {
     return this.generateTeamReport(startDate, endDate, { ...options, employeeIds });
+  }
+
+  collectGoalFieldsMap(aims, progresses, keyFn) {
+    return collectGoalFieldsMap(aims, progresses, keyFn);
   }
 
   /**

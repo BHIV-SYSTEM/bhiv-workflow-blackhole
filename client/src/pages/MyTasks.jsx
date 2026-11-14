@@ -8,6 +8,7 @@ import { Badge } from "../components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs"
 import { Progress } from "../components/ui/progress"
 import { Input } from "../components/ui/input"
+import { getTaskStatusBadgeClass, isTaskClosedOrCompleted } from "../lib/taskStatus"
 import {
   Loader2,
   CheckCircle,
@@ -104,27 +105,7 @@ function MyTasks() {
     }
   }
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case "Pending Validation":
-        return "bg-amber-500/10 text-amber-500 border-amber-500/20"
-      case "Approved":
-        return "bg-cyan-500/10 text-cyan-400 border-cyan-500/20"
-      case "Returned":
-        return "bg-rose-500/10 text-rose-400 border-rose-500/20"
-      case "In Progress":
-        return "bg-blue-500/10 text-blue-500 border-blue-500/20"
-      case "Submitted for Review":
-        return "bg-purple-500/10 text-purple-400 border-purple-500/20"
-      case "Closed":
-      case "Completed":
-        return "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
-      case "Pending":
-        return "bg-amber-500/10 text-amber-500 border-amber-500/20"
-      default:
-        return "bg-gray-500/10 text-gray-500 border-gray-500/20"
-    }
-  }
+  const getStatusColor = (status) => `${getTaskStatusBadgeClass(status)} border`
 
   const getPriorityColor = (priority) => {
     switch (priority) {
@@ -153,7 +134,7 @@ function MyTasks() {
     try {
       setActionLoadingId(task._id)
       const token = localStorage.getItem("WorkflowToken")
-      const response = await axios.put(
+      await axios.put(
         `${API_URL}/tasks/${task._id}`,
         { status: "In Progress" },
         { headers: { "x-auth-token": token } }
@@ -168,6 +149,33 @@ function MyTasks() {
       const msg = error.response?.data?.message || error.response?.data?.error || "Failed to start execution"
       toast({
         title: "Execution Gate Locked",
+        description: msg,
+        variant: "destructive",
+      })
+    } finally {
+      setActionLoadingId(null)
+    }
+  }
+
+  const handleMarkComplete = async (task) => {
+    try {
+      setActionLoadingId(task._id)
+      const token = localStorage.getItem("WorkflowToken")
+      await axios.put(
+        `${API_URL}/tasks/${task._id}`,
+        { status: "Completed", progress: 100 },
+        { headers: { "x-auth-token": token } }
+      )
+      toast({
+        title: "Task Completed",
+        description: `Task '${task.title}' has been marked as Completed.`,
+      })
+      fetchMyTasks()
+    } catch (error) {
+      console.error("Error completing task:", error)
+      const msg = error.response?.data?.message || error.response?.data?.error || "Failed to mark task complete"
+      toast({
+        title: "Update Failed",
         description: msg,
         variant: "destructive",
       })
@@ -222,8 +230,31 @@ function MyTasks() {
   }
 
   // Filter tasks based on active tab
+  const isValidationTask = (task) =>
+    task.status === "Pending Validation" || task.status === "Returned" || task.status === "Submitted"
+
+  const isClosedTask = (task) => isTaskClosedOrCompleted(task)
+
+  const isReviewTask = (task) => {
+    const sub = submissions[task._id]
+    return (
+      !isClosedTask(task) &&
+      !isValidationTask(task) &&
+      (task.status === "Submitted for Review" || (Boolean(sub) && sub.status !== "Rejected"))
+    )
+  }
+
+  const isApprovedTask = (task) =>
+    !isClosedTask(task) &&
+    !isReviewTask(task) &&
+    (task.status === "Approved" || task.status === "Pending")
+
+  const isInProgressTask = (task) =>
+    !isClosedTask(task) &&
+    !isReviewTask(task) &&
+    task.status === "In Progress"
+
   const filteredTasks = tasks.filter((task) => {
-    const hasSubmission = !!submissions[task._id]
     const matchesSearch =
       task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       task.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -234,15 +265,15 @@ function MyTasks() {
 
     switch (activeTab) {
       case "validation":
-        return task.status === "Pending Validation" || task.status === "Returned"
+        return isValidationTask(task)
       case "approved":
-        return task.status === "Approved" || task.status === "Pending"
+        return isApprovedTask(task)
       case "inprogress":
-        return task.status === "In Progress"
+        return isInProgressTask(task)
       case "submitted":
-        return task.status === "Submitted for Review" || hasSubmission
+        return isReviewTask(task)
       case "completed":
-        return task.status === "Completed" || task.status === "Closed"
+        return isClosedTask(task)
       default:
         return true
     }
@@ -251,11 +282,11 @@ function MyTasks() {
   // Stats
   const stats = {
     total: tasks.length,
-    validation: tasks.filter((t) => t.status === "Pending Validation" || t.status === "Returned").length,
-    approved: tasks.filter((t) => t.status === "Approved" || t.status === "Pending").length,
-    inProgress: tasks.filter((t) => t.status === "In Progress").length,
-    submitted: tasks.filter((t) => t.status === "Submitted for Review" || submissions[t._id]).length,
-    completed: tasks.filter((t) => t.status === "Completed" || t.status === "Closed").length,
+    validation: tasks.filter(isValidationTask).length,
+    approved: tasks.filter(isApprovedTask).length,
+    inProgress: tasks.filter(isInProgressTask).length,
+    submitted: tasks.filter(isReviewTask).length,
+    completed: tasks.filter(isClosedTask).length,
   }
 
   if (isLoading) {
@@ -267,15 +298,15 @@ function MyTasks() {
   }
 
   return (
-    <div className="space-y-6 p-4 md:p-6 animate-in fade-in duration-500">
+    <div className="space-y-6 pb-8 animate-in fade-in duration-500">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-6 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-primary/5 to-transparent border border-emerald-500/20 shadow-sm">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-5 sm:p-6 rounded-2xl bg-gradient-to-r from-primary/10 via-primary/5 to-transparent border border-primary/20 shadow-sm">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-emerald-400 to-primary bg-clip-text text-transparent">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl sm:text-3xl font-heading font-bold tracking-tight text-foreground">
               My Tasks
             </h1>
-            <Badge variant="outline" className="border-emerald-500/30 text-emerald-400 bg-emerald-500/10 text-xs">
+            <Badge variant="outline" className="border-primary/30 text-primary bg-primary/10 text-xs">
               Intake & Execution Gate
             </Badge>
           </div>
@@ -283,19 +314,19 @@ function MyTasks() {
             Register assigned WhatsApp/Lead instructions, await authorization, execute, and submit for Parikshak review.
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
           <Button
             onClick={() => setIsIntakeOpen(true)}
-            className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-xl px-4 py-2 shadow-lg shadow-emerald-900/30 transition-all duration-300 gap-2"
+            className="gradient-primary text-primary-foreground font-medium rounded-xl px-4 py-2 shadow-glow-primary transition-all duration-200 gap-2 hover:opacity-95"
           >
             <MessageSquarePlus className="h-4 w-4" />
-            Register Task Intake (WhatsApp)
+            Register Task Intake
           </Button>
           <Button
             onClick={fetchMyTasks}
             variant="outline"
             size="sm"
-            className="group border-2 border-primary/20 hover:border-primary/40 hover:bg-primary/5 transition-all duration-300 rounded-xl px-4 py-2"
+            className="group border border-border/70 hover:border-primary/40 hover:bg-primary/5 transition-all duration-200 rounded-xl px-4 py-2 h-10"
           >
             <RefreshCw className="h-4 w-4 mr-2 group-hover:rotate-180 transition-transform duration-500" />
             Refresh
@@ -304,20 +335,21 @@ function MyTasks() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-3 grid-cols-2 md:grid-cols-6">
+      <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
         <Card
-          className={`cursor-pointer transition-all duration-300 hover:shadow-lg border-2 ${
-            activeTab === "all" ? "border-primary bg-primary/5" : "border-transparent hover:border-primary/30"
+          interactive
+          className={`border transition-all duration-200 ${
+            activeTab === "all" ? "border-primary bg-primary/10 shadow-sm" : "border-border/60 hover:border-primary/40"
           }`}
           onClick={() => setActiveTab("all")}
         >
-          <CardContent className="p-3">
+          <CardContent className="p-3.5">
             <div className="flex items-center gap-2.5">
               <div className="p-2 rounded-lg bg-primary/10">
                 <ListTodo className="h-4 w-4 text-primary" />
               </div>
               <div>
-                <p className="text-xl font-bold text-foreground">{stats.total}</p>
+                <p className="text-xl font-bold tabular-nums text-foreground">{stats.total}</p>
                 <p className="text-[11px] text-muted-foreground font-medium">All Tasks</p>
               </div>
             </div>
@@ -325,18 +357,19 @@ function MyTasks() {
         </Card>
 
         <Card
-          className={`cursor-pointer transition-all duration-300 hover:shadow-lg border-2 ${
-            activeTab === "validation" ? "border-amber-500 bg-amber-500/5" : "border-transparent hover:border-amber-500/30"
+          interactive
+          className={`border transition-all duration-200 ${
+            activeTab === "validation" ? "border-amber-500 bg-amber-500/10 shadow-sm" : "border-border/60 hover:border-amber-500/40"
           }`}
           onClick={() => setActiveTab("validation")}
         >
-          <CardContent className="p-3">
+          <CardContent className="p-3.5">
             <div className="flex items-center gap-2.5">
               <div className="p-2 rounded-lg bg-amber-500/10">
                 <Lock className="h-4 w-4 text-amber-500" />
               </div>
               <div>
-                <p className="text-xl font-bold text-amber-500">{stats.validation}</p>
+                <p className="text-xl font-bold tabular-nums text-amber-500">{stats.validation}</p>
                 <p className="text-[11px] text-muted-foreground font-medium">Gate Pending</p>
               </div>
             </div>
@@ -344,18 +377,19 @@ function MyTasks() {
         </Card>
 
         <Card
-          className={`cursor-pointer transition-all duration-300 hover:shadow-lg border-2 ${
-            activeTab === "approved" ? "border-cyan-500 bg-cyan-500/5" : "border-transparent hover:border-cyan-500/30"
+          interactive
+          className={`border transition-all duration-200 ${
+            activeTab === "approved" ? "border-cyan-500 bg-cyan-500/10 shadow-sm" : "border-border/60 hover:border-cyan-500/40"
           }`}
           onClick={() => setActiveTab("approved")}
         >
-          <CardContent className="p-3">
+          <CardContent className="p-3.5">
             <div className="flex items-center gap-2.5">
               <div className="p-2 rounded-lg bg-cyan-500/10">
-                <ShieldCheck className="h-4 w-4 text-cyan-400" />
+                <ShieldCheck className="h-4 w-4 text-cyan-500" />
               </div>
               <div>
-                <p className="text-xl font-bold text-cyan-400">{stats.approved}</p>
+                <p className="text-xl font-bold tabular-nums text-cyan-500">{stats.approved}</p>
                 <p className="text-[11px] text-muted-foreground font-medium">Approved</p>
               </div>
             </div>
@@ -363,18 +397,19 @@ function MyTasks() {
         </Card>
 
         <Card
-          className={`cursor-pointer transition-all duration-300 hover:shadow-lg border-2 ${
-            activeTab === "inprogress" ? "border-blue-500 bg-blue-500/5" : "border-transparent hover:border-blue-500/30"
+          interactive
+          className={`border transition-all duration-200 ${
+            activeTab === "inprogress" ? "border-blue-500 bg-blue-500/10 shadow-sm" : "border-border/60 hover:border-blue-500/40"
           }`}
           onClick={() => setActiveTab("inprogress")}
         >
-          <CardContent className="p-3">
+          <CardContent className="p-3.5">
             <div className="flex items-center gap-2.5">
               <div className="p-2 rounded-lg bg-blue-500/10">
                 <Timer className="h-4 w-4 text-blue-500" />
               </div>
               <div>
-                <p className="text-xl font-bold text-blue-500">{stats.inProgress}</p>
+                <p className="text-xl font-bold tabular-nums text-blue-500">{stats.inProgress}</p>
                 <p className="text-[11px] text-muted-foreground font-medium">In Progress</p>
               </div>
             </div>
@@ -382,18 +417,19 @@ function MyTasks() {
         </Card>
 
         <Card
-          className={`cursor-pointer transition-all duration-300 hover:shadow-lg border-2 ${
-            activeTab === "submitted" ? "border-purple-500 bg-purple-500/5" : "border-transparent hover:border-purple-500/30"
+          interactive
+          className={`border transition-all duration-200 ${
+            activeTab === "submitted" ? "border-purple-500 bg-purple-500/10 shadow-sm" : "border-border/60 hover:border-purple-500/40"
           }`}
           onClick={() => setActiveTab("submitted")}
         >
-          <CardContent className="p-3">
+          <CardContent className="p-3.5">
             <div className="flex items-center gap-2.5">
               <div className="p-2 rounded-lg bg-purple-500/10">
-                <CheckSquare className="h-4 w-4 text-purple-400" />
+                <CheckSquare className="h-4 w-4 text-purple-500" />
               </div>
               <div>
-                <p className="text-xl font-bold text-purple-400">{stats.submitted}</p>
+                <p className="text-xl font-bold tabular-nums text-purple-500">{stats.submitted}</p>
                 <p className="text-[11px] text-muted-foreground font-medium">Review</p>
               </div>
             </div>
@@ -401,19 +437,20 @@ function MyTasks() {
         </Card>
 
         <Card
-          className={`cursor-pointer transition-all duration-300 hover:shadow-lg border-2 ${
-            activeTab === "completed" ? "border-emerald-500 bg-emerald-500/5" : "border-transparent hover:border-emerald-500/30"
+          interactive
+          className={`border transition-all duration-200 ${
+            activeTab === "completed" ? "border-emerald-500 bg-emerald-500/10 shadow-sm" : "border-border/60 hover:border-emerald-500/40"
           }`}
           onClick={() => setActiveTab("completed")}
         >
-          <CardContent className="p-3">
+          <CardContent className="p-3.5">
             <div className="flex items-center gap-2.5">
               <div className="p-2 rounded-lg bg-emerald-500/10">
                 <CheckCircle className="h-4 w-4 text-emerald-500" />
               </div>
               <div>
-                <p className="text-xl font-bold text-emerald-500">{stats.completed}</p>
-                <p className="text-[11px] text-muted-foreground font-medium">Closed</p>
+                <p className="text-xl font-bold tabular-nums text-emerald-500">{stats.completed}</p>
+                <p className="text-[11px] text-muted-foreground font-medium">Completed</p>
               </div>
             </div>
           </CardContent>
@@ -428,20 +465,20 @@ function MyTasks() {
             placeholder="Search by task ID, title, originator (e.g. WhatsApp, T-WHT-...)..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-11 h-11 rounded-xl border-2 border-muted hover:border-primary/30 focus:border-primary transition-all duration-300 bg-background/50"
+            className="pl-11 h-11 rounded-xl border border-border/70 hover:border-primary/40 focus:border-primary transition-all duration-200 bg-card/70"
           />
         </div>
       </div>
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-6 h-11 p-1 bg-muted/50 rounded-xl text-xs">
-          <TabsTrigger value="all" className="rounded-lg font-medium">All ({stats.total})</TabsTrigger>
-          <TabsTrigger value="validation" className="rounded-lg font-medium text-amber-500">Gate Pending ({stats.validation})</TabsTrigger>
-          <TabsTrigger value="approved" className="rounded-lg font-medium text-cyan-400">Approved ({stats.approved})</TabsTrigger>
-          <TabsTrigger value="inprogress" className="rounded-lg font-medium text-blue-500">In Progress ({stats.inProgress})</TabsTrigger>
-          <TabsTrigger value="submitted" className="rounded-lg font-medium text-purple-400">Review ({stats.submitted})</TabsTrigger>
-          <TabsTrigger value="completed" className="rounded-lg font-medium text-emerald-500">Closed ({stats.completed})</TabsTrigger>
+        <TabsList className="flex w-full overflow-x-auto no-scrollbar sm:grid sm:grid-cols-6 h-auto sm:h-11 p-1 gap-1 bg-muted/50 border border-border/50 rounded-xl text-xs">
+          <TabsTrigger value="all" className="rounded-lg font-medium shrink-0 px-3 py-2">All ({stats.total})</TabsTrigger>
+          <TabsTrigger value="validation" className="rounded-lg font-medium text-amber-500 shrink-0 px-3 py-2">Gate Pending ({stats.validation})</TabsTrigger>
+          <TabsTrigger value="approved" className="rounded-lg font-medium text-cyan-500 shrink-0 px-3 py-2">Approved ({stats.approved})</TabsTrigger>
+          <TabsTrigger value="inprogress" className="rounded-lg font-medium text-blue-500 shrink-0 px-3 py-2">In Progress ({stats.inProgress})</TabsTrigger>
+          <TabsTrigger value="submitted" className="rounded-lg font-medium text-purple-500 shrink-0 px-3 py-2">Review ({stats.submitted})</TabsTrigger>
+          <TabsTrigger value="completed" className="rounded-lg font-medium text-emerald-500 shrink-0 px-3 py-2">Completed ({stats.completed})</TabsTrigger>
         </TabsList>
 
         <TabsContent value={activeTab} className="mt-6">
@@ -460,45 +497,45 @@ function MyTasks() {
               {filteredTasks.map((task) => {
                 const submission = submissions[task._id]
                 const daysRemaining = getDaysRemaining(task.dueDate)
-                const isValidationPending = task.status === "Pending Validation"
+                const isValidationPending = task.status === "Pending Validation" || task.status === "Submitted"
                 const isReturned = task.status === "Returned"
                 const isApproved = task.status === "Approved"
                 const isPending = task.status === "Pending"
-                const isInProgress = task.status === "In Progress"
-                const isClosed = task.status === "Closed" || task.status === "Completed"
-                const isReview = task.status === "Submitted for Review"
+                const isClosed = isClosedTask(task)
+                const isReview = isReviewTask(task)
+                const isInProgress = isInProgressTask(task)
 
                 return (
                   <Card
                     key={task._id}
-                    className="group hover:shadow-xl hover:shadow-primary/5 transition-all duration-300 border-2 border-transparent hover:border-primary/20 rounded-xl overflow-hidden"
+                    className="group hover:shadow-lg hover:shadow-primary/5 transition-all duration-200 border border-border/70 hover:border-primary/35 rounded-2xl overflow-hidden"
                   >
-                    <CardContent className="p-6 bg-gradient-to-br from-background to-muted/20">
-                      <div className="flex flex-col lg:flex-row lg:items-start gap-4">
+                    <CardContent className="p-5 sm:p-6">
+                      <div className="flex flex-col lg:flex-row lg:items-start gap-5">
                         {/* Task Info */}
-                        <div className="flex-1 space-y-3">
-                          <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <div className="flex-1 space-y-3 min-w-0">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                                 {task.task_id && (
-                                  <Badge variant="outline" className="font-mono text-xs border-emerald-500/30 text-emerald-400 bg-emerald-500/5">
+                                  <Badge variant="outline" className="font-mono text-xs border-primary/30 text-primary bg-primary/5">
                                     {task.task_id}
                                   </Badge>
                                 )}
                                 {task.sourceType && (
                                   <Badge variant="secondary" className="text-[11px] font-normal gap-1">
-                                    <MessageSquare className="h-3 w-3 text-emerald-400" />
+                                    <MessageSquare className="h-3 w-3 text-primary" />
                                     {task.sourceType}
                                     {task.originatingPerson && ` by ${task.originatingPerson}`}
                                   </Badge>
                                 )}
                               </div>
-                              <h3 className="font-semibold text-lg text-foreground">{task.title}</h3>
+                              <h3 className="font-semibold text-base sm:text-lg text-foreground">{task.title}</h3>
                               <p className="text-sm text-muted-foreground line-clamp-2 mt-1">
                                 {task.description}
                               </p>
                             </div>
-                            <div className="flex gap-2 flex-shrink-0">
+                            <div className="flex flex-wrap gap-1.5 flex-shrink-0">
                               <Badge className={getStatusColor(task.status)}>{task.status}</Badge>
                               <Badge className={getPriorityColor(task.priority)}>{task.priority}</Badge>
                             </div>
@@ -506,22 +543,22 @@ function MyTasks() {
 
                           {/* Gate Status Banners */}
                           {isValidationPending && (
-                            <div className="p-3 rounded-lg bg-amber-950/30 border border-amber-500/30 flex items-center justify-between gap-3 text-xs text-amber-200">
+                            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-3 text-xs text-amber-700 dark:text-amber-300">
                               <div className="flex items-center gap-2">
-                                <Lock className="h-4 w-4 text-amber-400 shrink-0" />
+                                <Lock className="h-4 w-4 text-amber-500 shrink-0" />
                                 <span>
                                   <strong>Authorisation Gate Active:</strong> Task is pending review by Project Lead. Execution is blocked until approved.
                                 </span>
                               </div>
-                              <Badge variant="outline" className="border-amber-400/40 text-amber-300 bg-amber-500/10 text-[10px]">
+                              <Badge variant="outline" className="border-amber-500/40 text-amber-600 dark:text-amber-300 bg-amber-500/10 text-[10px] shrink-0">
                                 Gate Locked
                               </Badge>
                             </div>
                           )}
 
                           {isReturned && (
-                            <div className="p-3 rounded-lg bg-rose-950/30 border border-rose-500/30 flex items-start gap-2.5 text-xs text-rose-200">
-                              <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
+                            <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-start gap-2.5 text-xs text-rose-700 dark:text-rose-300">
+                              <AlertTriangle className="h-4 w-4 text-rose-500 shrink-0 mt-0.5" />
                               <div>
                                 <strong>Task Returned by Lead:</strong> {task.returnedFeedback || "Clarification needed before authorization."}
                               </div>
@@ -529,14 +566,14 @@ function MyTasks() {
                           )}
 
                           {(isApproved || isPending) && (
-                            <div className="p-3 rounded-lg bg-cyan-950/30 border border-cyan-500/30 flex items-center justify-between gap-3 text-xs text-cyan-200">
+                            <div className="p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-between gap-3 text-xs text-cyan-700 dark:text-cyan-300">
                               <div className="flex items-center gap-2">
-                                <ShieldCheck className="h-4 w-4 text-cyan-400 shrink-0" />
+                                <ShieldCheck className="h-4 w-4 text-cyan-500 shrink-0" />
                                 <span>
                                   <strong>{isApproved ? "Gate Passed:" : "Task Assigned:"}</strong> {isApproved ? "Task authorized by Lead. You can now start execution." : "Task assigned and ready to execute. Click Start Execution to begin."}
                                 </span>
                               </div>
-                              <Badge variant="outline" className="border-cyan-400/40 text-cyan-300 bg-cyan-500/10 text-[10px]">
+                              <Badge variant="outline" className="border-cyan-500/40 text-cyan-600 dark:text-cyan-300 bg-cyan-500/10 text-[10px] shrink-0">
                                 Ready to Execute
                               </Badge>
                             </div>
@@ -573,7 +610,7 @@ function MyTasks() {
                               </div>
                             )}
                             {task.sourceReference && (
-                              <div className="flex items-center gap-1 text-slate-400">
+                              <div className="flex items-center gap-1 text-muted-foreground">
                                 <span>Ref: {task.sourceReference}</span>
                               </div>
                             )}
@@ -624,11 +661,11 @@ function MyTasks() {
                         </div>
 
                         {/* Actions column */}
-                        <div className="flex lg:flex-col gap-2 lg:w-44 shrink-0">
+                        <div className="flex flex-wrap lg:flex-col gap-2 lg:w-48 shrink-0">
                           <Button
                             variant="outline"
                             size="sm"
-                            className="flex-1 h-9 rounded-xl border-muted hover:border-primary/50 text-xs font-medium"
+                            className="flex-1 lg:w-full h-9 rounded-xl border-border/70 hover:border-primary/50 text-xs font-medium"
                             onClick={() => navigate(`/tasks/${task._id}`)}
                           >
                             <Eye className="h-3.5 w-3.5 mr-1.5" />
@@ -678,14 +715,30 @@ function MyTasks() {
                           )}
 
                           {isInProgress && (
-                            <Button
-                              size="sm"
-                              className="flex-1 h-9 rounded-xl font-semibold bg-blue-600 hover:bg-blue-500 text-white shadow-md text-xs gap-1.5"
-                              onClick={() => openSubmissionDialog(task)}
-                            >
-                              <CheckSquare className="h-3.5 w-3.5" />
-                              Submit Work
-                            </Button>
+                            <div className="flex flex-wrap lg:flex-col gap-2 w-full">
+                              <Button
+                                size="sm"
+                                className="flex-1 lg:w-full h-9 rounded-xl font-semibold bg-blue-600 hover:bg-blue-500 text-white shadow-sm text-xs gap-1.5"
+                                onClick={() => openSubmissionDialog(task)}
+                              >
+                                <CheckSquare className="h-3.5 w-3.5" />
+                                {submission?.status === "Rejected" ? "Resubmit Work" : "Submit Work"}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={actionLoadingId === task._id}
+                                className="flex-1 lg:w-full h-9 rounded-xl font-semibold border-emerald-500/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 text-xs gap-1.5"
+                                onClick={() => handleMarkComplete(task)}
+                              >
+                                {actionLoadingId === task._id ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <CheckCircle className="h-3.5 w-3.5" />
+                                )}
+                                Mark Complete
+                              </Button>
+                            </div>
                           )}
 
                           {isReview && (
@@ -701,10 +754,23 @@ function MyTasks() {
                           )}
 
                           {isClosed && (
-                            <Badge className="h-9 px-3 flex items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold text-xs gap-1">
-                              <CheckCircle className="h-3.5 w-3.5" />
-                              Closed & Verified
-                            </Badge>
+                            <>
+                              <Badge className="h-9 px-3 flex items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold text-xs gap-1">
+                                <CheckCircle className="h-3.5 w-3.5" />
+                                {task.status === "Closed" || submission?.status === "Approved" ? "Closed & Verified" : "Completed"}
+                              </Badge>
+                              {submission && submission.status === "Pending" && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="flex-1 h-9 rounded-xl border-purple-500/40 text-purple-400 hover:bg-purple-500/10 text-xs gap-1.5"
+                                  onClick={() => openSubmissionDialog(task)}
+                                >
+                                  <RefreshCw className="h-3.5 w-3.5" />
+                                  Update Submission
+                                </Button>
+                              )}
+                            </>
                           )}
                         </div>
                       </div>

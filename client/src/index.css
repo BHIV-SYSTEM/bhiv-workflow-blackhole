@@ -428,16 +428,45 @@ body.sidebar-open {
     box-shadow: var(--shadow-glow-accent);
   }
 
-  /* Neomorphic Effects */
+  /* Surface & Interactive Card Styles */
   .neo-card {
     background: hsl(var(--card));
     border-radius: var(--radius);
-    transition: all 0.3s ease-out;
-    border: 1px solid hsl(var(--border) / 0.3);
+    transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+    border: 1px solid hsl(var(--border) / 0.6);
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.05), 0 1px 2px -1px rgb(0 0 0 / 0.04);
   }
 
-  .neo-card:hover {
+  .dark .neo-card {
+    box-shadow: 0 2px 10px -2px rgb(0 0 0 / 0.35);
+  }
+
+  .universe .neo-card {
+    background: hsl(var(--card) / 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-color: hsl(var(--border) / 0.75);
+    box-shadow: 0 8px 28px -8px rgb(0 0 0 / 0.55), inset 0 1px 0 0 hsl(0 0% 100% / 0.05);
+  }
+
+  .interactive-card {
+    cursor: pointer;
+    transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .interactive-card:hover {
     transform: translateY(-2px);
+    border-color: hsl(var(--primary) / 0.4);
+    box-shadow: 0 10px 24px -8px hsl(var(--primary) / 0.16);
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
   }
 
   .neo-inset {

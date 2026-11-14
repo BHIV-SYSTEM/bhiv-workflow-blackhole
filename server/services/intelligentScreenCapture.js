@@ -2,13 +2,13 @@ const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
 const sharp = require('sharp');
-const screenshot = require('screenshot-desktop');
 const ScreenCapture = require('../models/ScreenCapture');
 const MonitoringAlert = require('../models/MonitoringAlert');
 const WebsiteWhitelist = require('../models/WebsiteWhitelist');
 const groqAIService = require('./groqAIService');
 const ocrAnalysisService = require('./ocrAnalysisService');
 const { uploadViolationScreenshot, uploadRegularScreenshot } = require('../utils/cloudinary');
+const { captureSafeScreenshot } = require('../utils/safeScreenshot');
 
 class IntelligentScreenCaptureService {
   constructor() {
@@ -405,8 +405,11 @@ Respond in JSON format:
    */
   async captureViolationScreenshot(employeeId, applicationData, violationSession) {
     try {
-      // Take screenshot
-      const screenshotBuffer = await screenshot({ format: 'png' });
+      // Take screenshot safely (returns null in headless containers instead of crashing on xrandr)
+      const screenshotBuffer = await captureSafeScreenshot({ format: 'png' });
+      if (!screenshotBuffer) {
+        return null;
+      }
       
       // Calculate hash for duplicate detection
       const currentHash = crypto.createHash('md5').update(screenshotBuffer).digest('hex');

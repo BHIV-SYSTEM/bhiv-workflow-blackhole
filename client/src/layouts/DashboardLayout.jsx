@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Outlet } from "react-router-dom"
+import { Outlet, useLocation } from "react-router-dom"
 import { DashboardSidebar } from "../components/dashboard/sidebar"
 import UniverseBackground from "../components/UniverseBackground"
 import { useTheme } from "../components/theme-provider"
@@ -55,18 +55,37 @@ export function DashboardLayout() {
     setShowStartDayDialog(false)
   }
 
-  const toggleSidebar = () => {
-    setSidebarOpen(!sidebarOpen)
-    // Add a class to the body to prevent scrolling when sidebar is open
-    if (!sidebarOpen) {
-      document.body.classList.add('sidebar-open')
-    } else {
+  const location = useLocation()
+
+  const closeSidebar = () => {
+    setSidebarOpen(false)
+    document.body.classList.remove('sidebar-open')
+  }
+
+  useEffect(() => {
+    closeSidebar()
+  }, [location.pathname])
+
+  useEffect(() => {
+    return () => {
       document.body.classList.remove('sidebar-open')
     }
+  }, [])
+
+  const toggleSidebar = () => {
+    setSidebarOpen((prev) => {
+      const next = !prev
+      if (next) {
+        document.body.classList.add('sidebar-open')
+      } else {
+        document.body.classList.remove('sidebar-open')
+      }
+      return next
+    })
   }
 
   return (
-    <div className="h-screen w-screen bg-gradient-to-br from-background via-background to-muted/20 flex overflow-hidden">
+    <div className="h-dvh w-full bg-gradient-to-br from-background via-background to-muted/20 flex overflow-hidden">
       {/* Premium Background Elements */}
       <div className="fixed inset-0 bg-[radial-gradient(circle_at_50%_120%,hsl(var(--primary)/0.05),transparent)] pointer-events-none"></div>
 
@@ -76,8 +95,8 @@ export function DashboardLayout() {
       {/* Enhanced Overlay for mobile */}
       {sidebarOpen && (
         <div
-          className="md:hidden fixed inset-0 z-40 bg-black/70 backdrop-blur-lg transition-all duration-300 animate-fade-in"
-          onClick={() => toggleSidebar()}
+          className="md:hidden fixed inset-0 z-40 bg-black/70 backdrop-blur-md transition-all duration-300 animate-fade-in"
+          onClick={closeSidebar}
         />
       )}
 
@@ -88,11 +107,11 @@ export function DashboardLayout() {
 
       {/* Mobile Sidebar */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 transform transition-all duration-300 md:hidden ${
+        className={`fixed inset-y-0 left-0 z-50 transform transition-transform duration-300 ease-out md:hidden ${
           sidebarOpen ? 'translate-x-0 shadow-glow-primary' : '-translate-x-full'
         }`}
       >
-        <DashboardSidebar />
+        <DashboardSidebar onNavigate={closeSidebar} isMobile />
       </aside>
 
       {/* Main Content Container */}
@@ -104,7 +123,7 @@ export function DashboardLayout() {
 
         {/* Main Content Area - Full Page */}
         <main className="flex-1 overflow-auto relative">
-          <div className="h-full min-h-full p-4 md:p-6 lg:p-8">
+          <div className="min-h-full p-3 sm:p-5 md:p-6 lg:p-8">
             <div className="w-full animate-fade-in">
               <Outlet />
             </div>

@@ -52,6 +52,21 @@ export function WorkHoursManager({ employee }) {
   // Use current user if no employee prop is provided (for user dashboard)
   const currentEmployee = employee || user;
 
+  const clearWorkHoursStorage = useCallback((empId) => {
+    if (!empId) return;
+    try {
+      localStorage.removeItem(`workHoursPauseState_${empId}`);
+      const breakPrefix = `workHoursClientBreak_${empId}_`;
+      Object.keys(localStorage).forEach((k) => {
+        if (k.startsWith(breakPrefix)) {
+          localStorage.removeItem(k);
+        }
+      });
+    } catch (e) {
+      console.warn('Failed to clear work hours storage', e);
+    }
+  }, []);
+
   const fetchDayEndReport = async () => {
     const empId = currentEmployee?._id || currentEmployee?.id;
     if (!empId) return;
@@ -103,18 +118,8 @@ export function WorkHoursManager({ employee }) {
     setClientBreakMinutes(0);
     
     // Clear localStorage
-    try {
-      const employeeId = currentEmployee?._id || currentEmployee?.id;
-      if (employeeId) {
-        const pauseStateKey = `workHoursPauseState_${employeeId}`;
-        const breakKey = `workHoursClientBreak_${employeeId}_${new Date().toISOString().slice(0, 10)}`;
-        localStorage.removeItem(pauseStateKey);
-        localStorage.removeItem(breakKey);
-      }
-    } catch (e) {
-      console.warn('Failed to clear work hours storage', e);
-    }
-  }, [workSession, currentEmployee, toast]);
+    clearWorkHoursStorage(currentEmployee?._id || currentEmployee?.id);
+  }, [workSession, currentEmployee, toast, clearWorkHoursStorage]);
 
   // Update current time every second and check for midnight reset
   useEffect(() => {
@@ -146,49 +151,78 @@ export function WorkHoursManager({ employee }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentEmployee]);
 
-  // Load any client-side break minutes (for attendance-only days) and pause state
+  // Sync client fallback storage when workSession changes; ignore/prune stale or DB-conflicting localStorage values
   useEffect(() => {
-    if (!currentEmployee) return;
+    const empId = currentEmployee?._id || currentEmployee?.id;
+    if (!empId || !workSession) return;
 
-    const dateKey = new Date().toISOString().slice(0, 10);
-    const breakKey = `workHoursClientBreak_${currentEmployee._id || currentEmployee.id}_${dateKey}`;
+    const dateKey = format(new Date(), 'yyyy-MM-dd');
+    const breakKey = `workHoursClientBreak_${empId}_${dateKey}`;
+    const pauseKey = `workHoursPauseState_${empId}`;
 
-    try {
-      const storedBreak = localStorage.getItem(breakKey);
-      if (storedBreak) {
-        const parsed = parseInt(storedBreak, 10);
-        if (!isNaN(parsed) && parsed >= 0) {
-          setClientBreakMinutes(parsed);
-        }
-      }
-    } catch (e) {
-      console.warn('Failed to load client break minutes', e);
+    // Completed session or DB-backed WorkSession uses backend totalBreakTime/pausedAt as single source of truth
+    if (workSession.status === 'completed' || workSession._id) {
+      clearWorkHoursStorage(empId);
+      setClientBreakMinutes(0);
+      return;
     }
 
-    // We still restore pause UI state in the next effect when workSession is available
-  }, [currentEmployee]);
-
-  // Restore pause state from localStorage after refresh so time stays frozen until user resumes
-  useEffect(() => {
-    if (!currentEmployee || !workSession) return;
-
+    // Fallback session without DB WorkSession._id: load scoped break minutes only if bound to this exact startTime
     try {
-      const key = `workHoursPauseState_${currentEmployee._id || currentEmployee.id}`;
-      const raw = localStorage.getItem(key);
-      if (!raw) return;
+      const rawBreak = localStorage.getItem(breakKey);
+      if (rawBreak) {
+        const parsedBreak = JSON.parse(rawBreak);
+        if (
+          parsedBreak &&
+          typeof parsedBreak === 'object' &&
+          parsedBreak.sessionStartTime === String(workSession.startTime) &&
+          typeof parsedBreak.minutes === 'number' &&
+          parsedBreak.minutes >= 0
+        ) {
+          setClientBreakMinutes(parsedBreak.minutes);
+        } else {
+          // Discard legacy bare-number or previous-session break values that cause 0h 0m stuck timers
+          localStorage.removeItem(breakKey);
+          setClientBreakMinutes(0);
+        }
+      } else {
+        setClientBreakMinutes(0);
+      }
+    } catch {
+      localStorage.removeItem(breakKey);
+      setClientBreakMinutes(0);
+    }
 
-      const stored = JSON.parse(raw);
-      if (!stored || !stored.paused) return;
+    // Restore pause state only if pausedAt belongs to today's current session (after workSession.startTime)
+    try {
+      const rawPause = localStorage.getItem(pauseKey);
+      if (!rawPause) return;
 
-      // Apply stored paused status and frozen progress
-      setWorkSession(prev => prev ? { ...prev, status: 'paused' } : prev);
-      if (stored.frozenProgress) {
+      const stored = JSON.parse(rawPause);
+      const pausedAtDate = stored?.pausedAt ? new Date(stored.pausedAt) : null;
+      const sessionStart = workSession.startTime ? new Date(workSession.startTime) : null;
+      const isValidPause =
+        Boolean(stored?.paused) &&
+        pausedAtDate &&
+        !isNaN(pausedAtDate.getTime()) &&
+        isSameDay(pausedAtDate, new Date()) &&
+        (!sessionStart || pausedAtDate >= sessionStart);
+
+      if (!isValidPause) {
+        localStorage.removeItem(pauseKey);
+        return;
+      }
+
+      if (workSession.status !== 'paused') {
+        setWorkSession(prev => (prev && prev.status !== 'paused' ? { ...prev, status: 'paused' } : prev));
+      }
+      if (stored.frozenProgress && !frozenProgress) {
         setFrozenProgress(stored.frozenProgress);
       }
     } catch (e) {
       console.warn('Failed to restore work hours pause state', e);
     }
-  }, [currentEmployee, workSession]);
+  }, [currentEmployee, workSession, clearWorkHoursStorage, frozenProgress]);
 
   const fetchWorkSession = async () => {
     try {
@@ -250,17 +284,21 @@ export function WorkHoursManager({ employee }) {
   };
 
   const onStartDaySuccess = async (data) => {
-    // After successful location validation, try to start the monitoring work session
+    const empId = currentEmployee?._id || currentEmployee?.id;
+    clearWorkHoursStorage(empId);
+    setFrozenProgress(null);
+    setClientBreakMinutes(0);
+
+    // After successful location validation, try to start/sync the monitoring work session
     setLoading(true);
     try {
-      // Try to start monitoring session
       const response = await api.post(
         `/monitoring/work-session/start`,
         {
-          employeeId: currentEmployee._id || currentEmployee.id,
-          startTime: new Date(),
+          employeeId: empId,
+          startTime: data?.startTime || new Date(),
           targetHours: 8, // Default 8-hour work day
-          workLocation: data.workLocationType || 'Office'
+          workLocation: data?.workLocationType || 'Office'
         }
       );
       
@@ -270,16 +308,16 @@ export function WorkHoursManager({ employee }) {
       // If monitoring session fails, create a mock session from attendance data
       const mockSession = {
         status: 'active',
-        startTime: new Date(),
+        startTime: data?.startTime || new Date(),
         targetHours: 8,
-        workLocation: data.workLocationType || 'Office'
+        workLocation: data?.workLocationType || 'Office'
       };
       setWorkSession(mockSession);
     }
 
     toast({
       title: "Work Day Started",
-      description: `Your work day has begun${data.workLocationType === 'Home' ? ' from home' : ' from office'}!`,
+      description: `Your work day has begun${data?.workLocationType === 'Home' ? ' from home' : ' from office'}!`,
     });
     
     setShowStartDayDialog(false);
@@ -295,42 +333,48 @@ export function WorkHoursManager({ employee }) {
   const pauseWorkDay = async () => {
     setLoading(true);
     try {
-      console.log('Attempting to pause work day for employee:', currentEmployee._id || currentEmployee.id);
+      const empId = currentEmployee._id || currentEmployee.id;
+      console.log('Attempting to pause work day for employee:', empId);
       // Freeze current progress for UI so time appears stopped immediately
       const currentProgress = getWorkProgress();
       setFrozenProgress(currentProgress);
 
-      // Persist pause state so it survives refresh
-      try {
-        const pauseKey = `workHoursPauseState_${currentEmployee._id || currentEmployee.id}`;
-        localStorage.setItem(
-          pauseKey,
-          JSON.stringify({
-            paused: true,
-            frozenProgress: currentProgress,
-            pausedAt: new Date().toISOString(),
-          })
-        );
-      } catch (e) {
-        console.warn('Failed to persist work hours pause state', e);
+      // Persist client fallback pause state only when session has no DB _id
+      if (!workSession?._id) {
+        try {
+          const pauseKey = `workHoursPauseState_${empId}`;
+          localStorage.setItem(
+            pauseKey,
+            JSON.stringify({
+              paused: true,
+              frozenProgress: currentProgress,
+              pausedAt: new Date().toISOString(),
+            })
+          );
+        } catch (e) {
+          console.warn('Failed to persist work hours pause state', e);
+        }
       }
       
-      await api.post(
+      const pauseResponse = await api.post(
         `/monitoring/work-session/pause`,
-        { employeeId: currentEmployee._id || currentEmployee.id }
+        { employeeId: empId }
       );
       
       console.log('Pause successful, updating local session state...');
       
-      // Optimistically update local session so UI changes immediately
-      setWorkSession(prev => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          status: 'paused',
-          pausedAt: new Date().toISOString(),
-        };
-      });
+      if (pauseResponse?.session) {
+        setWorkSession(pauseResponse.session);
+      } else {
+        setWorkSession(prev => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            status: 'paused',
+            pausedAt: new Date().toISOString(),
+          };
+        });
+      }
 
       toast({
         title: "⏸️ Work Day Paused",
@@ -352,11 +396,12 @@ export function WorkHoursManager({ employee }) {
   const resumeWorkDay = async () => {
     setLoading(true);
     try {
-      console.log('Attempting to resume work day for employee:', currentEmployee._id || currentEmployee.id);
+      const employeeId = currentEmployee._id || currentEmployee.id;
+      console.log('Attempting to resume work day for employee:', employeeId);
       
-      await api.post(
+      const resumeResponse = await api.post(
         `/monitoring/work-session/resume`,
-        { employeeId: currentEmployee._id || currentEmployee.id }
+        { employeeId }
       );
       
       console.log('Resume successful, updating local session state...');
@@ -364,52 +409,61 @@ export function WorkHoursManager({ employee }) {
       // Un-freeze progress so it starts updating again
       setFrozenProgress(null);
 
-      // Clear persisted pause state
-      try {
-        const employeeId = currentEmployee._id || currentEmployee.id;
-        const pauseKey = `workHoursPauseState_${employeeId}`;
-        const dateKey = new Date().toISOString().slice(0, 10);
-        const breakKey = `workHoursClientBreak_${employeeId}_${dateKey}`;
+      // Only accumulate client fallback break when backend returned no DB session
+      if (resumeResponse?.session?._id) {
+        clearWorkHoursStorage(employeeId);
+        setClientBreakMinutes(0);
+        setWorkSession(resumeResponse.session);
+      } else {
+        try {
+          const pauseKey = `workHoursPauseState_${employeeId}`;
+          const dateKey = format(new Date(), 'yyyy-MM-dd');
+          const breakKey = `workHoursClientBreak_${employeeId}_${dateKey}`;
 
-        // Before clearing, read pausedAt to calculate extra break minutes
-        const rawPause = localStorage.getItem(pauseKey);
-        if (rawPause) {
-          const parsed = JSON.parse(rawPause);
-          if (parsed?.paused && parsed.pausedAt) {
-            const pausedAt = new Date(parsed.pausedAt);
-            const now = new Date();
-            const extra = Math.max(differenceInMinutes(now, pausedAt), 0);
-            if (extra > 0) {
-              setClientBreakMinutes(prev => {
-                const updated = prev + extra;
-                try {
-                  localStorage.setItem(breakKey, String(updated));
-                } catch (e) {
-                  console.warn('Failed to persist client break minutes', e);
-                }
-                return updated;
-              });
+          const rawPause = localStorage.getItem(pauseKey);
+          if (rawPause) {
+            const parsed = JSON.parse(rawPause);
+            const pausedAt = parsed?.paused && parsed.pausedAt ? new Date(parsed.pausedAt) : null;
+            const sessionStart = workSession?.startTime ? new Date(workSession.startTime) : null;
+            if (pausedAt && !isNaN(pausedAt.getTime()) && isSameDay(pausedAt, new Date()) && (!sessionStart || pausedAt >= sessionStart)) {
+              const now = new Date();
+              const extra = Math.max(differenceInMinutes(now, pausedAt), 0);
+              if (extra > 0) {
+                setClientBreakMinutes(prev => {
+                  const updated = prev + extra;
+                  try {
+                    localStorage.setItem(
+                      breakKey,
+                      JSON.stringify({
+                        minutes: updated,
+                        sessionStartTime: String(workSession?.startTime || '')
+                      })
+                    );
+                  } catch (e) {
+                    console.warn('Failed to persist client break minutes', e);
+                  }
+                  return updated;
+                });
+              }
             }
           }
+
+          localStorage.removeItem(pauseKey);
+        } catch (e) {
+          console.warn('Failed to clear work hours pause state', e);
         }
 
-        // Now clear pause marker
-        localStorage.removeItem(pauseKey);
-      } catch (e) {
-        console.warn('Failed to clear work hours pause state', e);
+        setWorkSession(prev => {
+          if (!prev) return prev;
+
+          return {
+            ...prev,
+            status: 'active',
+            pausedAt: null,
+            resumedAt: new Date().toISOString(),
+          };
+        });
       }
-
-      // Optimistically update local session so UI changes immediately.
-      setWorkSession(prev => {
-        if (!prev) return prev;
-
-        return {
-          ...prev,
-          status: 'active',
-          pausedAt: null,
-          resumedAt: new Date().toISOString(),
-        };
-      });
 
       toast({
         title: "▶️ Work Day Resumed",
@@ -443,10 +497,9 @@ export function WorkHoursManager({ employee }) {
       
       if (response && (response.success || response.data?.success)) {
         setWorkSession(null);
-        try {
-          const empId = currentEmployee._id || currentEmployee.id;
-          localStorage.removeItem(`workHoursPauseState_${empId}`);
-        } catch (e) {}
+        setFrozenProgress(null);
+        setClientBreakMinutes(0);
+        clearWorkHoursStorage(currentEmployee._id || currentEmployee.id);
         toast({
           title: "✅ Work Day Ended",
           description: response.message || response.data?.message || "Your work session has been completed.",
@@ -514,10 +567,9 @@ export function WorkHoursManager({ employee }) {
           
           if (attendanceResponse && (attendanceResponse.success || attendanceResponse.data?.success)) {
             setWorkSession(null);
-            try {
-              const empId = currentEmployee._id || currentEmployee.id;
-              localStorage.removeItem(`workHoursPauseState_${empId}`);
-            } catch (e) {}
+            setFrozenProgress(null);
+            setClientBreakMinutes(0);
+            clearWorkHoursStorage(currentEmployee._id || currentEmployee.id);
             toast({
               title: "✅ Work Day Ended",
               description: attendanceResponse.message || attendanceResponse.data?.message || "Your work day has been completed.",
@@ -661,8 +713,9 @@ export function WorkHoursManager({ employee }) {
     // Total minutes from start until now / end
     let totalMinutes = Math.max(differenceInMinutes(referenceTime, startTime), 0);
 
-    // Break minutes: backend-tracked + client-tracked (for attendance-only days)
-    let breakMinutes = (workSession.totalBreakTime || 0) + (clientBreakMinutes || 0);
+    // Break minutes: authoritative DB totalBreakTime when _id exists; client fallback otherwise
+    const hasDbSession = Boolean(workSession?._id);
+    let breakMinutes = (workSession.totalBreakTime || 0) + (hasDbSession ? 0 : (clientBreakMinutes || 0));
 
     // If currently paused and we have a backend pausedAt, also subtract the ongoing paused duration
     if (workSession.status === 'paused' && workSession.pausedAt) {
@@ -865,7 +918,7 @@ export function WorkHoursManager({ employee }) {
       <EnhancedStartDayDialog
         isOpen={showStartDayDialog}
         onClose={() => setShowStartDayDialog(false)}
-        onStartDay={onStartDaySuccess}
+        onSuccess={onStartDaySuccess}
         user={currentEmployee}
       />
 

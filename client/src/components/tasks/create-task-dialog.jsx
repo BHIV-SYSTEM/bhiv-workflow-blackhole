@@ -431,24 +431,24 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[700px] max-h-[92vh] overflow-hidden bg-white dark:bg-slate-900 border-2 border-gray-200 dark:border-slate-800 rounded-lg p-0">
+      <DialogContent className="sm:max-w-[700px] max-h-[92vh] overflow-hidden bg-card text-foreground border border-border/70 shadow-2xl rounded-2xl p-0">
         {/* Hidden title for accessibility */}
-        <DialogTitle className="sr-only dark:text-slate-100">Create New Task</DialogTitle>
+        <DialogTitle className="sr-only">Create New Task</DialogTitle>
         
         {/* Scrollable Content Area */}
-        <div className="px-7 pt-7 pb-6 overflow-y-auto max-h-[calc(92vh-130px)] scrollbar-thin scrollbar-thumb-white/20 dark:scrollbar-thumb-slate-700 scrollbar-track-transparent hover:scrollbar-thumb-white/30 dark:hover:scrollbar-thumb-slate-600">
+        <div className="px-7 pt-7 pb-6 overflow-y-auto max-h-[calc(92vh-130px)] custom-scrollbar">
           <div className="grid gap-6">
 
             {/* Mode Selector Toggle */}
-            <div className="flex items-center justify-between p-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-700">
+            <div className="flex items-center justify-between p-1.5 bg-muted/50 rounded-2xl border border-border/60">
               <button
                 type="button"
                 onClick={() => setCreationMode("manual")}
                 className={cn(
                   "flex-1 py-3 px-4 rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 flex items-center justify-center gap-2",
                   creationMode === "manual"
-                    ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-md border border-slate-200 dark:border-slate-700"
-                    : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                    ? "bg-card text-foreground shadow-sm border border-border/70"
+                    : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 <span>✍️</span> Manual Task Creation
@@ -460,7 +460,7 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
                   "flex-1 py-3 px-4 rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 flex items-center justify-center gap-2",
                   creationMode === "ai_ingest"
                     ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md border border-blue-500"
-                    : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                    : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 <span>⚡</span> AI Document Ingestion
@@ -470,23 +470,23 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
             {/* ⚡ AI AUTOMATED INGESTION MODE VIEW */}
             {creationMode === "ai_ingest" ? (
               <div className="grid gap-5">
-                <div className="p-4 bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-purple-500/10 border border-blue-500/30 rounded-2xl text-sm text-slate-700 dark:text-slate-300 backdrop-blur-xl">
+                <div className="p-4 bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-purple-500/10 border border-blue-500/30 rounded-2xl text-sm text-foreground backdrop-blur-xl">
                   <div className="flex items-center gap-2 mb-1.5">
                     <span className="text-xl">🤖</span>
                     <span className="font-bold text-blue-600 dark:text-blue-400 text-base">SETU EOS AI Document Ingestion</span>
                   </div>
-                  <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                  <p className="text-xs text-muted-foreground leading-relaxed">
                     Upload your task specification document (PDF, DOCX, TXT, or MD). The AI ingestion engine will automatically parse the task title, description, priority, department, and matching assignees.
                   </p>
                 </div>
 
                 {/* Prominent Drag & Drop File Upload Box */}
                 <div className="grid gap-2.5">
-                  <Label htmlFor="ai-document-upload" className="text-sm font-bold text-gray-900 dark:text-slate-200 flex items-center gap-1.5">
+                  <Label htmlFor="ai-document-upload" className="text-sm font-bold text-foreground flex items-center gap-1.5">
                     <div className="h-2 w-2 rounded-full bg-blue-500 shadow-lg shadow-blue-500/50"></div>
-                    Upload Task Specification PDF / Document <span className="text-red-400 ml-0.5">*</span>
+                    Upload Task Specification PDF / Document <span className="text-destructive ml-0.5">*</span>
                   </Label>
-                  <div className="relative border-2 border-dashed border-blue-500/40 dark:border-blue-500/30 hover:border-blue-600 dark:hover:border-blue-400 rounded-2xl p-8 transition-all duration-300 bg-blue-500/5 dark:bg-blue-500/10 text-center cursor-pointer group">
+                  <div className="relative border-2 border-dashed border-blue-500/40 hover:border-blue-500 rounded-2xl p-8 transition-all duration-300 bg-blue-500/5 hover:bg-blue-500/10 text-center cursor-pointer group">
                     <input
                       id="ai-document-upload"
                       type="file"
@@ -501,10 +501,10 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
                         </svg>
                       </div>
                       <div>
-                        <p className="text-base font-bold text-slate-800 dark:text-slate-100">
+                        <p className="text-base font-bold text-foreground">
                           {documentFile ? documentFile.name : "Click or Drag & Drop Task Document Here"}
                         </p>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
+                        <p className="text-xs text-muted-foreground mt-1 font-medium">
                           Supports PDF, DOCX, TXT, MD files up to 15MB
                         </p>
                       </div>
@@ -518,7 +518,7 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
                           PDF
                         </div>
                         <div className="min-w-0">
-                          <p className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate">{documentFile.name}</p>
+                          <p className="text-sm font-bold text-foreground truncate">{documentFile.name}</p>
                           <p className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1.5 mt-0.5">
                             <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
                             {(documentFile.size / 1024).toFixed(1)} KB • Ready for AI Extraction
@@ -530,7 +530,7 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
                         variant="ghost"
                         size="sm"
                         onClick={() => setDocumentFile(null)}
-                        className="text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg"
+                        className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg"
                       >
                         <X className="h-5 w-5" />
                       </Button>
@@ -540,17 +540,17 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
 
                 {/* Optional Department Override */}
                 <div className="grid gap-2.5 pt-2">
-                  <Label htmlFor="ai-dept" className="text-xs font-bold text-slate-600 dark:text-slate-400">
+                  <Label htmlFor="ai-dept" className="text-xs font-bold text-muted-foreground">
                     Department (Optional Override)
                   </Label>
                   <Select
                     value={formData.department}
                     onValueChange={handleDepartmentChange}
                   >
-                    <SelectTrigger id="ai-dept" className="h-11 px-4 bg-white/10 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium">
+                    <SelectTrigger id="ai-dept" className="h-11 px-4 bg-background/70 border border-border/70 rounded-xl text-sm font-medium">
                       <SelectValue placeholder="Auto-detect department from document..." />
                     </SelectTrigger>
-                    <SelectContent className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl">
+                    <SelectContent className="bg-popover border border-border/70 rounded-xl">
                       {Array.isArray(departments) && departments.map((dept) => (
                         <SelectItem key={dept._id} value={dept._id}>{dept.name}</SelectItem>
                       ))}
@@ -563,29 +563,29 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
               <div className="grid gap-6">
                 {/* Task Title */}
                 <div className="grid gap-2.5">
-                  <Label htmlFor="title" className="text-sm font-bold text-gray-900 dark:text-slate-200 flex items-center gap-1.5">
+                  <Label htmlFor="title" className="text-sm font-bold text-foreground flex items-center gap-1.5">
                     <div className="h-1.5 w-1.5 rounded-full bg-primary shadow-lg shadow-primary/50"></div>
-                    Task Title <span className="text-red-400 ml-0.5">*</span>
+                    Task Title <span className="text-destructive ml-0.5">*</span>
                   </Label>
                   <Input
                     id="title"
                     placeholder="Enter a descriptive task title..."
                     value={formData.title}
                     onChange={(e) => handleChange("title", e.target.value)}
-                    className="h-12 px-4 bg-white/10 dark:bg-slate-800/50 border-2 border-white/30 dark:border-slate-700 hover:border-white/50 dark:hover:border-slate-600 focus:border-primary focus-visible:ring-4 focus-visible:ring-primary/30 rounded-xl transition-all duration-300 text-base font-medium placeholder:text-gray-500 dark:placeholder:text-slate-500 text-gray-900 dark:text-slate-100 backdrop-blur-xl"
+                    className="h-12 px-4 bg-background/70 border border-border/70 hover:border-border focus:border-primary focus-visible:ring-4 focus-visible:ring-primary/20 rounded-xl transition-all duration-200 text-base font-medium placeholder:text-muted-foreground text-foreground"
                   />
                 </div>
 
                 {/* Description */}
                 <div className="grid gap-2.5">
-                  <Label htmlFor="description" className="text-sm font-bold text-gray-900 dark:text-slate-200 flex items-center gap-1.5">
+                  <Label htmlFor="description" className="text-sm font-bold text-foreground flex items-center gap-1.5">
                     <div className="h-1.5 w-1.5 rounded-full bg-secondary shadow-lg shadow-secondary/50"></div>
                     Description
                   </Label>
                   <Textarea
                     id="description"
                     placeholder="Describe the task in detail..."
-                    className="min-h-[110px] px-4 py-3 bg-white/10 dark:bg-slate-800/50 border-2 border-white/30 dark:border-slate-700 hover:border-white/50 dark:hover:border-slate-600 focus:border-secondary focus-visible:ring-4 focus-visible:ring-secondary/30 rounded-xl resize-none transition-all duration-300 text-base placeholder:text-gray-500 dark:placeholder:text-slate-500 text-gray-900 dark:text-slate-100 backdrop-blur-xl"
+                    className="min-h-[110px] px-4 py-3 bg-background/70 border border-border/70 hover:border-border focus:border-secondary focus-visible:ring-4 focus-visible:ring-secondary/20 rounded-xl resize-none transition-all duration-200 text-base placeholder:text-muted-foreground text-foreground"
                     value={formData.description}
                     onChange={(e) => handleChange("description", e.target.value)}
                   />
@@ -593,7 +593,7 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
 
                 {/* Links */}
                 <div className="grid gap-2.5">
-                  <Label htmlFor="links" className="text-sm font-bold text-gray-900 dark:text-slate-200 flex items-center gap-1.5">
+                  <Label htmlFor="links" className="text-sm font-bold text-foreground flex items-center gap-1.5">
                     <div className="h-1.5 w-1.5 rounded-full bg-accent shadow-lg shadow-accent/50"></div>
                     Reference Links
                   </Label>
@@ -602,35 +602,35 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
                     placeholder="Add URLs separated by commas..."
                     value={formData.links}
                     onChange={(e) => handleChange("links", e.target.value)}
-                    className="h-12 px-4 bg-white/10 dark:bg-slate-800/50 border-2 border-white/30 dark:border-slate-700 hover:border-white/50 dark:hover:border-slate-600 focus:border-accent focus-visible:ring-4 focus-visible:ring-accent/30 rounded-xl transition-all duration-300 text-base placeholder:text-gray-500 dark:placeholder:text-slate-500 text-gray-900 dark:text-slate-100 backdrop-blur-xl"
+                    className="h-12 px-4 bg-background/70 border border-border/70 hover:border-border focus:border-accent focus-visible:ring-4 focus-visible:ring-accent/20 rounded-xl transition-all duration-200 text-base placeholder:text-muted-foreground text-foreground"
                   />
                 </div>
 
                 {/* Department and Assignee Row */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div className="grid gap-2.5">
-                    <Label htmlFor="department" className="text-sm font-bold text-gray-900 dark:text-slate-200 flex items-center gap-1.5">
+                    <Label htmlFor="department" className="text-sm font-bold text-foreground flex items-center gap-1.5">
                       <div className="h-1.5 w-1.5 rounded-full bg-info shadow-lg shadow-info/50"></div>
-                      Department <span className="text-red-400 ml-0.5">*</span>
+                      Department <span className="text-destructive ml-0.5">*</span>
                     </Label>
                     <Select
                       value={formData.department}
                       onValueChange={handleDepartmentChange}
                     >
-                      <SelectTrigger id="department" className="h-12 px-4 bg-white/10 dark:bg-slate-800/50 border-2 border-white/30 dark:border-slate-700 hover:border-white/50 dark:hover:border-slate-600 focus:border-info focus:ring-4 focus:ring-info/30 rounded-xl transition-all duration-300 text-base font-medium text-gray-900 dark:text-slate-100 placeholder:text-gray-500 dark:placeholder:text-slate-500 backdrop-blur-xl">
+                      <SelectTrigger id="department" className="h-12 px-4 bg-background/70 border border-border/70 hover:border-border focus:border-info focus:ring-4 focus:ring-info/20 rounded-xl transition-all duration-200 text-base font-medium text-foreground">
                         <SelectValue placeholder={
                           Array.isArray(departments) && departments.length > 0 
                             ? "Select department..." 
                             : "Loading..."
                         } />
                       </SelectTrigger>
-                      <SelectContent className="bg-white/10 dark:bg-slate-900/95 backdrop-blur-2xl border border-white/30 dark:border-slate-700 rounded-2xl shadow-2xl max-h-64 overflow-y-auto" style={{backdropFilter: 'blur(20px)'}}>
+                      <SelectContent className="bg-popover/95 backdrop-blur-xl border border-border/70 rounded-2xl shadow-2xl max-h-64 overflow-y-auto">
                         {Array.isArray(departments) && departments.length > 0 && 
                           departments.map((dept) => (
                             <SelectItem 
                               key={dept._id} 
                               value={dept._id}
-                              className="my-1 mx-2 px-3 py-2.5 rounded-lg hover:bg-info/20 dark:hover:bg-info/30 cursor-pointer transition-all duration-200 font-medium text-gray-900 dark:text-slate-100"
+                              className="my-1 mx-2 px-3 py-2.5 rounded-lg hover:bg-info/15 cursor-pointer transition-all duration-200 font-medium text-foreground"
                             >
                               <div className="flex items-center gap-2">
                                 <div className="h-2 w-2 rounded-full bg-info"></div>
@@ -644,19 +644,19 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
                   </div>
 
                   <div className="grid gap-2.5">
-                    <Label htmlFor="assignee-search" className="text-sm font-bold text-gray-900 dark:text-slate-200 flex items-center gap-1.5">
+                    <Label htmlFor="assignee-search" className="text-sm font-bold text-foreground flex items-center gap-1.5">
                       <div className="h-1.5 w-1.5 rounded-full bg-success shadow-lg shadow-success/50"></div>
-                      Assignee <span className="text-red-400 ml-0.5">*</span>
+                      Assignee <span className="text-destructive ml-0.5">*</span>
                     </Label>
                     <div className="relative">
-                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 dark:text-slate-500 z-10" />
+                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground z-10" />
                       <Input
                         id="assignee-search"
                         placeholder="Search assignees by name or email..."
                         value={assigneeSearch}
                         onChange={handleAssigneeSearch}
                         disabled={!formData.department}
-                        className="h-12 pl-12 pr-10 bg-white/10 dark:bg-slate-800/50 border-2 border-white/30 dark:border-slate-700 hover:border-white/50 dark:hover:border-slate-600 focus:border-success focus-visible:ring-4 focus-visible:ring-success/30 rounded-xl transition-all duration-300 disabled:opacity-40 disabled:cursor-not-allowed text-base placeholder:text-gray-500 dark:placeholder:text-slate-500 text-gray-900 dark:text-slate-100 backdrop-blur-xl"
+                        className="h-12 pl-12 pr-10 bg-background/70 border border-border/70 hover:border-border focus:border-success focus-visible:ring-4 focus-visible:ring-success/20 rounded-xl transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed text-base placeholder:text-muted-foreground text-foreground"
                       />
                       {assigneeSearch && (
                         <Button
@@ -669,22 +669,22 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
                             setFilteredUsers([]);
                             setSelectedUserTasks([]);
                           }}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 p-0 hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg transition-all"
+                          className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 p-0 hover:bg-destructive/10 text-muted-foreground hover:text-destructive rounded-lg transition-all"
                         >
                           <X className="h-4 w-4" />
                         </Button>
                       )}
                     </div>
                     {filteredUsers.length > 0 && formData.department && (
-                      <div className="mt-1 bg-white/10 dark:bg-slate-900/95 backdrop-blur-xl border border-white/30 dark:border-slate-700 rounded-xl max-h-60 overflow-y-auto shadow-xl scrollbar-thin scrollbar-thumb-white/20 dark:scrollbar-thumb-slate-700 scrollbar-track-transparent" style={{backdropFilter: 'blur(20px)'}}>
+                      <div className="mt-1 bg-popover/95 backdrop-blur-xl border border-border/70 rounded-xl max-h-60 overflow-y-auto shadow-xl custom-scrollbar">
                         {filteredUsers.map((user) => (
                           <div
                             key={user._id}
-                            className="m-2 px-4 py-3 hover:bg-success/30 dark:hover:bg-success/40 cursor-pointer text-sm flex items-center justify-between rounded-lg transition-all duration-200 group"
+                            className="m-2 px-4 py-3 hover:bg-success/15 cursor-pointer text-sm flex items-center justify-between rounded-lg transition-all duration-200 group"
                             onClick={() => handleAssigneeSelect(user)}
                           >
-                            <span className="font-semibold text-gray-900 dark:text-slate-100 group-hover:text-success transition-colors">{user.name}</span>
-                            <span className="text-xs bg-success/20 dark:bg-success/10 text-success px-3 py-1 rounded-full font-bold flex items-center gap-1.5">
+                            <span className="font-semibold text-foreground group-hover:text-success transition-colors">{user.name}</span>
+                            <span className="text-xs bg-success/15 text-success px-3 py-1 rounded-full font-bold flex items-center gap-1.5">
                               <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                               </svg>
@@ -695,34 +695,34 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
                       </div>
                     )}
                     {formData.department && filteredUsers.length === 0 && assigneeSearch && !formData.assignee && (
-                      <div className="px-4 py-2 text-sm text-muted-foreground dark:text-slate-400">
+                      <div className="px-4 py-2 text-sm text-muted-foreground">
                         No active users found in this department
                       </div>
                     )}
 
                     {/* User's Previous Tasks */}
                     {formData.assignee && (
-                      <div className="mt-4 p-4 bg-gradient-to-br from-primary/5 to-transparent dark:from-primary/10 dark:to-transparent border border-primary/20 dark:border-primary/30 rounded-xl">
+                      <div className="mt-4 p-4 bg-primary/5 border border-primary/20 rounded-xl">
                         <div className="flex items-center gap-2 mb-3">
                           <svg className="h-4 w-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                           </svg>
-                          <h4 className="font-semibold text-foreground dark:text-slate-200">Previous Tasks for {assigneeSearch}</h4>
+                          <h4 className="font-semibold text-foreground">Previous Tasks for {assigneeSearch}</h4>
                         </div>
 
                         {loadingUserTasks ? (
                           <div className="text-center py-4">
-                            <div className="flex items-center justify-center gap-2 text-muted-foreground dark:text-slate-400 text-sm">
+                            <div className="flex items-center justify-center gap-2 text-muted-foreground text-sm">
                               <div className="h-4 w-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
                               Loading tasks...
                             </div>
                           </div>
                         ) : selectedUserTasks.length > 0 ? (
-                          <div className="space-y-2 max-h-40 overflow-y-auto scrollbar-thin scrollbar-thumb-border/50 dark:scrollbar-thumb-slate-700 scrollbar-track-transparent">
+                          <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar">
                             {selectedUserTasks.slice(0, 5).map((task) => (
-                              <div key={task._id} className="flex items-center justify-between p-2 bg-muted/50 dark:bg-slate-800/50 rounded-lg border border-border/30 dark:border-slate-700 hover:border-primary/30 dark:hover:border-primary/50 transition-colors duration-200">
+                              <div key={task._id} className="flex items-center justify-between p-2 bg-muted/50 rounded-lg border border-border/50 hover:border-primary/40 transition-colors duration-200">
                                 <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-medium text-foreground dark:text-slate-200 truncate">{task.title}</p>
+                                  <p className="text-sm font-medium text-foreground truncate">{task.title}</p>
                                   <div className="flex items-center gap-2 mt-1">
                                     <span className={`text-xs px-2 py-1 rounded-full ${
                                       task.status === 'Completed' ? 'bg-success/20 text-success' :
@@ -740,19 +740,19 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
                                     </span>
                                   </div>
                                 </div>
-                                <div className="text-xs text-muted-foreground dark:text-slate-400 ml-2">
+                                <div className="text-xs text-muted-foreground ml-2">
                                   {task.dueDate ? formatDate(task.dueDate) : 'No date'}
                                 </div>
                               </div>
                             ))}
                             {selectedUserTasks.length > 5 && (
-                              <div className="text-xs text-muted-foreground dark:text-slate-400 text-center py-2">
+                              <div className="text-xs text-muted-foreground text-center py-2">
                                 +{selectedUserTasks.length - 5} more tasks
                               </div>
                             )}
                           </div>
                         ) : (
-                          <div className="text-center py-4 text-muted-foreground dark:text-slate-400 text-sm">
+                          <div className="text-center py-4 text-muted-foreground text-sm">
                             No previous tasks found for this user
                           </div>
                         )}
@@ -764,7 +764,7 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
                 {/* Priority and Due Date */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div className="grid gap-2.5">
-                    <Label htmlFor="priority" className="text-sm font-bold text-gray-900 dark:text-slate-200 flex items-center gap-1.5">
+                    <Label htmlFor="priority" className="text-sm font-bold text-foreground flex items-center gap-1.5">
                       <div className="h-1.5 w-1.5 rounded-full bg-warning shadow-lg shadow-warning/50"></div>
                       Priority
                     </Label>
@@ -772,23 +772,23 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
                       value={formData.priority}
                       onValueChange={(value) => handleChange("priority", value)}
                     >
-                      <SelectTrigger id="priority" className="h-12 px-4 bg-white/10 dark:bg-slate-800/50 border-2 border-white/30 dark:border-slate-700 hover:border-white/50 dark:hover:border-slate-600 focus:border-warning focus:ring-4 focus:ring-warning/30 rounded-xl transition-all duration-300 text-base font-medium text-gray-900 dark:text-slate-100 backdrop-blur-xl">
+                      <SelectTrigger id="priority" className="h-12 px-4 bg-background/70 border border-border/70 hover:border-border focus:border-warning focus:ring-4 focus:ring-warning/20 rounded-xl transition-all duration-200 text-base font-medium text-foreground">
                         <SelectValue placeholder="Select priority..." />
                       </SelectTrigger>
-                      <SelectContent className="bg-white/10 dark:bg-slate-900/95 backdrop-blur-2xl border border-white/30 dark:border-slate-700 rounded-2xl shadow-2xl" style={{backdropFilter: 'blur(20px)'}}>
-                        <SelectItem value="High" className="my-1 mx-2 px-3 py-2.5 rounded-lg hover:bg-destructive/30 dark:hover:bg-destructive/40 cursor-pointer transition-all duration-200 text-gray-900 dark:text-slate-100">
+                      <SelectContent className="bg-popover/95 backdrop-blur-xl border border-border/70 rounded-2xl shadow-2xl">
+                        <SelectItem value="High" className="my-1 mx-2 px-3 py-2.5 rounded-lg hover:bg-destructive/15 cursor-pointer transition-all duration-200 text-foreground">
                           <span className="flex items-center gap-2.5 font-semibold">
                             <span className="h-2.5 w-2.5 rounded-full bg-destructive shadow-lg shadow-destructive/30"></span>
                             <span className="text-destructive">High Priority</span>
                           </span>
                         </SelectItem>
-                        <SelectItem value="Medium" className="my-1 mx-2 px-3 py-2.5 rounded-lg hover:bg-warning/30 dark:hover:bg-warning/40 cursor-pointer transition-all duration-200 text-gray-900 dark:text-slate-100">
+                        <SelectItem value="Medium" className="my-1 mx-2 px-3 py-2.5 rounded-lg hover:bg-warning/15 cursor-pointer transition-all duration-200 text-foreground">
                           <span className="flex items-center gap-2.5 font-semibold">
                             <span className="h-2.5 w-2.5 rounded-full bg-warning shadow-lg shadow-warning/30"></span>
                             <span className="text-warning">Medium Priority</span>
                           </span>
                         </SelectItem>
-                        <SelectItem value="Low" className="my-1 mx-2 px-3 py-2.5 rounded-lg hover:bg-success/30 dark:hover:bg-success/40 cursor-pointer transition-all duration-200 text-gray-900 dark:text-slate-100">
+                        <SelectItem value="Low" className="my-1 mx-2 px-3 py-2.5 rounded-lg hover:bg-success/15 cursor-pointer transition-all duration-200 text-foreground">
                           <span className="flex items-center gap-2.5 font-semibold">
                             <span className="h-2.5 w-2.5 rounded-full bg-success shadow-lg shadow-success/30"></span>
                             <span className="text-success">Low Priority</span>
@@ -799,7 +799,7 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
                   </div>
 
                   <div className="grid gap-2.5">
-                    <Label htmlFor="dueDate" className="text-sm font-bold text-gray-900 dark:text-slate-200 flex items-center gap-1.5">
+                    <Label htmlFor="dueDate" className="text-sm font-bold text-foreground flex items-center gap-1.5">
                       <div className="h-1.5 w-1.5 rounded-full bg-info shadow-lg shadow-info/50"></div>
                       Due Date
                     </Label>
@@ -817,12 +817,12 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
                         }}
                         min={format(new Date(), "yyyy-MM-dd")}
                         className={cn(
-                          "h-12 bg-white/10 dark:bg-slate-800/50 border-2 border-white/30 dark:border-slate-700",
-                          "hover:border-white/50 dark:hover:border-slate-600",
-                          "focus:border-primary dark:focus:border-primary",
-                          "rounded-xl transition-all duration-300 backdrop-blur-xl",
-                          "text-gray-900 dark:text-slate-100 font-medium",
-                          dateError && "border-red-400 dark:border-red-500"
+                          "h-12 bg-background/70 border border-border/70",
+                          "hover:border-border",
+                          "focus:border-primary",
+                          "rounded-xl transition-all duration-200",
+                          "text-foreground font-medium",
+                          dateError && "border-destructive"
                         )}
                       />
                       {dueDate && (
@@ -831,7 +831,7 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
                           variant="ghost"
                           size="sm"
                           onClick={() => handleDateChange(null)}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 p-0 hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg transition-all"
+                          className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 p-0 hover:bg-destructive/10 text-muted-foreground hover:text-destructive rounded-lg transition-all"
                         >
                           <X className="h-4 w-4" />
                         </Button>
@@ -850,13 +850,14 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
 
                 {/* Dependencies */}
                 <div className="grid gap-2.5">
-                  <Label htmlFor="dependencies" className="text-sm font-bold text-gray-900 dark:text-slate-200 flex items-center gap-1.5">
+                  <Label htmlFor="dependencies" className="text-sm font-bold text-foreground flex items-center gap-1.5">
                     <div className="h-1.5 w-1.5 rounded-full bg-secondary shadow-lg shadow-secondary/50"></div>
                     Dependencies
                   </Label>
                   <div className="relative">
                     <Button
                       type="button"
+                      variant="outline"
                       id="dependencies"
                       onClick={() => {
                         if (Array.isArray(tasks) && tasks.length > 0) {
@@ -865,30 +866,30 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
                           setDropdownSearchQuery("");
                         }
                       }}
-                      className="w-full h-12 px-4 bg-white/10 dark:bg-slate-800/50 border-2 border-white/30 dark:border-slate-700 hover:border-white/50 dark:hover:border-slate-600 focus:border-secondary focus:ring-4 focus:ring-secondary/30 rounded-xl transition-all duration-300 text-base font-medium text-left justify-start text-gray-900 dark:text-slate-100 backdrop-blur-xl"
+                      className="w-full h-12 px-4 bg-background/70 border border-border/70 hover:border-border focus:border-secondary focus:ring-4 focus:ring-secondary/20 rounded-xl transition-all duration-200 text-base font-medium text-left justify-start text-foreground"
                     >
-                      <Search className="h-5 w-5 text-gray-400 dark:text-slate-500 mr-3" />
-                      <span className="text-gray-500 dark:text-slate-500">
+                      <Search className="h-5 w-5 text-muted-foreground mr-3" />
+                      <span className="text-muted-foreground">
                         {formData.dependencies.length > 0 
                           ? `${formData.dependencies.length} task${formData.dependencies.length > 1 ? 's' : ''} selected`
                           : "Click to select dependent tasks..."
                         }
                       </span>
-                      <svg className="ml-auto h-4 w-4 text-gray-400 dark:text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="ml-auto h-4 w-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                       </svg>
                     </Button>
                     {showDependencyDropdown && (
-                      <div className="dependency-dropdown-container absolute z-50 w-full mt-1 bg-white/10 dark:bg-slate-900/95 backdrop-blur-xl border border-white/30 dark:border-slate-700 rounded-xl shadow-xl overflow-hidden" style={{backdropFilter: 'blur(20px)'}}>
+                      <div className="dependency-dropdown-container absolute z-50 w-full mt-1 bg-popover/95 backdrop-blur-xl border border-border/70 rounded-xl shadow-xl overflow-hidden">
                         {/* Search Bar Inside Dropdown */}
-                        <div className="p-3 border-b border-white/20 dark:border-slate-700 bg-white/5 dark:bg-slate-800/50">
+                        <div className="p-3 border-b border-border/60 bg-muted/40">
                           <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-slate-500 z-10" />
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />
                             <Input
                               placeholder="Search tasks by name or description..."
                               value={dropdownSearchQuery}
                               onChange={handleDependencySearch}
-                              className="h-10 pl-10 pr-8 bg-white/10 dark:bg-slate-800/50 border border-white/30 dark:border-slate-700 hover:border-white/50 dark:hover:border-slate-600 focus:border-secondary focus-visible:ring-2 focus-visible:ring-secondary/30 rounded-lg transition-all duration-200 text-sm placeholder:text-gray-500 dark:placeholder:text-slate-500 text-gray-900 dark:text-slate-100 backdrop-blur-xl"
+                              className="h-10 pl-10 pr-8 bg-background/70 border border-border/70 hover:border-border focus:border-secondary focus-visible:ring-2 focus-visible:ring-secondary/20 rounded-lg transition-all duration-200 text-sm placeholder:text-muted-foreground text-foreground"
                               autoFocus
                             />
                             {dropdownSearchQuery && (
@@ -900,7 +901,7 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
                                   setDropdownSearchQuery("");
                                   setFilteredDependencies(Array.isArray(tasks) ? tasks : []);
                                 }}
-                                className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0 hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded transition-all"
+                                className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0 hover:bg-destructive/10 text-muted-foreground hover:text-destructive rounded transition-all"
                               >
                                 <X className="h-3 w-3" />
                               </Button>
@@ -909,7 +910,7 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
                         </div>
                         
                         {/* Tasks List */}
-                        <div className="max-h-60 overflow-y-auto scrollbar-thin scrollbar-thumb-white/20 dark:scrollbar-thumb-slate-700 scrollbar-track-transparent">
+                        <div className="max-h-60 overflow-y-auto custom-scrollbar">
                         {filteredDependencies.length > 0 ? (
                           <>
                         {filteredDependencies.map((task) => {
@@ -919,8 +920,8 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
                               key={task._id}
                               className={`m-2 px-4 py-3 cursor-pointer text-sm flex items-center justify-between rounded-lg transition-all duration-200 group ${
                                 isSelected
-                                  ? "bg-secondary/40 dark:bg-secondary/50 border border-secondary/50"
-                                  : "hover:bg-secondary/30 dark:hover:bg-secondary/40"
+                                  ? "bg-secondary/20 border border-secondary/50"
+                                  : "hover:bg-muted/60"
                               }`}
                               onClick={() => handleDependencySelect(task._id)}
                             >
@@ -929,18 +930,18 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                                 </svg>
                                 <div className="flex-1 min-w-0">
-                                  <span className={`font-semibold block truncate ${isSelected ? "text-secondary" : "text-gray-900 dark:text-slate-100 group-hover:text-secondary transition-colors"}`}>
+                                  <span className={`font-semibold block truncate ${isSelected ? "text-secondary" : "text-foreground group-hover:text-secondary transition-colors"}`}>
                                     {task.title}
                                   </span>
                                   {task.description && (
-                                    <span className="text-xs text-gray-500 dark:text-slate-400 line-clamp-1 mt-0.5">
+                                    <span className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
                                       {task.description}
                                     </span>
                                   )}
                                 </div>
                               </div>
                               {isSelected && (
-                                <span className="text-xs bg-secondary/30 dark:bg-secondary/20 text-secondary px-2 py-1 rounded-full font-bold flex items-center gap-1.5 ml-2 flex-shrink-0">
+                                <span className="text-xs bg-secondary/20 text-secondary px-2 py-1 rounded-full font-bold flex items-center gap-1.5 ml-2 flex-shrink-0">
                                   <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                                   </svg>
@@ -953,7 +954,7 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
                           </>
                         ) : (
                           <div className="p-4 text-center">
-                            <p className="text-sm text-gray-500 dark:text-slate-400 font-medium">
+                            <p className="text-sm text-muted-foreground font-medium">
                               {dropdownSearchQuery 
                                 ? `No tasks found matching "${dropdownSearchQuery}"`
                                 : "No tasks available for dependencies"
@@ -973,12 +974,12 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
                         return (
                           <div
                             key={taskId}
-                            className="inline-flex items-center gap-2 px-3 py-1.5 bg-secondary/20 dark:bg-secondary/10 border border-secondary/40 dark:border-secondary/30 rounded-lg text-sm"
+                            className="inline-flex items-center gap-2 px-3 py-1.5 bg-secondary/15 border border-secondary/40 rounded-lg text-sm"
                           >
                             <svg className="h-3.5 w-3.5 text-secondary flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                             </svg>
-                            <span className="font-medium text-gray-900 dark:text-slate-100 truncate max-w-[200px]">
+                            <span className="font-medium text-foreground truncate max-w-[200px]">
                               {task.title}
                             </span>
                             <Button
@@ -986,7 +987,7 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
                               variant="ghost"
                               size="sm"
                               onClick={() => handleRemoveDependency(taskId)}
-                              className="h-5 w-5 p-0 hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded transition-all flex-shrink-0"
+                              className="h-5 w-5 p-0 hover:bg-destructive/10 text-muted-foreground hover:text-destructive rounded transition-all flex-shrink-0"
                             >
                               <X className="h-3 w-3" />
                             </Button>
@@ -996,16 +997,16 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
                     </div>
                   )}
                   {Array.isArray(tasks) && tasks.length === 0 && (
-                    <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">No tasks available for dependencies</p>
+                    <p className="text-xs text-muted-foreground font-medium">No tasks available for dependencies</p>
                   )}
                   {showDependencyDropdown && filteredDependencies.length === 0 && dependencySearch && (
-                    <p className="text-xs text-gray-500 dark:text-slate-400 font-medium mt-1">No tasks found matching "{dependencySearch}"</p>
+                    <p className="text-xs text-muted-foreground font-medium mt-1">No tasks found matching "{dependencySearch}"</p>
                   )}
                 </div>
 
                 {/* Document Upload */}
                 <div className="grid gap-2.5">
-                  <Label htmlFor="document" className="text-sm font-bold text-gray-900 dark:text-slate-200 flex items-center gap-1.5">
+                  <Label htmlFor="document" className="text-sm font-bold text-foreground flex items-center gap-1.5">
                     <div className="h-1.5 w-1.5 rounded-full bg-accent shadow-lg shadow-accent/50"></div>
                     Document Attachment
                   </Label>
@@ -1015,12 +1016,12 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
                       type="file"
                       accept=".pdf,.doc,.docx,.txt,.html,.md"
                       onChange={handleFileChange}
-                      className="h-12 px-4 bg-white/10 dark:bg-slate-800/50 border-2 border-dashed border-white/30 dark:border-slate-700 hover:border-white/50 dark:hover:border-slate-600 focus:border-accent focus-visible:ring-4 focus-visible:ring-accent/30 rounded-xl transition-all duration-300 cursor-pointer text-gray-900 dark:text-slate-100 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-gradient-to-r file:from-accent file:to-accent/80 file:text-accent-foreground hover:file:from-accent/90 hover:file:to-accent/70 file:transition-all file:duration-300 backdrop-blur-xl"
+                      className="h-12 px-4 bg-background/70 border-2 border-dashed border-border/70 hover:border-border focus:border-accent focus-visible:ring-4 focus-visible:ring-accent/20 rounded-xl transition-all duration-200 cursor-pointer text-foreground file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-gradient-to-r file:from-accent file:to-accent/80 file:text-accent-foreground hover:file:from-accent/90 hover:file:to-accent/70 file:transition-all file:duration-200"
                     />
                   </div>
                   {documentFile && (
-                    <div className="mt-1 p-3 bg-accent/20 dark:bg-accent/10 border border-accent/40 dark:border-accent/30 rounded-lg backdrop-blur-xl">
-                      <p className="text-sm text-gray-900 dark:text-slate-100 flex items-center gap-2.5 font-medium">
+                    <div className="mt-1 p-3 bg-accent/15 border border-accent/30 rounded-lg">
+                      <p className="text-sm text-foreground flex items-center gap-2.5 font-medium">
                         <svg className="h-5 w-5 text-accent flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                         </svg>
@@ -1036,12 +1037,12 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
         </div>
 
         {/* Premium Footer */}
-        <DialogFooter className="px-7 py-4 border-t border-white/20 dark:border-slate-800 bg-gradient-to-t from-white/10 dark:from-slate-800/50 to-transparent backdrop-blur-xl" style={{backdropFilter: 'blur(20px)'}}>
+        <DialogFooter className="px-7 py-4 border-t border-border/60 bg-muted/30">
           <div className="flex items-center gap-3 w-full sm:w-auto sm:ml-auto">
             <Button 
               variant="outline" 
               onClick={() => onOpenChange(false)}
-              className="flex-1 sm:flex-none h-12 px-6 rounded-xl border border-white/30 dark:border-slate-700 hover:border-white/50 dark:hover:border-slate-600 hover:bg-white/10 dark:hover:bg-slate-800 transition-all duration-300 font-semibold text-gray-900 dark:text-slate-200"
+              className="flex-1 sm:flex-none h-12 px-6 rounded-xl border-border/70 hover:bg-muted/60 transition-all duration-200 font-semibold text-foreground"
             >
               <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1052,7 +1053,7 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
               type="submit" 
               onClick={handleSubmit} 
               disabled={isLoading || dateError}
-              className="flex-1 sm:flex-none h-12 px-8 rounded-xl gradient-primary text-primary-foreground hover:shadow-xl hover:shadow-primary/30 dark:hover:shadow-primary/20 transition-all duration-300 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:shadow-none font-bold"
+              className="flex-1 sm:flex-none h-12 px-8 rounded-xl gradient-primary text-primary-foreground hover:shadow-xl hover:shadow-primary/30 transition-all duration-200 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:shadow-none font-bold"
             >
               {isLoading ? (
                 <span className="flex items-center gap-2.5">

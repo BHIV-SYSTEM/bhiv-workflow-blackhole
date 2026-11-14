@@ -199,23 +199,23 @@ const SalaryDashboard = () => {
   }
 
   return (
-    <div className="space-y-6 p-6 bg-gradient-to-br from-green-50 to-blue-100 min-h-screen">
+    <div className="space-y-6 p-4 sm:p-6 min-h-screen">
       {/* Header */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Salary Management</h1>
-          <p className="text-gray-600 mt-1">
+          <h1 className="text-3xl font-bold text-foreground tracking-tight">Salary Management</h1>
+          <p className="text-muted-foreground mt-1">
             Automated salary calculation and management system
           </p>
         </div>
         
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
             <Select value={selectedMonth.toString()} onValueChange={(value) => setSelectedMonth(parseInt(value))}>
-              <SelectTrigger className="w-32 bg-white/80 backdrop-blur-sm">
+              <SelectTrigger className="w-32 bg-background/70 border-border/70">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent className="bg-white/95 backdrop-blur-sm">
+              <SelectContent className="bg-popover border-border/70">
                 {Array.from({ length: 12 }, (_, i) => (
                   <SelectItem key={i + 1} value={(i + 1).toString()}>
                     {new Date(0, i).toLocaleString('default', { month: 'long' })}
@@ -225,10 +225,10 @@ const SalaryDashboard = () => {
             </Select>
             
             <Select value={selectedYear.toString()} onValueChange={(value) => setSelectedYear(parseInt(value))}>
-              <SelectTrigger className="w-24 bg-white/80 backdrop-blur-sm">
+              <SelectTrigger className="w-24 bg-background/70 border-border/70">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent className="bg-white/95 backdrop-blur-sm">
+              <SelectContent className="bg-popover border-border/70">
                 {Array.from({ length: 5 }, (_, i) => (
                   <SelectItem key={2020 + i} value={(2020 + i).toString()}>
                     {2020 + i}
@@ -239,12 +239,12 @@ const SalaryDashboard = () => {
           </div>
           
           <div className="flex items-center gap-2">
-            <label className="text-sm font-medium">Working Days:</label>
+            <label className="text-sm font-medium text-muted-foreground">Working Days:</label>
             <Input
               type="number"
               value={workingDays}
               onChange={(e) => setWorkingDays(parseInt(e.target.value))}
-              className="w-20 bg-white/80 backdrop-blur-sm"
+              className="w-20 bg-background/70 border-border/70 tabular-nums"
               min="1"
               max="31"
             />
@@ -253,7 +253,7 @@ const SalaryDashboard = () => {
           <Button 
             onClick={calculateAllSalaries}
             disabled={calculating}
-            className="bg-gradient-to-r from-green-500 to-blue-600 hover:from-green-600 hover:to-blue-700"
+            className="bg-gradient-to-r from-emerald-500 to-blue-600 hover:from-emerald-600 hover:to-blue-700 text-white shadow-sm"
           >
             {calculating ? (
               <>
@@ -277,12 +277,12 @@ const SalaryDashboard = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
         >
-          <Card className="bg-white/80 backdrop-blur-sm border-0 shadow-lg">
+          <Card interactive className="border-border/70">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Total Employees</p>
-                  <p className="text-2xl font-bold text-gray-900">{stats.totalEmployees}</p>
+                  <p className="text-sm font-medium text-muted-foreground">Total Employees</p>
+                  <p className="text-2xl font-bold text-foreground tabular-nums">{stats.totalEmployees}</p>
                 </div>
                 <Users className="w-8 h-8 text-blue-500" />
               </div>
@@ -295,14 +295,14 @@ const SalaryDashboard = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
         >
-          <Card className="bg-white/80 backdrop-blur-sm border-0 shadow-lg">
+          <Card interactive className="border-border/70">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Total Payroll</p>
-                  <p className="text-2xl font-bold text-green-600">{formatCurrency(stats.totalPayroll)}</p>
+                  <p className="text-sm font-medium text-muted-foreground">Total Payroll</p>
+                  <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">{formatCurrency(stats.totalPayroll)}</p>
                 </div>
-                <DollarSign className="w-8 h-8 text-green-500" />
+                <DollarSign className="w-8 h-8 text-emerald-500" />
               </div>
             </CardContent>
           </Card>
@@ -313,12 +313,12 @@ const SalaryDashboard = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
         >
-          <Card className="bg-white/80 backdrop-blur-sm border-0 shadow-lg">
+          <Card interactive className="border-border/70">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Avg Salary</p>
-                  <p className="text-2xl font-bold text-blue-600">{formatCurrency(stats.avgSalary)}</p>
+                  <p className="text-sm font-medium text-muted-foreground">Avg Salary</p>
+                  <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 tabular-nums">{formatCurrency(stats.avgSalary)}</p>
                 </div>
                 <TrendingUp className="w-8 h-8 text-blue-500" />
               </div>
@@ -331,14 +331,14 @@ const SalaryDashboard = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.4 }}
         >
-          <Card className="bg-white/80 backdrop-blur-sm border-0 shadow-lg">
+          <Card interactive className="border-border/70">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Calculated</p>
-                  <p className="text-2xl font-bold text-green-600">{stats.completedCalculations}</p>
+                  <p className="text-sm font-medium text-muted-foreground">Calculated</p>
+                  <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">{stats.completedCalculations}</p>
                 </div>
-                <CheckCircle className="w-8 h-8 text-green-500" />
+                <CheckCircle className="w-8 h-8 text-emerald-500" />
               </div>
             </CardContent>
           </Card>
@@ -349,12 +349,12 @@ const SalaryDashboard = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.5 }}
         >
-          <Card className="bg-white/80 backdrop-blur-sm border-0 shadow-lg">
+          <Card interactive className="border-border/70">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Pending</p>
-                  <p className="text-2xl font-bold text-orange-600">{stats.pendingCalculations}</p>
+                  <p className="text-sm font-medium text-muted-foreground">Pending</p>
+                  <p className="text-2xl font-bold text-orange-600 dark:text-orange-400 tabular-nums">{stats.pendingCalculations}</p>
                 </div>
                 <Clock className="w-8 h-8 text-orange-500" />
               </div>
@@ -367,14 +367,14 @@ const SalaryDashboard = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.6 }}
         >
-          <Card className="bg-white/80 backdrop-blur-sm border-0 shadow-lg">
+          <Card interactive className="border-border/70">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Discrepancies</p>
-                  <p className="text-2xl font-bold text-red-600">{stats.discrepancies}</p>
+                  <p className="text-sm font-medium text-muted-foreground">Discrepancies</p>
+                  <p className="text-2xl font-bold text-destructive tabular-nums">{stats.discrepancies}</p>
                 </div>
-                <AlertTriangle className="w-8 h-8 text-red-500" />
+                <AlertTriangle className="w-8 h-8 text-destructive" />
               </div>
             </CardContent>
           </Card>
@@ -382,26 +382,26 @@ const SalaryDashboard = () => {
       </div>
 
       {/* Filters and Search */}
-      <Card className="bg-white/80 backdrop-blur-sm border-0 shadow-lg">
+      <Card className="border-border/70">
         <CardContent className="p-4">
           <div className="flex flex-col lg:flex-row gap-4">
             <div className="flex-1">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
                 <Input
                   placeholder="Search employees..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10 bg-white/50"
+                  className="pl-10 bg-background/70 border-border/70"
                 />
               </div>
             </div>
 
             <Select value={filterDepartment} onValueChange={setFilterDepartment}>
-              <SelectTrigger className="w-full lg:w-48 bg-white/50">
+              <SelectTrigger className="w-full lg:w-48 bg-background/70 border-border/70">
                 <SelectValue placeholder="Filter by department" />
               </SelectTrigger>
-              <SelectContent className="bg-white/95 backdrop-blur-sm">
+              <SelectContent className="bg-popover border-border/70">
                 <SelectItem value="all">All Departments</SelectItem>
                 <SelectItem value="Engineering">Engineering</SelectItem>
                 <SelectItem value="Marketing">Marketing</SelectItem>
@@ -411,10 +411,10 @@ const SalaryDashboard = () => {
             </Select>
 
             <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger className="w-full lg:w-48 bg-white/50">
+              <SelectTrigger className="w-full lg:w-48 bg-background/70 border-border/70">
                 <SelectValue placeholder="Filter by status" />
               </SelectTrigger>
-              <SelectContent className="bg-white/95 backdrop-blur-sm">
+              <SelectContent className="bg-popover border-border/70">
                 <SelectItem value="all">All Status</SelectItem>
                 <SelectItem value="calculated">Calculated</SelectItem>
                 <SelectItem value="pending">Pending</SelectItem>
@@ -427,7 +427,7 @@ const SalaryDashboard = () => {
 
       {/* Main Content Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3 bg-white/80 backdrop-blur-sm">
+        <TabsList className="grid w-full grid-cols-3 bg-muted/50 border border-border/60">
           <TabsTrigger value="overview" className="flex items-center gap-2">
             <BarChart3 className="w-4 h-4" />
             Overview
@@ -446,7 +446,7 @@ const SalaryDashboard = () => {
         <TabsContent value="overview" className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Salary Distribution */}
-            <Card className="bg-white/80 backdrop-blur-sm border-0 shadow-lg">
+            <Card className="border-border/70">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <PieChart className="w-5 h-5 text-blue-500" />
@@ -456,22 +456,22 @@ const SalaryDashboard = () => {
               <CardContent>
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">Calculated</span>
-                    <span className="text-sm text-gray-600">{stats.completedCalculations}/{stats.totalEmployees}</span>
+                    <span className="text-sm font-medium text-foreground">Calculated</span>
+                    <span className="text-sm text-muted-foreground tabular-nums">{stats.completedCalculations}/{stats.totalEmployees}</span>
                   </div>
                   <Progress
-                    value={(stats.completedCalculations / stats.totalEmployees) * 100}
+                    value={stats.totalEmployees > 0 ? (stats.completedCalculations / stats.totalEmployees) * 100 : 0}
                     className="h-3"
                   />
 
                   <div className="grid grid-cols-2 gap-4 mt-4">
-                    <div className="text-center p-3 bg-green-50 rounded-lg">
-                      <div className="text-2xl font-bold text-green-600">{stats.completedCalculations}</div>
-                      <div className="text-sm text-green-700">Completed</div>
+                    <div className="text-center p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
+                      <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">{stats.completedCalculations}</div>
+                      <div className="text-sm text-emerald-700 dark:text-emerald-300">Completed</div>
                     </div>
-                    <div className="text-center p-3 bg-orange-50 rounded-lg">
-                      <div className="text-2xl font-bold text-orange-600">{stats.pendingCalculations}</div>
-                      <div className="text-sm text-orange-700">Pending</div>
+                    <div className="text-center p-3 bg-orange-500/10 border border-orange-500/20 rounded-xl">
+                      <div className="text-2xl font-bold text-orange-600 dark:text-orange-400 tabular-nums">{stats.pendingCalculations}</div>
+                      <div className="text-sm text-orange-700 dark:text-orange-300">Pending</div>
                     </div>
                   </div>
                 </div>
@@ -479,15 +479,15 @@ const SalaryDashboard = () => {
             </Card>
 
             {/* Recent Calculations */}
-            <Card className="bg-white/80 backdrop-blur-sm border-0 shadow-lg">
+            <Card className="border-border/70">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Clock className="w-5 h-5 text-green-500" />
+                  <Clock className="w-5 h-5 text-emerald-500" />
                   Recent Calculations
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3 max-h-64 overflow-y-auto">
+                <div className="space-y-3 max-h-64 overflow-y-auto custom-scrollbar">
                   {filteredSalaryData
                     .filter(emp => emp.salary)
                     .sort((a, b) => new Date(b.calculatedAt) - new Date(a.calculatedAt))
@@ -498,7 +498,7 @@ const SalaryDashboard = () => {
                         initial={{ opacity: 0, x: -20 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: index * 0.1 }}
-                        className="flex items-center gap-3 p-2 bg-gray-50 rounded-lg"
+                        className="flex items-center gap-3 p-2.5 bg-muted/40 border border-border/50 rounded-xl"
                       >
                         <Avatar className="w-8 h-8">
                           <AvatarImage src={emp.user.avatar} />
@@ -507,14 +507,14 @@ const SalaryDashboard = () => {
                           </AvatarFallback>
                         </Avatar>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-900 truncate">
+                          <p className="text-sm font-medium text-foreground truncate">
                             {emp.user.name}
                           </p>
-                          <p className="text-xs text-gray-500">
+                          <p className="text-xs text-muted-foreground tabular-nums">
                             {formatCurrency(emp.salary?.netPay)}
                           </p>
                         </div>
-                        <Badge variant="outline" className="text-xs">
+                        <Badge variant="outline" className="text-xs border-border/70">
                           {getStatusText(emp)}
                         </Badge>
                       </motion.div>
@@ -541,7 +541,7 @@ const SalaryDashboard = () => {
                     transition: { type: "spring", stiffness: 400, damping: 10 }
                   }}
                 >
-                  <Card className="bg-white/80 backdrop-blur-sm border-0 shadow-lg hover:shadow-xl transition-all duration-300">
+                  <Card interactive className="border-border/70">
                     <CardContent className="p-4">
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex items-center gap-3">
@@ -552,16 +552,16 @@ const SalaryDashboard = () => {
                                 {emp.user.name.split(' ').map(n => n[0]).join('')}
                               </AvatarFallback>
                             </Avatar>
-                            <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white ${getStatusColor(emp)}`} />
+                            <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-card ${getStatusColor(emp)}`} />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <h3 className="font-semibold text-gray-900 truncate">
+                            <h3 className="font-semibold text-foreground truncate">
                               {emp.user.name}
                             </h3>
-                            <p className="text-xs text-gray-500 truncate">
+                            <p className="text-xs text-muted-foreground truncate">
                               {emp.user.email}
                             </p>
-                            <Badge variant="outline" className="text-xs mt-1">
+                            <Badge variant="outline" className="text-xs mt-1 border-border/70">
                               {emp.user.employeeType || 'Employee'}
                             </Badge>
                           </div>
@@ -572,14 +572,14 @@ const SalaryDashboard = () => {
                             variant="ghost"
                             size="sm"
                             onClick={() => calculateEmployeeSalary(emp.user.id)}
-                            className="text-blue-500 hover:text-blue-700"
+                            className="text-blue-500 hover:text-blue-600 dark:hover:text-blue-400"
                           >
                             <Calculator className="w-4 h-4" />
                           </Button>
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="text-gray-500 hover:text-gray-700"
+                            className="text-muted-foreground hover:text-foreground"
                           >
                             <Eye className="w-4 h-4" />
                           </Button>
@@ -588,11 +588,11 @@ const SalaryDashboard = () => {
 
                       <div className="space-y-2">
                         <div className="flex items-center justify-between text-sm">
-                          <span className="text-gray-600">Status:</span>
+                          <span className="text-muted-foreground">Status:</span>
                           <Badge
                             variant="outline"
                             className={`text-xs ${
-                              emp.salary ? 'border-green-500 text-green-700' : 'border-orange-500 text-orange-700'
+                              emp.salary ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'border-orange-500/40 bg-orange-500/10 text-orange-600 dark:text-orange-400'
                             }`}
                           >
                             {getStatusText(emp)}
@@ -602,23 +602,23 @@ const SalaryDashboard = () => {
                         {emp.salary && (
                           <>
                             <div className="flex items-center justify-between text-sm">
-                              <span className="text-gray-600">Base Salary:</span>
-                              <span className="font-medium">
+                              <span className="text-muted-foreground">Base Salary:</span>
+                              <span className="font-medium text-foreground tabular-nums">
                                 {formatCurrency(emp.salary.baseSalary)}
                               </span>
                             </div>
 
                             <div className="flex items-center justify-between text-sm">
-                              <span className="text-gray-600">Net Pay:</span>
-                              <span className="font-bold text-green-600">
+                              <span className="text-muted-foreground">Net Pay:</span>
+                              <span className="font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
                                 {formatCurrency(emp.salary.netPay)}
                               </span>
                             </div>
 
                             <div className="flex items-center justify-between text-sm">
-                              <span className="text-gray-600">Attendance:</span>
-                              <span className={`font-medium ${
-                                emp.attendance?.attendanceRate >= 90 ? 'text-green-600' : 'text-red-600'
+                              <span className="text-muted-foreground">Attendance:</span>
+                              <span className={`font-medium tabular-nums ${
+                                emp.attendance?.attendanceRate >= 90 ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'
                               }`}>
                                 {emp.attendance?.attendanceRate || 0}%
                               </span>
@@ -626,8 +626,8 @@ const SalaryDashboard = () => {
 
                             {emp.workingHours && (
                               <div className="flex items-center justify-between text-sm">
-                                <span className="text-gray-600">Hours:</span>
-                                <span className="font-medium">
+                                <span className="text-muted-foreground">Hours:</span>
+                                <span className="font-medium text-foreground tabular-nums">
                                   {emp.workingHours.totalHours?.toFixed(1)}h
                                 </span>
                               </div>
@@ -637,16 +637,16 @@ const SalaryDashboard = () => {
 
                         {emp.recommendations && emp.recommendations.length > 0 && (
                           <div className="mt-3">
-                            <div className="flex items-center gap-1 text-xs text-gray-600 mb-1">
+                            <div className="flex items-center gap-1 text-xs text-muted-foreground mb-1">
                               <AlertTriangle className="w-3 h-3" />
                               <span>Issues ({emp.recommendations.length})</span>
                             </div>
                             <div className="space-y-1">
                               {emp.recommendations.slice(0, 2).map((rec, i) => (
-                                <div key={i} className={`text-xs p-1 rounded ${
-                                  rec.severity === 'High' ? 'bg-red-50 text-red-700' :
-                                  rec.severity === 'Medium' ? 'bg-yellow-50 text-yellow-700' :
-                                  'bg-blue-50 text-blue-700'
+                                <div key={i} className={`text-xs p-1.5 rounded border ${
+                                  rec.severity === 'High' ? 'bg-destructive/10 text-destructive border-destructive/20' :
+                                  rec.severity === 'Medium' ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20' :
+                                  'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20'
                                 }`}>
                                   {rec.message}
                                 </div>
@@ -666,26 +666,26 @@ const SalaryDashboard = () => {
         {/* Analytics Tab */}
         <TabsContent value="analytics" className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card className="bg-white/80 backdrop-blur-sm border-0 shadow-lg">
+            <Card className="border-border/70">
               <CardHeader>
                 <CardTitle>Payroll Trends</CardTitle>
                 <CardDescription>Monthly payroll analysis</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="text-center py-8 text-gray-500">
+                <div className="text-center py-8 text-muted-foreground">
                   <BarChart3 className="w-12 h-12 mx-auto mb-2 opacity-50" />
                   <p>Payroll analytics charts will be implemented here</p>
                 </div>
               </CardContent>
             </Card>
 
-            <Card className="bg-white/80 backdrop-blur-sm border-0 shadow-lg">
+            <Card className="border-border/70">
               <CardHeader>
                 <CardTitle>Department Breakdown</CardTitle>
                 <CardDescription>Salary distribution by department</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="text-center py-8 text-gray-500">
+                <div className="text-center py-8 text-muted-foreground">
                   <PieChart className="w-12 h-12 mx-auto mb-2 opacity-50" />
                   <p>Department analytics will be implemented here</p>
                 </div>

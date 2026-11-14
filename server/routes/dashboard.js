@@ -11,6 +11,11 @@ const TaskEvaluation = require("../models/TaskEvaluation")
 const auth = require("../middleware/auth")
 const { branchFilter } = require("../middleware/branchMiddleware")
 const { formatEmployeeId } = require("../utils/employeeId")
+const {
+  COMPLETED_STATUSES,
+  isTaskCompleted,
+  aggregateTaskBuckets,
+} = require("../utils/taskStats")
 
 // Helper to get branch filter from request
 const getBranchQuery = (req) => {
@@ -34,7 +39,11 @@ router.get("/leaderboard", async (req, res) => {
       Task.aggregate([
         { $match: branchQuery },
         { $group: {
-          _id: { assignee: "$assignee", status: "$status" },
+          _id: {
+            assignee: "$assignee",
+            status: "$status",
+            isFullProgress: { $gte: [{ $ifNull: ["$progress", 0] }, 100] },
+          },
           count: { $sum: 1 },
           deps: { $sum: { $size: { $ifNull: ["$dependencies", []] } } },
         }},
@@ -48,7 +57,7 @@ router.get("/leaderboard", async (req, res) => {
       if (!uid) return;
       if (!statsMap[uid]) statsMap[uid] = { completedTasks: 0, totalTasks: 0, totalDependencies: 0 };
       statsMap[uid].totalTasks += count;
-      if (_id.status === "Completed") {
+      if (isTaskCompleted({ status: _id.status, progress: _id.isFullProgress ? 100 : 0 })) {
         statsMap[uid].completedTasks += count;
         statsMap[uid].totalDependencies += deps;
       }
@@ -80,19 +89,12 @@ router.get("/stats", async (req, res) => {
     const branchQuery = getBranchQuery(req);
     
     // Optimized: single aggregation instead of 4 separate countDocuments
-    const [taskStats] = await Task.aggregate([
-      { $match: branchQuery },
-      { $facet: {
-        total:      [{ $count: "count" }],
-        completed:  [{ $match: { status: "Completed" } }, { $count: "count" }],
-        inProgress: [{ $match: { status: "In Progress" } }, { $count: "count" }],
-        pending:    [{ $match: { status: "Pending" } }, { $count: "count" }],
-      }},
-    ])
-    const totalTasks = taskStats?.total[0]?.count || 0
-    const completedTasks = taskStats?.completed[0]?.count || 0
-    const inProgressTasks = taskStats?.inProgress[0]?.count || 0
-    const pendingTasks = taskStats?.pending[0]?.count || 0
+    const {
+      total: totalTasks,
+      completed: completedTasks,
+      inProgress: inProgressTasks,
+      pending: pendingTasks,
+    } = await aggregateTaskBuckets(branchQuery, Task)
     const testerApprovalCount = await TaskEvaluation.countDocuments({
       ...branchQuery,
       finalVerdict: { $in: ["APPROVED", "APPROVED WITH MINOR FIXES"] },
@@ -139,7 +141,7 @@ router.get("/departments", async (req, res) => {
       const key = _id.department.toString()
       if (deptMap[key]) {
         deptMap[key].total += count
-        if (_id.status === "Completed") deptMap[key].completed += count
+        if (["Completed", "Closed", "Submitted for Review"].includes(_id.status)) deptMap[key].completed += count
       }
     })
     const departmentStats = departments.map(dept => ({
@@ -173,8 +175,13 @@ router.get("/tasks-overview", async (req, res) => {
     const statusMap   = Object.fromEntries((overviewAgg.byStatus   || []).map(s => [s._id, s.count]))
     const priorityMap = Object.fromEntries((overviewAgg.byPriority || []).map(p => [p._id, p.count]))
 
+    const completedOverviewCount =
+      (statusMap["Completed"] || 0) +
+      (statusMap["Closed"] || 0) +
+      (statusMap["Submitted for Review"] || 0)
+
     const statusData = [
-      { name: "Completed",  value: statusMap["Completed"]  || 0, color: "#22c55e" },
+      { name: "Completed",  value: completedOverviewCount, color: "#22c55e" },
       { name: "In Progress",value: statusMap["In Progress"]|| 0, color: "#3b82f6" },
       { name: "Pending",    value: statusMap["Pending"]    || 0, color: "#f59e0b" },
     ]
@@ -282,28 +289,22 @@ router.get("/user-stats/:userId", async (req, res) => {
       const userObjId = new mongoose.Types.ObjectId(userId);
 
       // Optimized: aggregate + upcoming deadlines in parallel (4 queries → 2 parallel)
-      const [taskStatsAgg, upcomingDeadlines] = await Promise.all([
-        Task.aggregate([
-          { $match: { assignee: userObjId } },
-          { $facet: {
-            total:      [{ $count: "count" }],
-            completed:  [{ $match: { status: "Completed" } }, { $count: "count" }],
-            inProgress: [{ $match: { status: "In Progress" } }, { $count: "count" }],
-            pending:    [{ $match: { status: "Pending" } }, { $count: "count" }],
-          }},
-        ]),
+      const [taskBuckets, rawUpcomingDeadlines] = await Promise.all([
+        aggregateTaskBuckets({ assignee: userObjId }, Task),
         Task.find({
           assignee: userId,
           dueDate: { $gte: today, $lte: nextWeek },
-          status: { $ne: "Completed" },
-        }).sort({ dueDate: 1 }).limit(5).populate("department", "name color"),
+          status: { $nin: COMPLETED_STATUSES },
+        }).sort({ dueDate: 1 }).limit(20).populate("department", "name color").lean(),
       ]);
 
-      const _ts = taskStatsAgg[0] || {};
-      const totalTasks      = _ts.total?.[0]?.count      || 0;
-      const completedTasks  = _ts.completed?.[0]?.count  || 0;
-      const inProgressTasks = _ts.inProgress?.[0]?.count || 0;
-      const pendingTasks    = _ts.pending?.[0]?.count    || 0;
+      const {
+        total: totalTasks,
+        completed: completedTasks,
+        inProgress: inProgressTasks,
+        pending: pendingTasks,
+      } = taskBuckets;
+      const upcomingDeadlines = rawUpcomingDeadlines.filter((t) => !isTaskCompleted(t)).slice(0, 5);
       const completionRate  = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
   
       res.json({
@@ -329,7 +330,7 @@ router.get("/progress-stats", auth, async (req, res) => {
     const now = new Date();
     const upcomingTasks = await Task.find({
       dueDate: { $gt: now },
-      status: { $ne: "Completed" },
+      status: { $nin: COMPLETED_STATUSES },
     })
     .populate("assignee", "name")
     .limit(100) // ✅ Added limit
@@ -439,7 +440,7 @@ router.get("/admin-report", auth, async (req, res) => {
         { $match: branchQuery },
         { $facet: {
           total:      [{ $count: "count" }],
-          completed:  [{ $match: { status: "Completed" } }, { $count: "count" }],
+          completed:  [{ $match: { status: { $in: ["Completed", "Closed", "Submitted for Review"] } } }, { $count: "count" }],
           inProgress: [{ $match: { status: "In Progress" } }, { $count: "count" }],
           pending:    [{ $match: { status: "Pending" } }, { $count: "count" }],
         }},
@@ -468,7 +469,7 @@ router.get("/admin-report", auth, async (req, res) => {
       const key = _id.department.toString();
       if (adminDeptMap[key]) {
         adminDeptMap[key].totalTasks += count;
-        if (_id.status === "Completed")  adminDeptMap[key].completedTasks  += count;
+        if (["Completed", "Closed", "Submitted for Review"].includes(_id.status))  adminDeptMap[key].completedTasks  += count;
         else if (_id.status === "In Progress") adminDeptMap[key].inProgressTasks += count;
         else if (_id.status === "Pending")     adminDeptMap[key].pendingTasks     += count;
       }

@@ -6,6 +6,7 @@ const TaskSubmission = require("../models/TaskSubmission")
 const auth = require("../middleware/auth")
 const adminAuth = require("../middleware/adminAuth")
 const auditLogService = require('../services/auditLogService');
+const { computeUserTaskCounts } = require("../utils/taskStats");
 
 // Helper to get branch filter from request
 const getBranchQuery = (req) => {
@@ -50,8 +51,9 @@ router.get("/search", async (req, res) => {
       users.map(async (user) => {
         try {
           const tasks = await Task.find({ assignee: user._id });
-          const completedTasks = tasks.filter(task => task.status === 'Completed').length;
-          const activeTasks = tasks.filter(task => task.status !== 'Completed').length;
+          const taskBuckets = computeUserTaskCounts(tasks);
+          const completedTasks = taskBuckets.completed;
+          const activeTasks = taskBuckets.inProgress + taskBuckets.pending;
           const completionRate = tasks.length > 0 ? Math.round((completedTasks / tasks.length) * 100) : 0;
 
           return {
@@ -341,12 +343,7 @@ router.get("/:id/daily-summary", auth, async (req, res) => {
     }
 
     // Task counts
-    const taskCounts = {
-      total: userTasks.length,
-      completed: userTasks.filter(t => ['Completed', 'Submitted for Review', 'Closed'].includes(t.status)).length,
-      inProgress: userTasks.filter(t => t.status === 'In Progress').length,
-      pending: userTasks.filter(t => ['Pending', 'Pending Validation', 'Approved'].includes(t.status)).length
-    };
+    const taskCounts = computeUserTaskCounts(userTasks);
 
     // Determine current Aim, Blocker, Achievement
     const latestProgress = todayProgresses[0] || {};

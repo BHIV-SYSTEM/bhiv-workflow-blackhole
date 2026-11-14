@@ -1391,6 +1391,9 @@ export function ReportsGenerator({
                       <th className="p-3.5">Employee ID</th>
                       <th className="p-3.5">Name</th>
                       <th className="p-3.5 text-center">Date</th>
+                      <th className="p-3.5">AIM</th>
+                      <th className="p-3.5">Blocker</th>
+                      <th className="p-3.5">Key Achievements</th>
                       <th className="p-3.5 text-center">Activities</th>
                       <th className="p-3.5 text-center">Productivity</th>
                       <th className="p-3.5 text-center">Active Hour</th>
@@ -1403,7 +1406,7 @@ export function ReportsGenerator({
                   <tbody className="divide-y divide-border">
                     {filteredTeamMembers.length === 0 ? (
                       <tr>
-                        <td colSpan={10} className="p-8 text-center text-muted-foreground">
+                        <td colSpan={13} className="p-8 text-center text-muted-foreground">
                           No active team members match "{teamTableSearch}"
                         </td>
                       </tr>
@@ -1437,6 +1440,21 @@ export function ReportsGenerator({
                             {/* 2. Date */}
                             <td className="p-3.5 text-center font-bold text-muted-foreground">
                               {dateText}
+                            </td>
+
+                            {/* 2a. AIM */}
+                            <td className="p-3.5 text-xs text-foreground max-w-[200px]">
+                              <div className="line-clamp-2" title={m.aim || '-'}>{m.aim || '-'}</div>
+                            </td>
+
+                            {/* 2b. Blocker */}
+                            <td className="p-3.5 text-xs text-amber-400/90 max-w-[170px]">
+                              <div className="line-clamp-2" title={m.blocker || '-'}>{m.blocker || '-'}</div>
+                            </td>
+
+                            {/* 2c. Key Achievements */}
+                            <td className="p-3.5 text-xs text-emerald-400/90 max-w-[200px]">
+                              <div className="line-clamp-2" title={m.achievement || '-'}>{m.achievement || '-'}</div>
                             </td>
 
                             {/* 3. Activities */}

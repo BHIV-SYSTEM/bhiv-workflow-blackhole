@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card"
 import { Button } from "../components/ui/button"
+import { getTaskStatusBadgeClass } from "../lib/taskStatus"
 import {
   Loader2,
   CheckCircle,
@@ -25,6 +26,8 @@ import {
   CheckCircle2,
   Zap,
   Sparkles,
+  ListTodo,
+  Send,
 } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import { useToast } from "../hooks/use-toast"
@@ -245,18 +248,7 @@ function UserDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id])
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case "Completed":
-        return "bg-green-500/10 text-green-500 hover:bg-green-500/20 dark:bg-green-500/20 dark:text-green-400 dark:hover:bg-green-500/30"
-      case "In Progress":
-        return "bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 dark:bg-blue-500/20 dark:text-blue-400 dark:hover:bg-blue-500/30"
-      case "Pending":
-        return "bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 dark:bg-amber-500/20 dark:text-amber-400 dark:hover:bg-amber-500/30"
-      default:
-        return "bg-gray-500/10 text-gray-500 hover:bg-gray-500/20 dark:bg-gray-500/20 dark:text-gray-400 dark:hover:bg-gray-500/30"
-    }
-  }
+  const getStatusColor = (status) => getTaskStatusBadgeClass(status)
 
   const getPriorityColor = (priority) => {
     switch (priority) {
@@ -324,21 +316,21 @@ function UserDashboard() {
     >
       <div className="space-y-6 pb-8">
         {/* Enhanced Header Section */}
-        <div className="relative overflow-hidden rounded-lg p-6">
-          <div className="relative flex items-center justify-between">
+        <div className="relative overflow-hidden rounded-2xl border border-border/60 bg-card/70 p-5 sm:p-6 shadow-sm">
+          <div className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="space-y-1">
-              <h1 className="text-4xl font-bold tracking-tight text-foreground">
+              <h1 className="text-2xl sm:text-3xl font-heading font-bold tracking-tight text-foreground">
                 My Dashboard
               </h1>
-              <p className="text-muted-foreground text-lg">
-                Welcome back, <span className="font-semibold text-foreground">{user?.name || "User"}</span>! 👋 Here's your task overview.
+              <p className="text-muted-foreground text-sm sm:text-base">
+                Welcome back, <span className="font-semibold text-foreground">{user?.name || "User"}</span>. Here's your task overview.
               </p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 self-start sm:self-auto">
               <Button 
                 variant="outline" 
                 onClick={fetchUserDashboardData}
-                className="relative overflow-hidden group hover:border-primary/50 transition-all"
+                className="relative overflow-hidden group hover:border-primary/50 transition-all rounded-xl"
               >
                 <RefreshCw className="mr-2 h-4 w-4 group-hover:rotate-180 transition-transform duration-500" />
                 Refresh
@@ -348,15 +340,15 @@ function UserDashboard() {
         </div>
 
         {hasNewReviews && (
-          <Alert className="bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
+          <Alert className="bg-blue-500/10 border-blue-500/30">
             <Bell className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-            <AlertTitle className="text-blue-800 dark:text-blue-300">New submission reviews</AlertTitle>
-            <AlertDescription className="text-blue-700 dark:text-blue-400">
+            <AlertTitle className="text-blue-700 dark:text-blue-300">New submission reviews</AlertTitle>
+            <AlertDescription className="text-blue-700/90 dark:text-blue-300/90">
               You have {recentReviews.length} recently reviewed submission{recentReviews.length !== 1 ? "s" : ""}. Check
               the "My Submissions" tab for details.
               <Button
                 variant="link"
-                className="text-blue-700 dark:text-blue-400 p-0 h-auto font-normal ml-2"
+                className="text-blue-700 dark:text-blue-300 p-0 h-auto font-semibold ml-2"
                 onClick={markReviewsAsSeen}
               >
                 Mark as read
@@ -365,66 +357,64 @@ function UserDashboard() {
           </Alert>
         )}
 
-
-
         {/* Enhanced Stats Cards */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
           {/* My Tasks Stat */}
-          <div className="relative overflow-hidden group hover:shadow-lg transition-all duration-300 border-l-4 border-l-blue-500 rounded-lg border bg-card text-card-foreground shadow-sm">
-            <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-            <div className="flex flex-row items-center justify-between space-y-0 p-6 pb-2">
+          <div className="interactive-card relative overflow-hidden group border-l-4 border-l-blue-500 rounded-2xl border border-border/60 bg-card text-card-foreground shadow-sm">
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
+            <div className="flex flex-row items-center justify-between space-y-0 p-5 pb-2">
               <h3 className="text-sm font-medium text-muted-foreground">My Tasks</h3>
-              <div className="h-10 w-10 rounded-full bg-blue-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+              <div className="h-10 w-10 rounded-xl bg-blue-500/10 flex items-center justify-center group-hover:scale-105 transition-transform">
                 <Clock className="h-5 w-5 text-blue-500" />
               </div>
             </div>
-            <div className="p-6 pt-0">
-              <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">{userStats.totalTasks}</div>
+            <div className="p-5 pt-0">
+              <div className="text-3xl font-bold tabular-nums text-blue-600 dark:text-blue-400">{userStats.totalTasks}</div>
               <p className="text-xs text-muted-foreground mt-1">Total assigned tasks</p>
             </div>
           </div>
 
           {/* Completed Stat */}
-          <div className="relative overflow-hidden group hover:shadow-lg transition-all duration-300 border-l-4 border-l-green-500 rounded-lg border bg-card text-card-foreground shadow-sm">
-            <div className="absolute inset-0 bg-gradient-to-br from-green-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-            <div className="flex flex-row items-center justify-between space-y-0 p-6 pb-2">
+          <div className="interactive-card relative overflow-hidden group border-l-4 border-l-green-500 rounded-2xl border border-border/60 bg-card text-card-foreground shadow-sm">
+            <div className="absolute inset-0 bg-gradient-to-br from-green-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
+            <div className="flex flex-row items-center justify-between space-y-0 p-5 pb-2">
               <h3 className="text-sm font-medium text-muted-foreground">Completed</h3>
-              <div className="h-10 w-10 rounded-full bg-green-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+              <div className="h-10 w-10 rounded-xl bg-green-500/10 flex items-center justify-center group-hover:scale-105 transition-transform">
                 <CheckCircle className="h-5 w-5 text-green-500" />
               </div>
             </div>
-            <div className="p-6 pt-0">
-              <div className="text-3xl font-bold text-green-600 dark:text-green-400">{userStats.completedTasks}</div>
+            <div className="p-5 pt-0">
+              <div className="text-3xl font-bold tabular-nums text-green-600 dark:text-green-400">{userStats.completedTasks}</div>
               <p className="text-xs text-muted-foreground mt-1">{userStats.completionRate}% completion rate</p>
             </div>
           </div>
 
           {/* In Progress Stat */}
-          <div className="relative overflow-hidden group hover:shadow-lg transition-all duration-300 border-l-4 border-l-amber-500 rounded-lg border bg-card text-card-foreground shadow-sm">
-            <div className="absolute inset-0 bg-gradient-to-br from-amber-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-            <div className="flex flex-row items-center justify-between space-y-0 p-6 pb-2">
+          <div className="interactive-card relative overflow-hidden group border-l-4 border-l-amber-500 rounded-2xl border border-border/60 bg-card text-card-foreground shadow-sm">
+            <div className="absolute inset-0 bg-gradient-to-br from-amber-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
+            <div className="flex flex-row items-center justify-between space-y-0 p-5 pb-2">
               <h3 className="text-sm font-medium text-muted-foreground">In Progress</h3>
-              <div className="h-10 w-10 rounded-full bg-amber-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+              <div className="h-10 w-10 rounded-xl bg-amber-500/10 flex items-center justify-center group-hover:scale-105 transition-transform">
                 <Clock className="h-5 w-5 text-amber-500" />
               </div>
             </div>
-            <div className="p-6 pt-0">
-              <div className="text-3xl font-bold text-amber-600 dark:text-amber-400">{userStats.inProgressTasks}</div>
+            <div className="p-5 pt-0">
+              <div className="text-3xl font-bold tabular-nums text-amber-600 dark:text-amber-400">{userStats.inProgressTasks}</div>
               <p className="text-xs text-muted-foreground mt-1">Tasks currently in progress</p>
             </div>
           </div>
 
           {/* Pending Stat */}
-          <div className="relative overflow-hidden group hover:shadow-lg transition-all duration-300 border-l-4 border-l-red-500 rounded-lg border bg-card text-card-foreground shadow-sm">
-            <div className="absolute inset-0 bg-gradient-to-br from-red-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-            <div className="flex flex-row items-center justify-between space-y-0 p-6 pb-2">
+          <div className="interactive-card relative overflow-hidden group border-l-4 border-l-red-500 rounded-2xl border border-border/60 bg-card text-card-foreground shadow-sm">
+            <div className="absolute inset-0 bg-gradient-to-br from-red-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
+            <div className="flex flex-row items-center justify-between space-y-0 p-5 pb-2">
               <h3 className="text-sm font-medium text-muted-foreground">Pending</h3>
-              <div className="h-10 w-10 rounded-full bg-red-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+              <div className="h-10 w-10 rounded-xl bg-red-500/10 flex items-center justify-center group-hover:scale-105 transition-transform">
                 <AlertCircle className="h-5 w-5 text-red-500" />
               </div>
             </div>
-            <div className="p-6 pt-0">
-              <div className="text-3xl font-bold text-red-600 dark:text-red-400">{userStats.pendingTasks}</div>
+            <div className="p-5 pt-0">
+              <div className="text-3xl font-bold tabular-nums text-red-600 dark:text-red-400">{userStats.pendingTasks}</div>
               <p className="text-xs text-muted-foreground mt-1">Tasks waiting to be started</p>
             </div>
           </div>
@@ -450,21 +440,24 @@ function UserDashboard() {
               <CardContent>
                 {userStats.upcomingDeadlines && userStats.upcomingDeadlines.length > 0 ? (
                   <div className="space-y-4">
-                    {userStats.upcomingDeadlines.map((task) => (
-                      <div
-                        key={task.id}
-                        className="flex items-center justify-between p-3 rounded-md bg-muted/50 cursor-pointer hover:bg-muted"
-                        onClick={() => navigate(`/tasks/${task.id}`)}
-                      >
-                        <div>
-                          <p className="font-medium text-sm">{task.title}</p>
-                          <p className="text-xs text-muted-foreground">
-                            Due: {formatDate(task.dueDate)}
-                          </p>
+                    {userStats.upcomingDeadlines.map((task) => {
+                      const taskId = task._id || task.id
+                      return (
+                        <div
+                          key={taskId || task.title}
+                          className="flex items-center justify-between gap-3 p-3.5 rounded-xl border border-border/50 bg-muted/40 cursor-pointer hover:bg-muted/70 hover:border-primary/35 transition-all"
+                          onClick={() => taskId && navigate(`/tasks/${taskId}`)}
+                        >
+                          <div className="min-w-0">
+                            <p className="font-medium text-sm truncate">{task.title}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              Due: {formatDate(task.dueDate)}
+                            </p>
+                          </div>
+                          <Badge className={getPriorityColor(task.priority)}>{task.priority}</Badge>
                         </div>
-                        <Badge className={getPriorityColor(task.priority)}>{task.priority}</Badge>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 ) : (
                   <div className="text-center py-8 text-muted-foreground">
@@ -595,18 +588,20 @@ function UserDashboard() {
         </div>
 
         <Tabs defaultValue="tasks" className="w-full">
-          <TabsList className="grid w-full max-w-2xl grid-cols-2 mx-auto h-auto items-stretch p-1.5 gap-2 rounded-xl bg-card/90 border border-border shadow-md">
+          <TabsList className="grid w-full max-w-2xl grid-cols-2 mx-auto h-auto items-stretch p-1.5 gap-2 rounded-2xl bg-card/90 border border-border/60 shadow-sm">
             <TabsTrigger 
               value="tasks" 
-              className="flex items-center justify-center gap-2 w-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md transition-all duration-200 font-semibold text-sm sm:text-base py-2.5 px-4 rounded-lg"
+              className="flex items-center justify-center gap-2 w-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md transition-all duration-200 font-semibold text-sm sm:text-base py-2.5 px-4 rounded-xl"
             >
-              📋 My Tasks
+              <ListTodo className="h-4 w-4" />
+              My Tasks
             </TabsTrigger>
             <TabsTrigger 
               value="submissions" 
-              className="relative flex items-center justify-center gap-2 w-full data-[state=active]:bg-accent data-[state=active]:text-accent-foreground data-[state=active]:shadow-md transition-all duration-200 font-semibold text-sm sm:text-base py-2.5 px-4 rounded-lg"
+              className="relative flex items-center justify-center gap-2 w-full data-[state=active]:bg-accent data-[state=active]:text-accent-foreground data-[state=active]:shadow-md transition-all duration-200 font-semibold text-sm sm:text-base py-2.5 px-4 rounded-xl"
             >
-              📤 My Submissions
+              <Send className="h-4 w-4" />
+              My Submissions
               {hasNewReviews && (
                 <span className="absolute top-2 right-2 flex h-2.5 w-2.5">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
@@ -767,17 +762,17 @@ function UserDashboard() {
         </Tabs>
 
          <Dialog open={isSubmissionDetailsOpen} onOpenChange={setIsSubmissionDetailsOpen}>
-          <DialogContent className="sm:max-w-[700px] h-[85vh] flex flex-col bg-white dark:bg-gray-950 p-0">
-            <DialogHeader className="flex-shrink-0 border-b pb-4 bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-900 px-6 pt-6 border-gray-200 dark:border-gray-800">
+          <DialogContent className="sm:max-w-[700px] h-[85vh] flex flex-col bg-card text-card-foreground border-border/70 p-0 overflow-hidden">
+            <DialogHeader className="flex-shrink-0 border-b border-border/60 pb-4 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-6 pt-6">
               <div className="flex items-start justify-between">
                 <div className="space-y-1 flex-1">
-                  <DialogTitle className="text-2xl font-bold flex items-center gap-2 text-gray-900 dark:text-white">
-                    <div className="h-10 w-10 rounded-lg bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center ring-1 ring-blue-200 dark:ring-blue-800">
-                      <Github className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                  <DialogTitle className="text-xl sm:text-2xl font-heading font-bold flex items-center gap-2.5 text-foreground">
+                    <div className="h-10 w-10 rounded-xl bg-primary/15 flex items-center justify-center ring-1 ring-primary/25">
+                      <Github className="h-5 w-5 text-primary" />
                     </div>
                     Submission Details
                   </DialogTitle>
-                  <DialogDescription className="text-base text-gray-600 dark:text-gray-400">
+                  <DialogDescription className="text-sm sm:text-base text-muted-foreground">
                     {selectedSubmission?.task?.title || "Task Submission"}
                   </DialogDescription>
                 </div>
@@ -790,28 +785,28 @@ function UserDashboard() {
             </DialogHeader>
 
             {selectedSubmission && (
-              <div className="flex-1 overflow-y-auto min-h-0 px-6 py-6 space-y-5 scroll-smooth scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-700 scrollbar-track-transparent hover:scrollbar-thumb-gray-400 dark:hover:scrollbar-thumb-gray-600">
+              <div className="flex-1 overflow-y-auto min-h-0 px-6 py-6 space-y-5 scroll-smooth scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
                 {/* Submission Info Card */}
-                <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-lg border border-gray-200 dark:border-gray-800 shadow-sm">
+                <div className="bg-muted/40 p-4 rounded-xl border border-border/60">
                   <div className="flex items-center justify-between flex-wrap gap-3">
-                    <div className="flex items-center gap-2 text-sm">
-                      <div className="h-8 w-8 rounded-lg bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center">
-                        <Calendar className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                    <div className="flex items-center gap-2.5 text-sm">
+                      <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                        <Calendar className="h-4 w-4 text-primary" />
                       </div>
                       <div>
-                        <span className="font-medium text-gray-600 dark:text-gray-400 text-xs">Submitted on</span>
-                        <p className="text-gray-900 dark:text-white font-semibold">
+                        <span className="font-medium text-muted-foreground text-xs">Submitted on</span>
+                        <p className="text-foreground font-semibold">
                           {formatDate(selectedSubmission.createdAt)}
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 text-sm">
-                      <div className="h-8 w-8 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center">
-                        <Clock className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                    <div className="flex items-center gap-2.5 text-sm">
+                      <div className="h-8 w-8 rounded-lg bg-accent/10 flex items-center justify-center">
+                        <Clock className="h-4 w-4 text-accent" />
                       </div>
                       <div>
-                        <span className="font-medium text-gray-600 dark:text-gray-400 text-xs">Time</span>
-                        <p className="text-gray-900 dark:text-white font-semibold">
+                        <span className="font-medium text-muted-foreground text-xs">Time</span>
+                        <p className="text-foreground font-semibold">
                           {formatTime(selectedSubmission.createdAt)}
                         </p>
                       </div>
@@ -820,21 +815,21 @@ function UserDashboard() {
                 </div>
 
                 {/* GitHub Repository */}
-                <div className="space-y-3">
+                <div className="space-y-2.5">
                   <div className="flex items-center gap-2">
-                    <div className="h-7 w-7 rounded-lg bg-green-100 dark:bg-green-900/40 flex items-center justify-center ring-1 ring-green-300 dark:ring-green-800">
-                      <Github className="h-4 w-4 text-green-700 dark:text-green-400" />
+                    <div className="h-7 w-7 rounded-lg bg-emerald-500/15 flex items-center justify-center ring-1 ring-emerald-500/30">
+                      <Github className="h-4 w-4 text-emerald-500" />
                     </div>
-                    <p className="font-semibold text-sm text-gray-900 dark:text-white">GitHub Repository</p>
+                    <p className="font-semibold text-sm text-foreground">GitHub Repository</p>
                   </div>
-                  <div className="group relative overflow-hidden rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/30 p-4 hover:shadow-lg transition-all hover:border-green-300 dark:hover:border-green-700">
+                  <div className="group relative overflow-hidden rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 hover:shadow-md transition-all hover:border-emerald-500/50">
                     <div className="flex items-center gap-3">
-                      <Github className="h-5 w-5 text-green-700 dark:text-green-400 flex-shrink-0" />
+                      <Github className="h-5 w-5 text-emerald-500 flex-shrink-0" />
                       <a
                         href={selectedSubmission.githubLink}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-blue-700 dark:text-blue-300 hover:text-blue-800 dark:hover:text-blue-200 hover:underline flex items-center gap-2 font-medium break-all transition-colors"
+                        className="text-primary hover:underline flex items-center gap-2 font-medium break-all transition-colors"
                       >
                         <span className="flex-1">{selectedSubmission.githubLink}</span>
                         <ExternalLink className="h-4 w-4 flex-shrink-0 opacity-70 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
@@ -845,21 +840,21 @@ function UserDashboard() {
 
                 {/* Additional Links */}
                 {selectedSubmission.additionalLinks && (
-                  <div className="space-y-3">
+                  <div className="space-y-2.5">
                     <div className="flex items-center gap-2">
-                      <div className="h-7 w-7 rounded-lg bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center ring-1 ring-blue-300 dark:ring-blue-800">
-                        <ExternalLink className="h-4 w-4 text-blue-700 dark:text-blue-400" />
+                      <div className="h-7 w-7 rounded-lg bg-blue-500/15 flex items-center justify-center ring-1 ring-blue-500/30">
+                        <ExternalLink className="h-4 w-4 text-blue-500" />
                       </div>
-                      <p className="font-semibold text-sm text-gray-900 dark:text-white">Additional Resources</p>
+                      <p className="font-semibold text-sm text-foreground">Additional Resources</p>
                     </div>
-                    <div className="group relative overflow-hidden rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 p-4 hover:shadow-lg transition-all hover:border-blue-300 dark:hover:border-blue-700">
+                    <div className="group relative overflow-hidden rounded-xl border border-blue-500/30 bg-blue-500/10 p-4 hover:shadow-md transition-all hover:border-blue-500/50">
                       <div className="flex items-center gap-3">
-                        <ExternalLink className="h-5 w-5 text-blue-700 dark:text-blue-400 flex-shrink-0" />
+                        <ExternalLink className="h-5 w-5 text-blue-500 flex-shrink-0" />
                         <a
                           href={selectedSubmission.additionalLinks}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-blue-700 dark:text-blue-300 hover:text-blue-800 dark:hover:text-blue-200 hover:underline flex items-center gap-2 font-medium break-all transition-colors"
+                          className="text-blue-500 hover:underline flex items-center gap-2 font-medium break-all transition-colors"
                         >
                           <span className="flex-1">{selectedSubmission.additionalLinks}</span>
                           <ExternalLink className="h-4 w-4 flex-shrink-0 opacity-70 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
@@ -871,41 +866,41 @@ function UserDashboard() {
 
                 {/* Your Notes */}
                 {selectedSubmission.notes && (
-                  <div className="space-y-3">
+                  <div className="space-y-2.5">
                     <div className="flex items-center gap-2">
-                      <div className="h-7 w-7 rounded-lg bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center ring-1 ring-amber-300 dark:ring-amber-800">
-                        <AlertCircle className="h-4 w-4 text-amber-700 dark:text-amber-400" />
+                      <div className="h-7 w-7 rounded-lg bg-amber-500/15 flex items-center justify-center ring-1 ring-amber-500/30">
+                        <AlertCircle className="h-4 w-4 text-amber-500" />
                       </div>
-                      <p className="font-semibold text-sm text-gray-900 dark:text-white">Your Notes</p>
+                      <p className="font-semibold text-sm text-foreground">Your Notes</p>
                     </div>
-                    <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-4 shadow-sm">
-                      <p className="text-sm whitespace-pre-line leading-relaxed text-gray-800 dark:text-gray-200">{selectedSubmission.notes}</p>
+                    <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+                      <p className="text-sm whitespace-pre-line leading-relaxed text-foreground/90">{selectedSubmission.notes}</p>
                     </div>
                   </div>
                 )}
 
                 {/* AI Score */}
                 {selectedSubmission.parikshakReview?.score != null && selectedSubmission.status !== "Pending" && (
-                  <div className="space-y-3">
+                  <div className="space-y-2.5">
                     <div className="flex items-center gap-2">
-                      <div className="h-7 w-7 rounded-lg bg-purple-100 dark:bg-purple-900/40 flex items-center justify-center ring-1 ring-purple-300 dark:ring-purple-800">
-                        <Bot className="h-4 w-4 text-purple-700 dark:text-purple-400" />
+                      <div className="h-7 w-7 rounded-lg bg-purple-500/15 flex items-center justify-center ring-1 ring-purple-500/30">
+                        <Bot className="h-4 w-4 text-purple-500" />
                       </div>
-                      <p className="font-semibold text-sm text-gray-900 dark:text-white">AI Review Score</p>
+                      <p className="font-semibold text-sm text-foreground">AI Review Score</p>
                     </div>
-                    <div className="rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/30 p-4 shadow-sm space-y-3">
+                    <div className="rounded-xl border border-purple-500/30 bg-purple-500/10 p-4 space-y-3">
                       <div className="flex items-center justify-between">
-                        <span className={`text-3xl font-bold ${
-                          selectedSubmission.parikshakReview.score >= 85 ? "text-green-600 dark:text-green-400"
-                          : selectedSubmission.parikshakReview.score >= 60 ? "text-amber-600 dark:text-amber-400"
-                          : "text-red-600 dark:text-red-400"
+                        <span className={`text-3xl font-bold tabular-nums ${
+                          selectedSubmission.parikshakReview.score >= 85 ? "text-emerald-500"
+                          : selectedSubmission.parikshakReview.score >= 60 ? "text-amber-500"
+                          : "text-destructive"
                         }`}>
-                          {selectedSubmission.parikshakReview.score}<span className="text-base font-normal text-gray-500">/100</span>
+                          {selectedSubmission.parikshakReview.score}<span className="text-base font-normal text-muted-foreground">/100</span>
                         </span>
-                        <span className={`text-xs font-bold px-2 py-1 rounded-full ${
-                          selectedSubmission.parikshakReview.status === "PASS" ? "bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300"
-                          : selectedSubmission.parikshakReview.status === "PARTIAL" ? "bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300"
-                          : "bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300"
+                        <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
+                          selectedSubmission.parikshakReview.status === "PASS" ? "bg-emerald-500/15 text-emerald-500 border border-emerald-500/30"
+                          : selectedSubmission.parikshakReview.status === "PARTIAL" ? "bg-amber-500/15 text-amber-500 border border-amber-500/30"
+                          : "bg-destructive/15 text-destructive border border-destructive/30"
                         }`}>
                           {selectedSubmission.parikshakReview.status}
                         </span>
@@ -917,15 +912,15 @@ function UserDashboard() {
 
                 {/* AI Review Comments */}
                 {selectedSubmission.parikshakReview?.review && selectedSubmission.status !== "Pending" && (
-                  <div className="space-y-3">
+                  <div className="space-y-2.5">
                     <div className="flex items-center gap-2">
-                      <div className="h-7 w-7 rounded-lg bg-purple-100 dark:bg-purple-900/40 flex items-center justify-center ring-1 ring-purple-300 dark:ring-purple-800">
-                        <Bot className="h-4 w-4 text-purple-700 dark:text-purple-400" />
+                      <div className="h-7 w-7 rounded-lg bg-purple-500/15 flex items-center justify-center ring-1 ring-purple-500/30">
+                        <Bot className="h-4 w-4 text-purple-500" />
                       </div>
-                      <p className="font-semibold text-sm text-gray-900 dark:text-white">AI Review Comments</p>
+                      <p className="font-semibold text-sm text-foreground">AI Review Comments</p>
                     </div>
-                    <div className="rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/30 p-4 shadow-sm">
-                      <p className="text-sm whitespace-pre-line leading-relaxed text-gray-800 dark:text-gray-200">
+                    <div className="rounded-xl border border-purple-500/30 bg-purple-500/10 p-4">
+                      <p className="text-sm whitespace-pre-line leading-relaxed text-foreground/90">
                         {selectedSubmission.parikshakReview.review}
                       </p>
                     </div>
@@ -934,35 +929,35 @@ function UserDashboard() {
 
                 {/* Reviewer Feedback / Pending Status (only if distinct from AI review) */}
                 {selectedSubmission.feedback && selectedSubmission.feedback !== selectedSubmission.parikshakReview?.review && (
-                  <div className="space-y-3">
+                  <div className="space-y-2.5">
                     <div className="flex items-center gap-2">
                       <div className={`h-7 w-7 rounded-lg flex items-center justify-center ring-1 ${
                         selectedSubmission.status === "Approved"
-                          ? "bg-green-100 dark:bg-green-900/40 ring-green-300 dark:ring-green-800"
+                          ? "bg-emerald-500/15 ring-emerald-500/30"
                           : selectedSubmission.status === "Pending"
-                          ? "bg-amber-100 dark:bg-amber-900/40 ring-amber-300 dark:ring-amber-800"
-                          : "bg-red-100 dark:bg-red-900/40 ring-red-300 dark:ring-red-800"
+                          ? "bg-amber-500/15 ring-amber-500/30"
+                          : "bg-destructive/15 ring-destructive/30"
                       }`}>
                         {selectedSubmission.status === "Approved" ? (
-                          <ThumbsUp className="h-4 w-4 text-green-700 dark:text-green-400" />
+                          <ThumbsUp className="h-4 w-4 text-emerald-500" />
                         ) : selectedSubmission.status === "Pending" ? (
-                          <Clock className="h-4 w-4 text-amber-700 dark:text-amber-400" />
+                          <Clock className="h-4 w-4 text-amber-500" />
                         ) : (
-                          <ThumbsDown className="h-4 w-4 text-red-700 dark:text-red-400" />
+                          <ThumbsDown className="h-4 w-4 text-destructive" />
                         )}
                       </div>
-                      <p className="font-semibold text-sm text-gray-900 dark:text-white">
+                      <p className="font-semibold text-sm text-foreground">
                         {selectedSubmission.status === "Pending" ? "Review Status" : "Reviewer Feedback"}
                       </p>
                     </div>
-                    <div className={`rounded-lg border p-4 shadow-md ${
+                    <div className={`rounded-xl border p-4 ${
                       selectedSubmission.status === "Approved"
-                        ? "bg-green-50 dark:bg-green-950/30 border-green-300 dark:border-green-800"
+                        ? "bg-emerald-500/10 border-emerald-500/30"
                         : selectedSubmission.status === "Pending"
-                        ? "bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-800"
-                        : "bg-red-50 dark:bg-red-950/30 border-red-300 dark:border-red-800"
+                        ? "bg-amber-500/10 border-amber-500/30"
+                        : "bg-destructive/10 border-destructive/30"
                     }`}>
-                      <p className="text-sm whitespace-pre-line leading-relaxed text-gray-800 dark:text-gray-200">
+                      <p className="text-sm whitespace-pre-line leading-relaxed text-foreground/90">
                         {selectedSubmission.feedback || (selectedSubmission.status === "Pending" ? "Awaiting review by an administrator." : "No feedback provided.")}
                       </p>
                     </div>
@@ -971,11 +966,11 @@ function UserDashboard() {
               </div>
             )}
 
-            <DialogFooter className="flex-shrink-0 border-t border-gray-200 dark:border-gray-800 pt-4 gap-2 sm:gap-2 bg-gray-50 dark:bg-gray-900 px-6 pb-6">
+            <DialogFooter className="flex-shrink-0 border-t border-border/60 pt-4 gap-2 bg-muted/30 px-6 pb-6">
               <Button 
                 variant="outline" 
                 onClick={() => setIsSubmissionDetailsOpen(false)}
-                className="flex-1 sm:flex-none hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-900 dark:text-white border-gray-300 dark:border-gray-700"
+                className="flex-1 sm:flex-none rounded-xl"
               >
                 Close
               </Button>
@@ -986,7 +981,7 @@ function UserDashboard() {
                     setIsSubmissionDetailsOpen(false)
                     navigate(`/tasks/${selectedSubmission.task._id}`)
                   }}
-                  className="flex-1 sm:flex-none hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:text-blue-700 dark:hover:text-blue-300 border-blue-300 dark:border-blue-700 text-gray-900 dark:text-white"
+                  className="flex-1 sm:flex-none rounded-xl hover:border-primary/40 hover:text-primary"
                 >
                   <Clock className="h-4 w-4 mr-2" />
                   View Task
@@ -998,7 +993,7 @@ function UserDashboard() {
                     setIsSubmissionDetailsOpen(false)
                     setIsRevisionDialogOpen(true)
                   }}
-                  className="flex-1 sm:flex-none bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white shadow-md hover:shadow-lg transition-all"
+                  className="flex-1 sm:flex-none gradient-primary text-primary-foreground shadow-sm hover:opacity-95 transition-all rounded-xl"
                 >
                   <RefreshCw className="h-4 w-4 mr-2" />
                   Submit Revision

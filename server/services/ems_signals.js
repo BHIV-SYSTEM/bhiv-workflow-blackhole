@@ -623,11 +623,11 @@ class EMSSignalLayer extends EventEmitter {
   calculateRiskLevel(employee) {
     let riskScore = 0;
 
-    if (!employee.currentState.window_focus) riskScore += 30;
-    if (employee.currentState.browser_hidden) riskScore += 40;
-    if (!employee.currentState.task_tab_active) riskScore += 50;
-    if (employee.currentState.idle_time >= this.config.idleThreshold) riskScore += 20;
-    if (employee.currentState.app_switch_count > 10) riskScore += 15;
+    // Switching out of the Infiverse web tab to work in an IDE/editor/browser is normal work,
+    // not a productivity drop. Score risk on actual sustained idle or heavy context thrashing.
+    if (employee.currentState.idle_time >= this.config.idleThreshold) riskScore += 35;
+    if (employee.currentState.idle_time >= this.config.idleThreshold * 2.5) riskScore += 35;
+    if (employee.currentState.app_switch_count > 15) riskScore += 25;
 
     if (riskScore >= 70) return 'high';
     if (riskScore >= 40) return 'medium';
@@ -654,17 +654,20 @@ class EMSSignalLayer extends EventEmitter {
           continue;
         }
 
-        // If inactive for > 15 minutes, skip periodic snapshot flush (user is away)
-        if (now - lastActivity > 15 * 60 * 1000) {
-          continue;
-        }
-
         const intervalKeystrokes = employee.realtime.intervalKeystrokes || 0;
         const intervalMouseEvents = employee.realtime.intervalMouseEvents || 0;
 
         // Reset interval counters immediately for the next 30-second window
         employee.realtime.intervalKeystrokes = 0;
         employee.realtime.intervalMouseEvents = 0;
+
+        // Skip writing empty 30s browser background rows after 3m of browser inactivity or while tab is unfocused.
+        // Prevents background dashboard tabs from spamming Desktop Workspace 0-score idle samples.
+        if (intervalKeystrokes === 0 && intervalMouseEvents === 0) {
+          if (now - lastActivity > 3 * 60 * 1000 || !employee.currentState.window_focus) {
+            continue;
+          }
+        }
 
         // Calculate accurate mouse activity score (0-100%) for this 30s window:
         // A baseline of 20 mouse movement/click events in 30 seconds = 100% active mouse engagement.
@@ -718,8 +721,10 @@ class EMSSignalLayer extends EventEmitter {
           });
         }
 
-        // 3. Fire MonitoringAlert on high risk or idle/distracted
-        if (riskLevel === 'high' || indicator === 'idle' || indicator === 'distracted') {
+        // 3. Fire MonitoringAlert only on sustained high risk or true idle, throttled to once per 15 mins per user
+        const lastAlertAt = employee.realtime.lastAlertAt || 0;
+        if ((riskLevel === 'high' || indicator === 'idle') && now - lastAlertAt >= 15 * 60 * 1000) {
+          employee.realtime.lastAlertAt = now;
           const alertType = indicator === 'idle' ? 'idle_timeout' : 'productivity_drop';
           const severity = riskLevel === 'high' ? 'high' : 'medium';
           await MonitoringAlert.createAlert({

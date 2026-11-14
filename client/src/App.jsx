@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense, lazy } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { ThemeProvider } from "./components/theme-provider";
 import { SidebarProvider } from "./components/ui/sidebar";
@@ -9,33 +9,7 @@ import { AuthProvider, useAuth } from "./context/auth-context";
 import { BranchProvider } from "./context/branch-context";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { DashboardLayout } from "./layouts/DashboardLayout";
-import Dashboard from "./pages/Dashboard";
-import Tasks from "./pages/Tasks";
-import Dependencies from "./pages/Dependencies";
-import Departments from "./pages/Departments";
-import Optimization from "./pages/Optimization";
-import Settings from "./pages/Settings";
-import Login from "./pages/Login";
-import Register from "./pages/Register";
-import AuthCallback from "./pages/AuthCallback";
-import ForgotPassword from "./pages/ForgotPassword";
-import ResetPassword from "./pages/ResetPassword";
-import AdminDashboard from "./pages/AdminDashboard";
-import UserDashboard from "./pages/UserDashboard";
-import TaskDetails from "./pages/TaskDetails";
-import CompletedTasks from "./pages/CompletedTasks";
-import Progress from "./pages/Progress";
-import TodaysAim from "./pages/TodaysAim";
-import AllAims from "./pages/AllAims";
 import { DashboardProvider } from "./context/DashboardContext";
-import Leaderboard from "./pages/Leaderboard";
-import { EmployeeMonitoring } from "./pages/EmployeeMonitoring";
-import AttendanceDashboard from "./pages/AttendanceDashboard";
-import AttendanceDataManagement from "./components/admin/AttendanceDataManagement";
-import AdminAimsView from "./components/admin/AdminAimsView";
-import UserManagement from "./pages/UserManagement";
-import LeaveRequest from "./pages/LeaveRequest";
-import KnowledgeAdmin from "./pages/admin/KnowledgeAdmin";
 import ErrorBoundary from "./components/ErrorBoundary";
 import axios from "axios";
 import { API_URL } from "./lib/api";
@@ -43,20 +17,68 @@ import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { Toaster as HotToaster } from "react-hot-toast";
 import { usePushNotifications } from "./hooks/usePushNotifications";
-import EMSDashboard from "./pages/EMSDashboard";
-import ProcurementDashboard from "./pages/ProcurementDashboard";
-import EnhancedSalaryDashboard from "./pages/EnhancedSalaryDashboard";
-import BiometricAttendanceDashboard from "./pages/BiometricAttendanceDashboard";
-import NewSalaryManagement from "./pages/NewSalaryManagement";
-import BranchManagement from "./pages/BranchManagement";
-import ProjectManagement from "./pages/ProjectManagement";
-import ProjectDetails from "./pages/ProjectDetails";
-import MyTasks from "./pages/MyTasks";
-import TesterDashboard from "./pages/TesterDashboard";
-import TesterTasks from "./pages/TesterTasks";
-import TesterEvaluation from "./pages/TesterEvaluation";
-import TesterAlerts from "./pages/TesterAlerts";
-import TestedTasks from "./pages/TestedTasks";
+
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Tasks = lazy(() => import("./pages/Tasks"));
+const Dependencies = lazy(() => import("./pages/Dependencies"));
+const Departments = lazy(() => import("./pages/Departments"));
+const Optimization = lazy(() => import("./pages/Optimization"));
+const Settings = lazy(() => import("./pages/Settings"));
+const Login = lazy(() => import("./pages/Login"));
+const Register = lazy(() => import("./pages/Register"));
+const AuthCallback = lazy(() => import("./pages/AuthCallback"));
+const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
+const ResetPassword = lazy(() => import("./pages/ResetPassword"));
+const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
+const UserDashboard = lazy(() => import("./pages/UserDashboard"));
+const TaskDetails = lazy(() => import("./pages/TaskDetails"));
+const CompletedTasks = lazy(() => import("./pages/CompletedTasks"));
+const Progress = lazy(() => import("./pages/Progress"));
+const TodaysAim = lazy(() => import("./pages/TodaysAim"));
+const AllAims = lazy(() => import("./pages/AllAims"));
+const Leaderboard = lazy(() => import("./pages/Leaderboard"));
+const EmployeeMonitoring = lazy(() =>
+  import("./pages/EmployeeMonitoring").then((m) => ({ default: m.EmployeeMonitoring }))
+);
+const AttendanceDashboard = lazy(() => import("./pages/AttendanceDashboard"));
+const AdminAimsView = lazy(() => import("./components/admin/AdminAimsView"));
+const UserManagement = lazy(() => import("./pages/UserManagement"));
+const LeaveRequest = lazy(() => import("./pages/LeaveRequest"));
+const KnowledgeAdmin = lazy(() => import("./pages/admin/KnowledgeAdmin"));
+const EMSDashboard = lazy(() => import("./pages/EMSDashboard"));
+const ProcurementDashboard = lazy(() => import("./pages/ProcurementDashboard"));
+const EnhancedSalaryDashboard = lazy(() => import("./pages/EnhancedSalaryDashboard"));
+const BiometricAttendanceDashboard = lazy(() => import("./pages/BiometricAttendanceDashboard"));
+const NewSalaryManagement = lazy(() => import("./pages/NewSalaryManagement"));
+const BranchManagement = lazy(() => import("./pages/BranchManagement"));
+const ProjectManagement = lazy(() => import("./pages/ProjectManagement"));
+const ProjectDetails = lazy(() => import("./pages/ProjectDetails"));
+const MyTasks = lazy(() => import("./pages/MyTasks"));
+const TesterDashboard = lazy(() => import("./pages/TesterDashboard"));
+const TesterTasks = lazy(() => import("./pages/TesterTasks"));
+const TesterEvaluation = lazy(() => import("./pages/TesterEvaluation"));
+const TesterAlerts = lazy(() => import("./pages/TesterAlerts"));
+const TestedTasks = lazy(() => import("./pages/TestedTasks"));
+
+function PageLoader() {
+  return (
+    <div className="w-full space-y-6 py-4 animate-pulse">
+      <div className="flex items-center justify-between gap-4">
+        <div className="space-y-2">
+          <div className="h-7 w-48 rounded-lg bg-muted/70" />
+          <div className="h-4 w-72 rounded-md bg-muted/50" />
+        </div>
+        <div className="h-9 w-28 rounded-xl bg-muted/60" />
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {[0, 1, 2, 3].map((item) => (
+          <div key={item} className="h-28 rounded-2xl bg-card/70 border border-border/50" />
+        ))}
+      </div>
+      <div className="h-72 rounded-2xl bg-card/70 border border-border/50" />
+    </div>
+  );
+}
 
 function AppContent() {
   const { user, loading } = useAuth();
@@ -160,7 +182,8 @@ function AppContent() {
             hasNewReviews={hasNewReviews}
             markReviewsAsSeen={markReviewsAsSeen}
           >
-            <Routes>
+            <Suspense fallback={<PageLoader />}>
+              <Routes>
               {/* Public Routes */}
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
@@ -483,7 +506,8 @@ function AppContent() {
                   }
                 />
               </Route>
-            </Routes>
+              </Routes>
+            </Suspense>
             <Toaster />
           </DashboardProvider>
         </SidebarProvider>

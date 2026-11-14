@@ -7,6 +7,8 @@ const Department = require('../models/Department');
 const EmployeeActivity = require('../models/EmployeeActivity');
 const ScreenCapture = require('../models/ScreenCapture');
 const MonitoringAlert = require('../models/MonitoringAlert');
+const Aim = require('../models/Aim');
+const Progress = require('../models/Progress');
 const WebsiteWhitelist = require('../models/WebsiteWhitelist');
 const activityTracker = require('../services/activityTracker');
 const screenCaptureService = require('../services/screenCapture');
@@ -968,7 +970,7 @@ router.get('/reports/:employeeId', async (req, res) => {
     const end = endDate ? parseLocalDateParam(endDate) : new Date();
     end.setHours(23, 59, 59, 999);
 
-    const [activities, screenshots, alerts, sessionsMap] = await Promise.all([
+    const [activities, screenshots, alerts, sessionsMap, aims, progresses] = await Promise.all([
       EmployeeActivity.find({
         employee: employeeId,
         timestamp: { $gte: start, $lte: end }
@@ -981,8 +983,22 @@ router.get('/reports/:employeeId', async (req, res) => {
         employee: employeeId,
         timestamp: { $gte: start, $lte: end }
       }).select('timestamp alert_type severity description').lean(),
-      resolveSessionsMap([employeeId], start, end)
+      resolveSessionsMap([employeeId], start, end),
+      Aim.find({
+        user: employeeId,
+        date: { $gte: start, $lte: end }
+      }).select('date aims blockers achievements').sort({ date: -1 }).lean(),
+      Progress.find({
+        user: employeeId,
+        date: { $gte: start, $lte: end }
+      }).select('date notes blockers achievements').sort({ date: -1 }).lean()
     ]);
+
+    const { aimMap, blockerMap, achievementMap } = reportGenerator.collectGoalFieldsMap(
+      aims,
+      progresses,
+      (docItem) => getLocalDateKey(docItem.date)
+    );
 
     const activitiesByDate = {};
     activities.forEach(act => {
@@ -1004,6 +1020,9 @@ router.get('/reports/:employeeId', async (req, res) => {
       const mNum = Math.floor((metrics.activeSeconds % 3600) / 60);
       dailyMetricsMap[dateKey] = {
         date: dateKey,
+        aim: aimMap.get(dateKey) || '-',
+        blocker: blockerMap.get(dateKey) || '-',
+        achievement: achievementMap.get(dateKey) || '-',
         totalActivities: metrics.logCount,
         avgProductivityScore: metrics.avgProductivityScore,
         activeHours: Math.round((metrics.activeSeconds / 3600) * 10) / 10,
@@ -1290,15 +1309,58 @@ router.get('/work-session/:employeeId', async (req, res) => {
     const { employeeId } = req.params;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
 
     const WorkSession = require('../models/WorkSession');
-    const session = await WorkSession.findOne({
+    const Attendance = require('../models/Attendance');
+
+    let session = await WorkSession.findOne({
       employee: employeeId,
       date: {
         $gte: today,
-        $lt: new Date(today.getTime() + 24 * 60 * 60 * 1000)
+        $lt: tomorrow
       }
     }).populate('employee', 'name email');
+
+    // Guard against split-brain when Attendance was restarted/started directly without touching WorkSession
+    const openAttendance = await Attendance.findOne({
+      user: employeeId,
+      date: { $gte: today, $lt: tomorrow },
+      startDayTime: { $exists: true, $ne: null },
+      $or: [{ endDayTime: { $exists: false } }, { endDayTime: null }]
+    }).sort({ startDayTime: -1 });
+
+    if (openAttendance) {
+      if (!session) {
+        session = new WorkSession({
+          employee: employeeId,
+          date: today,
+          startTime: openAttendance.startDayTime,
+          startDayTime: openAttendance.startDayTime,
+          targetHours: 8,
+          status: 'active',
+          totalBreakTime: 0,
+          workLocation: openAttendance.workPattern === 'Remote' ? 'Home' : 'Office'
+        });
+        await session.save();
+        await session.populate('employee', 'name email');
+      } else if (
+        session.status === 'completed' ||
+        (openAttendance.startDayTime && session.startTime &&
+          new Date(openAttendance.startDayTime).getTime() > new Date(session.startTime).getTime() + 60000)
+      ) {
+        session.startTime = openAttendance.startDayTime;
+        session.startDayTime = openAttendance.startDayTime;
+        session.endTime = undefined;
+        session.endDayTime = undefined;
+        session.pausedAt = undefined;
+        session.resumedAt = undefined;
+        session.totalBreakTime = 0;
+        session.status = 'active';
+        await session.save();
+        await session.populate('employee', 'name email');
+      }
+    }
 
     res.json(session);
   } catch (error) {
@@ -1313,6 +1375,7 @@ router.post('/work-session/start', async (req, res) => {
     const { employeeId, startTime, targetHours = 8 } = req.body;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const resolvedStart = startTime ? new Date(startTime) : new Date();
 
     const WorkSession = require('../models/WorkSession');
 
@@ -1327,8 +1390,10 @@ router.post('/work-session/start', async (req, res) => {
 
     if (session) {
       // Reset session fields for a fresh start today
-      session.startTime = startTime;
+      session.startTime = resolvedStart;
+      session.startDayTime = resolvedStart;
       session.endTime = undefined;
+      session.endDayTime = undefined;
       session.pausedAt = undefined;
       session.resumedAt = undefined;
       session.totalBreakTime = 0;
@@ -1339,9 +1404,11 @@ router.post('/work-session/start', async (req, res) => {
       session = new WorkSession({
         employee: employeeId,
         date: today,
-        startTime,
+        startTime: resolvedStart,
+        startDayTime: resolvedStart,
         targetHours,
-        status: 'active'
+        status: 'active',
+        totalBreakTime: 0
       });
     }
 
@@ -1362,24 +1429,49 @@ router.post('/work-session/pause', async (req, res) => {
     const { employeeId } = req.body;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
 
     const WorkSession = require('../models/WorkSession');
-    const session = await WorkSession.findOne({
+    let session = await WorkSession.findOne({
       employee: employeeId,
       date: {
         $gte: today,
-        $lt: new Date(today.getTime() + 24 * 60 * 60 * 1000)
+        $lt: tomorrow
       }
     });
 
-    if (session) {
-      session.status = 'paused';
-      session.pausedAt = new Date();
-      await session.save();
-      console.log(`⏸️ Work session paused for employee ${employeeId}`);
+    if (!session) {
+      const Attendance = require('../models/Attendance');
+      const openAttendance = await Attendance.findOne({
+        user: employeeId,
+        date: { $gte: today, $lt: tomorrow },
+        startDayTime: { $exists: true, $ne: null },
+        $or: [{ endDayTime: { $exists: false } }, { endDayTime: null }]
+      }).sort({ startDayTime: -1 });
+
+      if (openAttendance) {
+        session = new WorkSession({
+          employee: employeeId,
+          date: today,
+          startTime: openAttendance.startDayTime,
+          startDayTime: openAttendance.startDayTime,
+          targetHours: 8,
+          status: 'active',
+          totalBreakTime: 0
+        });
+      }
     }
 
-    res.json({ success: true });
+    if (session) {
+      if (session.status !== 'paused') {
+        session.status = 'paused';
+        session.pausedAt = new Date();
+        await session.save();
+        console.log(`⏸️ Work session paused for employee ${employeeId}`);
+      }
+    }
+
+    res.json({ success: true, session });
   } catch (error) {
     console.error('Error pausing work session:', error);
     res.status(500).json({ error: 'Failed to pause work session' });
@@ -1392,23 +1484,28 @@ router.post('/work-session/resume', async (req, res) => {
     const { employeeId } = req.body;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
 
     const WorkSession = require('../models/WorkSession');
     const session = await WorkSession.findOne({
       employee: employeeId,
       date: {
         $gte: today,
-        $lt: new Date(today.getTime() + 24 * 60 * 60 * 1000)
+        $lt: tomorrow
       }
     });
 
     if (session) {
-      // Calculate break time from last pause and accumulate it
+      // Calculate break time from last pause and accumulate it (ignoring stale/pre-start pauses)
       if (session.pausedAt) {
         const now = new Date();
-        const breakMinutes = Math.floor((now - session.pausedAt) / (1000 * 60));
-        if (!isNaN(breakMinutes) && breakMinutes > 0) {
-          session.totalBreakTime = (session.totalBreakTime || 0) + breakMinutes;
+        const pauseStart = new Date(session.pausedAt);
+        const sessionStart = session.startTime ? new Date(session.startTime) : null;
+        if (!sessionStart || pauseStart >= sessionStart) {
+          const breakMinutes = Math.floor((now - pauseStart) / (1000 * 60));
+          if (!isNaN(breakMinutes) && breakMinutes > 0) {
+            session.totalBreakTime = (session.totalBreakTime || 0) + breakMinutes;
+          }
         }
       }
 
@@ -1419,7 +1516,7 @@ router.post('/work-session/resume', async (req, res) => {
       console.log(`▶️ Work session resumed for employee ${employeeId}`);
     }
 
-    res.json({ success: true });
+    res.json({ success: true, session });
   } catch (error) {
     console.error('Error resuming work session:', error);
     res.status(500).json({ error: 'Failed to resume work session' });

@@ -376,22 +376,44 @@ router.get("/", auth, async (req, res) => {
 // Get aggregate stats for all completed tasks (used by CompletedTasksStats)
 router.get("/stats", auth, async (req, res) => {
   try {
+    const TaskSubmission = require("../models/TaskSubmission")
     const branchQuery = getBranchQuery(req)
-    const matchFilter = { ...branchQuery, status: { $in: ["Completed", "Closed", "Submitted for Review"] } }
 
-    // One aggregation: join submissions, group by status, group by department
+    // Rejected tasks move back to In Progress; include any task whose latest submission is Rejected
+    const rejectedSubDocs = await TaskSubmission.aggregate([
+      { $sort: { createdAt: -1 } },
+      { $group: { _id: "$task", latestStatus: { $first: "$status" } } },
+      { $match: { latestStatus: "Rejected" } },
+    ])
+    const rejectedTaskIds = rejectedSubDocs.map(r => r._id).filter(Boolean)
+
+    const matchFilter = {
+      ...branchQuery,
+      $or: [
+        { status: { $in: ["Completed", "Closed", "Submitted for Review"] } },
+        ...(rejectedTaskIds.length > 0 ? [{ _id: { $in: rejectedTaskIds } }] : []),
+      ],
+    }
+
+    const latestSubLookup = {
+      $lookup: {
+        from: "tasksubmissions",
+        localField: "_id",
+        foreignField: "task",
+        pipeline: [
+          { $sort: { createdAt: -1 } },
+          { $limit: 1 },
+          { $project: { status: 1 } }
+        ],
+        as: "sub"
+      }
+    }
+
+    // One aggregation: join latest submission, group by status, group by department
     const [statusResult, deptResult] = await Promise.all([
       Task.aggregate([
         { $match: matchFilter },
-        {
-          $lookup: {
-            from: "tasksubmissions",
-            localField: "_id",
-            foreignField: "task",
-            pipeline: [{ $project: { status: 1 } }],
-            as: "sub"
-          }
-        },
+        latestSubLookup,
         {
           $group: {
             _id: {
@@ -407,15 +429,7 @@ router.get("/stats", auth, async (req, res) => {
       ]),
       Task.aggregate([
         { $match: matchFilter },
-        {
-          $lookup: {
-            from: "tasksubmissions",
-            localField: "_id",
-            foreignField: "task",
-            pipeline: [{ $project: { status: 1 } }],
-            as: "sub"
-          }
-        },
+        latestSubLookup,
         {
           $group: {
             _id: "$department",
@@ -720,6 +734,12 @@ router.post("/register-intake", auth, async (req, res) => {
 
     const taskDescription = description || originalInstruction;
 
+    const initialProgress = Math.max(0, Math.min(100, Number(req.body.progress) || 0));
+    const requestedStatus = req.body.status || (sourceType.toUpperCase() === "WHATSAPP" ? "In Progress" : "Pending Validation");
+    const initialStatus = initialProgress >= 100 && !["Closed", "Submitted for Review"].includes(requestedStatus)
+      ? "Completed"
+      : requestedStatus;
+
     const newTask = new Task({
       title: taskTitle,
       description: taskDescription,
@@ -736,13 +756,14 @@ router.post("/register-intake", auth, async (req, res) => {
         "Deliver verified REVIEW_PACKET.md and CODE_PACKET.md"
       ],
       intakeAttachments: Array.isArray(attachments) ? attachments : [],
-      status: req.body.status || (sourceType.toUpperCase() === "WHATSAPP" ? "In Progress" : "Pending Validation"),
+      status: initialStatus,
       priority: priority || "Medium",
       department: targetDept,
       assignee: candidateUser._id,
       dueDate: dueDate ? new Date(dueDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       branch: branch || req.headers["x-branch"] || candidateUser.branch || "blackhole_mumbai",
-      progress: 0,
+      progress: initialProgress,
+      closedAt: initialStatus === "Completed" ? new Date() : undefined,
       notes: `[TASK INTAKE REGISTERED]\nSource: ${sourceType}\nOriginator: ${originatingPerson || 'Lead'}\nReference: ${sourceReference || 'N/A'}\nUnique ID: ${generatedTaskId}\nRegistered At: ${new Date().toISOString()}`
     });
 
@@ -896,8 +917,17 @@ router.put("/:id", auth, async (req, res) => {
       updates.submittedForReviewAt = new Date()
     }
 
+    if (updates.progress !== undefined && Number(updates.progress) >= 100 && !updates.status) {
+      if (!["Closed", "Submitted for Review"].includes(existing.status)) {
+        updates.status = "Completed"
+      }
+    }
+
     if (updates.status === "Closed" || updates.status === "Completed") {
-      updates.closedAt = new Date()
+      updates.closedAt = existing.closedAt || new Date()
+      if (updates.progress === undefined) {
+        updates.progress = 100
+      }
     }
 
     if (updates.assignee) {

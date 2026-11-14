@@ -846,11 +846,12 @@ const AdminDashboard = () => {
                 return (
                   <Card
                     key={department._id}
-                    className="border-l-4 border-transparent hover:border-primary bg-gradient-to-br from-card to-card/50 shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
+                    interactive
+                    className="border-l-4 border-l-primary/70 border border-border/60 shadow-sm hover:shadow-lg transition-all duration-200"
                   >
                         <CardHeader className="pb-2">
                           <div className="flex justify-between items-center">
-                            <CardTitle className="text-lg text-slate-800 dark:text-slate-100 flex items-center">
+                            <CardTitle className="text-lg text-foreground flex items-center">
                               <div className={`w-3 h-3 rounded-full mr-2 ${department.color}`}></div>
                               {department.name}
                             </CardTitle>
@@ -860,17 +861,17 @@ const AdminDashboard = () => {
                           )}
                         </CardHeader>
                         <CardContent className="pb-4">
-                          <div className="grid grid-cols-2 gap-4 mb-4">
-                            <div className="bg-slate-50 dark:bg-slate-700/50 p-3 rounded-lg">
-                              <p className="text-xs text-slate-500 dark:text-slate-400">Lead</p>
-                              <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 flex items-center">
+                          <div className="grid grid-cols-2 gap-3 mb-4">
+                            <div className="bg-muted/40 border border-border/50 p-3 rounded-xl">
+                              <p className="text-xs text-muted-foreground">Lead</p>
+                              <p className="text-sm font-semibold text-foreground flex items-center mt-0.5">
                                 <UserCog className="inline h-4 w-4 mr-1 text-blue-500" />
                                 {departmentLead ? departmentLead.name : "Not assigned"}
                               </p>
                             </div>
-                            <div className="bg-slate-50 dark:bg-slate-700/50 p-3 rounded-lg">
-                              <p className="text-xs text-slate-500 dark:text-slate-400">Members</p>
-                              <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 flex items-center">
+                            <div className="bg-muted/40 border border-border/50 p-3 rounded-xl">
+                              <p className="text-xs text-muted-foreground">Members</p>
+                              <p className="text-sm font-semibold text-foreground tabular-nums flex items-center mt-0.5">
                                 <Users className="inline h-4 w-4 mr-1 text-emerald-500" />
                                 {membersCount}
                               </p>
@@ -884,7 +885,7 @@ const AdminDashboard = () => {
                                 setEditingDepartment(department)
                                 setShowDepartmentDialog(true)
                               }}
-                              className="flex-1 border-blue-200 text-blue-700 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-900/30"
+                              className="flex-1 border-blue-500/30 text-blue-600 dark:text-blue-400 hover:bg-blue-500/10 rounded-xl"
                             >
                               <Edit className="mr-1 h-4 w-4" /> Edit
                             </Button>
@@ -892,7 +893,7 @@ const AdminDashboard = () => {
                               size="sm"
                               variant="outline"
                               onClick={() => handleDeleteDepartment(department._id)}
-                              className="flex-1 border-red-200 text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/30"
+                              className="flex-1 border-destructive/30 text-destructive hover:bg-destructive/10 rounded-xl"
                             >
                               <Trash2 className="mr-1 h-4 w-4" /> Delete
                             </Button>
@@ -906,15 +907,15 @@ const AdminDashboard = () => {
             </TabsContent>
 
             <TabsContent value="users" className="mt-0">
-              <Card className="border-none shadow-lg bg-white dark:bg-slate-800">
+              <Card className="border border-border/60 shadow-sm">
                 <CardHeader>
-                  <CardTitle className="text-xl text-slate-800 dark:text-slate-100">Add New User</CardTitle>
+                  <CardTitle className="text-xl text-foreground">Add New User</CardTitle>
                   <CardDescription>Create a new user in the system</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-2">
-                      <Label className="text-sm font-medium text-slate-500 dark:text-slate-400">Full Name</Label>
+                      <Label className="text-sm font-medium text-muted-foreground">Full Name</Label>
                       <Input
                         type="text"
                         placeholder="Enter full name"
@@ -924,7 +925,7 @@ const AdminDashboard = () => {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-sm font-medium text-slate-500 dark:text-slate-400">Email</Label>
+                      <Label className="text-sm font-medium text-muted-foreground">Email</Label>
                       <Input
                         type="email"
                         placeholder="Enter email address"
@@ -934,7 +935,7 @@ const AdminDashboard = () => {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-sm font-medium text-slate-500 dark:text-slate-400">Password</Label>
+                      <Label className="text-sm font-medium text-muted-foreground">Password</Label>
                       <Input
                         type="password"
                         placeholder="Enter password"
@@ -944,7 +945,7 @@ const AdminDashboard = () => {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-sm font-medium text-slate-500 dark:text-slate-400">Role</Label>
+                      <Label className="text-sm font-medium text-muted-foreground">Role</Label>
                       <Select value={newUser.role} onValueChange={(value) => setNewUser({ ...newUser, role: value })}>
                         <SelectTrigger>
                           <SelectValue placeholder="Select a role" />
@@ -959,7 +960,7 @@ const AdminDashboard = () => {
                       </Select>
                     </div>
                     <div className="space-y-2 md:col-span-2">
-                      <Label className="text-sm font-medium text-slate-500 dark:text-slate-400">Department</Label>
+                      <Label className="text-sm font-medium text-muted-foreground">Department</Label>
                       <Select
                         value={newUser.department}
                         onValueChange={(value) => setNewUser({ ...newUser, department: value })}
@@ -1040,9 +1041,9 @@ const AdminDashboard = () => {
               </Card>
 
               <div className="mt-8">
-                <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-4">Manage Users</h3>
-                <Card className="border-none shadow-lg bg-white dark:bg-slate-800">
-                  <CardContent className="p-0">
+                <h3 className="text-xl font-heading font-bold text-foreground mb-4">Manage Users</h3>
+                <Card className="border border-border/60 shadow-sm overflow-hidden">
+                  <CardContent className="p-0 overflow-x-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -1061,7 +1062,7 @@ const AdminDashboard = () => {
                           return (
                             <TableRow key={user._id}>
                               <TableCell>
-                                <Avatar className="h-8 w-8 bg-slate-100 dark:bg-slate-700">
+                                <Avatar className="h-8 w-8 bg-muted">
                                   {user.avatar ? (
                                     <AvatarImage src={user.avatar || "/placeholder.svg"} alt={user.name} />
                                   ) : (
@@ -1079,7 +1080,7 @@ const AdminDashboard = () => {
                                     {userDepartment.name}
                                   </div>
                                 ) : (
-                                  <span className="text-slate-400">Not assigned</span>
+                                  <span className="text-muted-foreground">Not assigned</span>
                                 )}
                               </TableCell>
                               <TableCell className="text-right">
@@ -1277,19 +1278,19 @@ const AdminDashboard = () => {
       {isAdminOrManager && (
       <Dialog open={showPasswordDialog} onOpenChange={setShowPasswordDialog}>
         <DialogContent className="sm:max-w-[500px] border-l-4 border-l-amber-500 bg-gradient-to-br from-amber-50 to-white dark:from-gray-800 dark:to-gray-900">
-          <DialogHeader className="pb-4 border-b border-amber-100 dark:border-amber-900">
+          <DialogHeader className="pb-4 border-b border-amber-500/20">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-lg">
                 <KeyRound className="h-6 w-6 text-white" />
               </div>
               <div>
-                <DialogTitle className="text-2xl font-bold bg-gradient-to-r from-amber-600 to-amber-800 dark:from-amber-400 dark:to-amber-600 bg-clip-text text-transparent">
+                <DialogTitle className="text-2xl font-bold text-amber-500">
                   Update Password
                 </DialogTitle>
-                <DialogDescription className="text-gray-600 dark:text-gray-400 mt-1">
+                <DialogDescription className="text-muted-foreground mt-1">
                   {selectedUserForPassword && (
                     <>
-                      Change password for <strong className="text-gray-900 dark:text-gray-100">{selectedUserForPassword.name}</strong>
+                      Change password for <strong className="text-foreground">{selectedUserForPassword.name}</strong>
                     </>
                   )}
                 </DialogDescription>
@@ -1300,7 +1301,7 @@ const AdminDashboard = () => {
           <div className="grid gap-6 py-6">
             {/* New Password Field */}
             <div className="space-y-2">
-              <Label htmlFor="new-password" className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
+              <Label htmlFor="new-password" className="text-sm font-semibold text-foreground flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-amber-500"></div>
                 New Password
               </Label>
@@ -1311,25 +1312,25 @@ const AdminDashboard = () => {
                   placeholder="Enter new password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  className="pr-12 h-12 border-2 border-gray-200 dark:border-gray-700 focus:border-amber-500 dark:focus:border-amber-500 bg-white dark:bg-gray-800 transition-all duration-200"
+                  className="pr-12 h-12 border border-border/70 focus:border-amber-500 bg-background transition-all duration-200"
                 />
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="absolute right-1 top-1 h-10 w-10 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-all duration-200"
+                  className="absolute right-1 top-1 h-10 w-10 rounded-lg hover:bg-amber-500/15 transition-all duration-200"
                   onClick={() => setShowNewPassword(!showNewPassword)}
                 >
                   {showNewPassword ? (
-                    <EyeOff className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                    <EyeOff className="h-5 w-5 text-amber-500" />
                   ) : (
-                    <Eye className="h-5 w-5 text-gray-400 hover:text-amber-600 dark:text-gray-500 dark:hover:text-amber-400 transition-colors" />
+                    <Eye className="h-5 w-5 text-muted-foreground hover:text-amber-500 transition-colors" />
                   )}
                 </Button>
               </div>
               <div className="flex items-center gap-2 text-xs">
-                <div className={`w-1.5 h-1.5 rounded-full ${newPassword.length >= 6 ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'}`}></div>
-                <p className={`${newPassword.length >= 6 ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'}`}>
+                <div className={`w-1.5 h-1.5 rounded-full ${newPassword.length >= 6 ? 'bg-emerald-500' : 'bg-muted-foreground/40'}`}></div>
+                <p className={`${newPassword.length >= 6 ? 'text-emerald-500' : 'text-muted-foreground'}`}>
                   Must be at least 6 characters
                 </p>
               </div>
@@ -1337,7 +1338,7 @@ const AdminDashboard = () => {
 
             {/* Confirm Password Field */}
             <div className="space-y-2">
-              <Label htmlFor="confirm-password" className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
+              <Label htmlFor="confirm-password" className="text-sm font-semibold text-foreground flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-amber-500"></div>
                 Confirm New Password
               </Label>
@@ -1348,26 +1349,26 @@ const AdminDashboard = () => {
                   placeholder="Re-enter new password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="pr-12 h-12 border-2 border-gray-200 dark:border-gray-700 focus:border-amber-500 dark:focus:border-amber-500 bg-white dark:bg-gray-800 transition-all duration-200"
+                  className="pr-12 h-12 border border-border/70 focus:border-amber-500 bg-background transition-all duration-200"
                 />
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="absolute right-1 top-1 h-10 w-10 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-all duration-200"
+                  className="absolute right-1 top-1 h-10 w-10 rounded-lg hover:bg-amber-500/15 transition-all duration-200"
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                 >
                   {showConfirmPassword ? (
-                    <EyeOff className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                    <EyeOff className="h-5 w-5 text-amber-500" />
                   ) : (
-                    <Eye className="h-5 w-5 text-gray-400 hover:text-amber-600 dark:text-gray-500 dark:hover:text-amber-400 transition-colors" />
+                    <Eye className="h-5 w-5 text-muted-foreground hover:text-amber-500 transition-colors" />
                   )}
                 </Button>
               </div>
               {confirmPassword && (
                 <div className="flex items-center gap-2 text-xs">
-                  <div className={`w-1.5 h-1.5 rounded-full ${newPassword === confirmPassword && confirmPassword.length >= 6 ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                  <p className={`${newPassword === confirmPassword && confirmPassword.length >= 6 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                  <div className={`w-1.5 h-1.5 rounded-full ${newPassword === confirmPassword && confirmPassword.length >= 6 ? 'bg-emerald-500' : 'bg-destructive'}`}></div>
+                  <p className={`${newPassword === confirmPassword && confirmPassword.length >= 6 ? 'text-emerald-500' : 'text-destructive'}`}>
                     {newPassword === confirmPassword && confirmPassword.length >= 6 ? 'Passwords match!' : 'Passwords must match'}
                   </p>
                 </div>
@@ -1375,7 +1376,7 @@ const AdminDashboard = () => {
             </div>
           </div>
 
-          <DialogFooter className="pt-4 border-t border-amber-100 dark:border-amber-900 gap-3">
+          <DialogFooter className="pt-4 border-t border-amber-500/20 gap-3">
             <Button
               variant="outline"
               onClick={() => {
@@ -1386,7 +1387,7 @@ const AdminDashboard = () => {
                 setShowNewPassword(false)
                 setShowConfirmPassword(false)
               }}
-              className="border-2 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 h-11 px-6"
+              className="h-11 px-6 rounded-xl"
             >
               Cancel
             </Button>
@@ -1544,21 +1545,21 @@ const AdminDashboard = () => {
               </div>
 
               {/* Full Information */}
-              <div className="space-y-4 p-4 bg-gray-50 dark:bg-gray-900/30 rounded-lg border">
+              <div className="space-y-4 p-4 bg-muted/40 rounded-xl border border-border/60">
                 <div className="grid grid-cols-1 gap-3">
-                  <div className="flex justify-between py-2 border-b border-gray-200 dark:border-gray-700">
+                  <div className="flex justify-between py-2 border-b border-border/50">
                     <span className="text-sm font-medium text-muted-foreground">User ID</span>
-                    <span className="text-sm font-mono bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">{viewingUser._id}</span>
+                    <span className="text-sm font-mono bg-muted px-2 py-1 rounded">{viewingUser._id}</span>
                   </div>
-                  <div className="flex justify-between py-2 border-b border-gray-200 dark:border-gray-700">
+                  <div className="flex justify-between py-2 border-b border-border/50">
                     <span className="text-sm font-medium text-muted-foreground">Email Address</span>
                     <span className="text-sm font-medium">{viewingUser.email}</span>
                   </div>
-                  <div className="flex justify-between py-2 border-b border-gray-200 dark:border-gray-700">
+                  <div className="flex justify-between py-2 border-b border-border/50">
                     <span className="text-sm font-medium text-muted-foreground">Full Name</span>
                     <span className="text-sm font-medium">{viewingUser.name}</span>
                   </div>
-                  <div className="flex justify-between py-2 border-b border-gray-200 dark:border-gray-700">
+                  <div className="flex justify-between py-2 border-b border-border/50">
                     <span className="text-sm font-medium text-muted-foreground">Role</span>
                     <span className="text-sm font-medium">{viewingUser.role}</span>
                   </div>

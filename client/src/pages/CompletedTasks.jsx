@@ -198,7 +198,9 @@ const CompletedTasks = () => {
       const signal = controller.signal
 
       const params = new URLSearchParams({
-        status: "Completed,Submitted for Review,Closed",
+        status: subStatus === "rejected"
+          ? "Completed,Submitted for Review,Closed,In Progress"
+          : "Completed,Submitted for Review,Closed",
         page: pageNum,
         limit: LIMIT,
       })
@@ -352,33 +354,19 @@ const [isReviewing, setIsReviewing] = useState(false)
         </div>
 
         {/* Parikshak AI Live Status Badge Indicator */}
-        <div className={`flex items-center gap-3 px-4 py-2.5 rounded-2xl border shrink-0 self-start sm:self-auto transition-colors ${
-          isDark 
-            ? 'bg-slate-900 text-slate-100 border-indigo-500/30 shadow-lg' 
-            : 'bg-white text-slate-900 border-slate-200 shadow-sm'
-        }`}>
-          <div className={`p-2 rounded-xl border ${
-            isDark
-              ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30'
-              : 'bg-indigo-50 text-indigo-600 border-indigo-200'
-          }`}>
+        <div className="flex items-center gap-3 px-4 py-2.5 rounded-2xl border border-border/60 bg-card/90 text-card-foreground shadow-sm shrink-0 self-start sm:self-auto transition-colors">
+          <div className="p-2 rounded-xl border border-indigo-500/30 bg-indigo-500/15 text-indigo-500">
             <Cpu className="h-4 w-4 animate-pulse" />
           </div>
           <div className="flex flex-col">
             <div className="flex items-center gap-1.5">
-              <span className={`text-[10px] font-extrabold uppercase tracking-wider ${
-                isDark ? 'text-slate-400' : 'text-slate-500'
-              }`}>
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-muted-foreground">
                 Parikshak AI Engine
               </span>
             </div>
             <div className="flex items-center gap-2 mt-0.5">
               {parikshakStatus === "online" ? (
-                <Badge className={`text-[11px] font-black tracking-wide flex items-center gap-1.5 px-2 py-0.5 ${
-                  isDark 
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' 
-                    : 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                }`}>
+                <Badge className="text-[11px] font-black tracking-wide flex items-center gap-1.5 px-2 py-0.5 bg-emerald-500/15 text-emerald-500 border border-emerald-500/30">
                   <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping"></span>
                   ONLINE
                 </Badge>
@@ -392,11 +380,7 @@ const [isReviewing, setIsReviewing] = useState(false)
                   OFFLINE (Manual Mode)
                 </Badge>
               ) : (
-                <Badge variant="outline" className={`text-[11px] font-medium flex items-center gap-1 px-2 py-0.5 ${
-                  isDark 
-                    ? 'bg-amber-500/15 text-amber-300 border-amber-500/40' 
-                    : 'bg-amber-100 text-amber-800 border-amber-300'
-                }`}>
+                <Badge variant="outline" className="text-[11px] font-medium flex items-center gap-1 px-2 py-0.5 bg-amber-500/15 text-amber-500 border-amber-500/30">
                   <Loader2 className="h-3 w-3 animate-spin text-amber-500" />
                   Checking...
                 </Badge>
@@ -407,11 +391,7 @@ const [isReviewing, setIsReviewing] = useState(false)
             variant="ghost"
             size="icon"
             onClick={checkParikshakStatus}
-            className={`h-7 w-7 ml-1 rounded-lg transition-colors ${
-              isDark 
-                ? 'text-slate-400 hover:text-white hover:bg-slate-800' 
-                : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
-            }`}
+            className="h-7 w-7 ml-1 rounded-lg transition-colors text-muted-foreground hover:text-foreground hover:bg-muted"
             title="Re-check Parikshak AI Engine status"
           >
             <RefreshCw className="h-3.5 w-3.5" />
@@ -1060,27 +1040,26 @@ const [isReviewing, setIsReviewing] = useState(false)
       </Tabs>
 
       <Dialog open={reviewDialogOpen} onOpenChange={setReviewDialogOpen}>
-        <DialogContent className="sm:max-w-[700px] max-h-[92vh] overflow-hidden bg-gradient-to-br from-white via-white to-gray-50/30 dark:from-slate-900 dark:via-slate-900 dark:to-slate-800/50 border-2 border-white/40 dark:border-slate-700/60 rounded-2xl shadow-2xl backdrop-blur-2xl p-0">
+        <DialogContent className="sm:max-w-[700px] max-h-[92vh] overflow-hidden bg-card text-card-foreground border border-border/70 rounded-2xl shadow-2xl p-0">
           {/* Hidden title for accessibility */}
           <DialogTitle className="sr-only">
             {selectedSubmission?.status === "Pending" ? "Review Task Submission" : "Re-review Task Submission"}
           </DialogTitle>
 
           {/* Scrollable Content Area */}
-          <div className="px-7 pt-7 pb-6 overflow-y-auto max-h-[calc(92vh-130px)] scrollbar-thin scrollbar-thumb-gray-300/40 dark:scrollbar-thumb-slate-700 scrollbar-track-transparent hover:scrollbar-thumb-gray-400/50 dark:hover:scrollbar-thumb-slate-600">
+          <div className="px-6 sm:px-7 pt-6 pb-6 overflow-y-auto max-h-[calc(92vh-120px)] scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
             {selectedSubmission && (
               <div className="grid gap-6">
                 {/* Task Information */}
                 <div className="grid gap-2.5">
-                  <Label className="text-sm font-bold text-gray-900 dark:text-slate-200 flex items-center gap-1.5">
-                    <div className="h-1.5 w-1.5 rounded-full bg-gradient-to-r from-primary to-primary/70 shadow-lg shadow-primary/50 animate-pulse"></div>
+                  <Label className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                    <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse"></div>
                     Task Information
                   </Label>
-                  <div className="relative overflow-hidden bg-gradient-to-br from-white/60 via-white/40 to-white/20 dark:from-slate-800/60 dark:via-slate-800/40 dark:to-slate-800/20 border-2 border-white/60 dark:border-slate-700/60 rounded-2xl p-5 backdrop-blur-xl transition-all duration-300 hover:border-primary/30 dark:hover:border-primary/40 hover:shadow-lg hover:shadow-primary/10 group">
-                    <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                  <div className="relative overflow-hidden bg-muted/40 border border-border/60 rounded-2xl p-5 transition-all duration-200 hover:border-primary/40">
                     <div className="relative">
-                      <h4 className="font-bold text-lg text-gray-900 dark:text-slate-100 mb-2.5 tracking-tight">{selectedSubmission.task?.title}</h4>
-                      <p className="text-sm text-gray-700 dark:text-slate-300 leading-relaxed line-clamp-3">
+                      <h4 className="font-bold text-lg text-foreground mb-2 tracking-tight">{selectedSubmission.task?.title}</h4>
+                      <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3">
                         {selectedSubmission.task?.description}
                       </p>
                     </div>
@@ -1089,19 +1068,19 @@ const [isReviewing, setIsReviewing] = useState(false)
 
                 {/* Submission Details */}
                 <div className="grid gap-2.5">
-                  <Label className="text-sm font-bold text-gray-900 dark:text-slate-200 flex items-center gap-1.5">
-                    <div className="h-1.5 w-1.5 rounded-full bg-gradient-to-r from-secondary to-secondary/70 shadow-lg shadow-secondary/50 animate-pulse"></div>
+                  <Label className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                    <div className="h-1.5 w-1.5 rounded-full bg-secondary animate-pulse"></div>
                     Submission Details
                   </Label>
-                  <div className="relative overflow-hidden bg-gradient-to-br from-white/60 via-white/40 to-white/20 dark:from-slate-800/60 dark:via-slate-800/40 dark:to-slate-800/20 border-2 border-white/60 dark:border-slate-700/60 rounded-2xl p-5 space-y-3 backdrop-blur-xl transition-all duration-300">
+                  <div className="relative overflow-hidden bg-muted/40 border border-border/60 rounded-2xl p-5 space-y-3">
                     {selectedSubmission.githubLink && (
-                      <div className="relative overflow-hidden flex flex-wrap items-start gap-2.5 p-3.5 bg-gradient-to-r from-white/70 to-white/40 dark:from-slate-700/50 dark:to-slate-700/30 rounded-xl border border-white/70 dark:border-slate-600/60 backdrop-blur-lg transition-all duration-300 hover:border-primary/40 dark:hover:border-primary/40 hover:shadow-md group">
-                        <Github className="h-4 w-4 text-gray-800 dark:text-slate-200 flex-shrink-0 mt-0.5 transition-transform duration-300 group-hover:scale-110" />
+                      <div className="relative overflow-hidden flex flex-wrap items-start gap-2.5 p-3.5 bg-card/80 rounded-xl border border-border/60 transition-all duration-200 hover:border-primary/40 group">
+                        <Github className="h-4 w-4 text-foreground flex-shrink-0 mt-0.5 transition-transform duration-200 group-hover:scale-110" />
                         <a
                           href={selectedSubmission.githubLink}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline flex items-center gap-1.5 flex-1 min-w-0 break-all text-sm font-semibold transition-colors"
+                          className="text-primary hover:underline flex items-center gap-1.5 flex-1 min-w-0 break-all text-sm font-semibold transition-colors"
                         >
                           <span className="truncate">{selectedSubmission.githubLink}</span>
                           <ExternalLink className="h-3.5 w-3.5 flex-shrink-0" />
@@ -1109,13 +1088,13 @@ const [isReviewing, setIsReviewing] = useState(false)
                       </div>
                     )}
                     {selectedSubmission.additionalLinks && (
-                      <div className="relative overflow-hidden flex flex-wrap items-start gap-2.5 p-3.5 bg-gradient-to-r from-white/70 to-white/40 dark:from-slate-700/50 dark:to-slate-700/30 rounded-xl border border-white/70 dark:border-slate-600/60 backdrop-blur-lg transition-all duration-300 hover:border-secondary/40 dark:hover:border-secondary/40 hover:shadow-md group">
-                        <Link2 className="h-4 w-4 text-gray-800 dark:text-slate-200 flex-shrink-0 mt-0.5 transition-transform duration-300 group-hover:scale-110" />
+                      <div className="relative overflow-hidden flex flex-wrap items-start gap-2.5 p-3.5 bg-muted/40 rounded-xl border border-border/60 transition-all duration-200 hover:border-secondary/40 hover:shadow-sm group">
+                        <Link2 className="h-4 w-4 text-foreground flex-shrink-0 mt-0.5 transition-transform duration-200 group-hover:scale-110" />
                         <a
                           href={selectedSubmission.additionalLinks}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline flex items-center gap-1.5 flex-1 min-w-0 break-all text-sm font-semibold transition-colors"
+                          className="text-primary hover:underline flex items-center gap-1.5 flex-1 min-w-0 break-all text-sm font-semibold transition-colors"
                         >
                           <span className="truncate">{selectedSubmission.additionalLinks}</span>
                           <ExternalLink className="h-3.5 w-3.5 flex-shrink-0" />
@@ -1123,13 +1102,13 @@ const [isReviewing, setIsReviewing] = useState(false)
                       </div>
                     )}
                     {selectedDocumentDetails?.url && (
-                      <div className="relative overflow-hidden flex flex-wrap items-start gap-2.5 p-3.5 bg-gradient-to-r from-white/70 to-white/40 dark:from-slate-700/50 dark:to-slate-700/30 rounded-xl border border-white/70 dark:border-slate-600/60 backdrop-blur-lg transition-all duration-300 hover:border-accent/40 dark:hover:border-accent/40 hover:shadow-md group">
-                        <FileText className="h-4 w-4 text-gray-800 dark:text-slate-200 flex-shrink-0 mt-0.5 transition-transform duration-300 group-hover:scale-110" />
+                      <div className="relative overflow-hidden flex flex-wrap items-start gap-2.5 p-3.5 bg-muted/40 rounded-xl border border-border/60 transition-all duration-200 hover:border-accent/40 hover:shadow-sm group">
+                        <FileText className="h-4 w-4 text-foreground flex-shrink-0 mt-0.5 transition-transform duration-200 group-hover:scale-110" />
                         <a
                           href={selectedDocumentDetails.url}
                           target={selectedDocumentDetails.isImage ? "_self" : "_blank"}
                           rel="noopener noreferrer"
-                          className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline flex items-center gap-1.5 flex-1 min-w-0 break-all text-sm font-semibold transition-colors"
+                          className="text-primary hover:underline flex items-center gap-1.5 flex-1 min-w-0 break-all text-sm font-semibold transition-colors"
                         >
                           <span className="truncate">
                             {selectedDocumentDetails.fileName} 
@@ -1140,18 +1119,18 @@ const [isReviewing, setIsReviewing] = useState(false)
                       </div>
                     )}
                     {selectedSubmission.notes && (
-                      <div className="relative overflow-hidden bg-gradient-to-br from-accent/30 via-accent/20 to-accent/10 dark:from-accent/20 dark:via-accent/15 dark:to-accent/5 border-2 border-accent/50 dark:border-accent/40 rounded-2xl p-4 backdrop-blur-xl mt-3 transition-all duration-300 hover:shadow-lg hover:shadow-accent/20">
-                        <div className="flex items-center gap-2 mb-2.5">
+                      <div className="relative overflow-hidden bg-accent/15 border border-accent/40 rounded-2xl p-4 mt-3 transition-all duration-200">
+                        <div className="flex items-center gap-2 mb-2">
                           <svg className="h-4 w-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
                           </svg>
-                          <h4 className="text-sm font-bold text-gray-900 dark:text-slate-100">Notes from Submitter:</h4>
+                          <h4 className="text-sm font-bold text-foreground">Notes from Submitter:</h4>
                         </div>
-                        <p className="text-sm text-gray-800 dark:text-slate-200 whitespace-pre-line leading-relaxed">{selectedSubmission.notes}</p>
+                        <p className="text-sm text-foreground/90 whitespace-pre-line leading-relaxed">{selectedSubmission.notes}</p>
                       </div>
                     )}
-                    <div className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300 pt-3 mt-2 border-t border-white/60 dark:border-slate-600/60">
-                      <Clock className="h-4 w-4 text-gray-600 dark:text-slate-400" />
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground pt-3 mt-2 border-t border-border/60">
+                      <Clock className="h-4 w-4 text-muted-foreground" />
                       <span className="font-medium">Submitted on {formatDateTime(selectedSubmission.createdAt)}</span>
                     </div>
                   </div>
@@ -1160,27 +1139,26 @@ const [isReviewing, setIsReviewing] = useState(false)
                 {/* Review History */}
                 {selectedSubmission.reviewHistory && selectedSubmission.reviewHistory.length > 0 && (
                   <div className="grid gap-2.5">
-                    <Label className="text-sm font-bold text-gray-900 dark:text-slate-200 flex items-center gap-1.5">
-                      <div className="h-1.5 w-1.5 rounded-full bg-gradient-to-r from-info to-info/70 shadow-lg shadow-info/50 animate-pulse"></div>
+                    <Label className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                      <div className="h-1.5 w-1.5 rounded-full bg-info animate-pulse"></div>
                       Review History
                     </Label>
                     <div className="space-y-2.5">
                       {selectedSubmission.reviewHistory.map((review, index) => (
-                        <div key={index} className="relative overflow-hidden bg-gradient-to-br from-white/60 via-white/40 to-white/20 dark:from-slate-800/60 dark:via-slate-800/40 dark:to-slate-800/20 border-2 border-white/60 dark:border-slate-700/60 rounded-2xl p-4 backdrop-blur-xl transition-all duration-300 hover:border-info/40 dark:hover:border-info/40 hover:shadow-lg hover:shadow-info/10 group">
-                          <div className="absolute inset-0 bg-gradient-to-br from-info/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                        <div key={index} className="relative overflow-hidden bg-muted/40 border border-border/60 rounded-2xl p-4 transition-all duration-200 hover:border-info/40 group">
                           <div className="relative">
                             <div className="flex justify-between items-center mb-2.5">
-                              <span className="font-bold text-gray-900 dark:text-slate-100 text-base">{review.status}</span>
-                              <span className="text-xs text-gray-700 dark:text-slate-300 flex items-center gap-1.5 bg-white/50 dark:bg-slate-700/40 px-2.5 py-1 rounded-lg backdrop-blur-sm">
+                              <span className="font-bold text-foreground text-base">{review.status}</span>
+                              <span className="text-xs text-muted-foreground flex items-center gap-1.5 bg-background/70 px-2.5 py-1 rounded-lg border border-border/50">
                                 <Clock className="h-3.5 w-3.5" />
                                 {formatDateTime(review.reviewedAt)}
                               </span>
                             </div>
-                            <p className="text-sm text-gray-800 dark:text-slate-200 mb-1">
+                            <p className="text-sm text-foreground/90 mb-1">
                               <span className="font-semibold">Reviewer:</span> {review.reviewedBy?.name || "Unknown"}
                             </p>
                             {review.feedback && (
-                              <p className="text-sm text-gray-800 dark:text-slate-200 mt-2 pt-2 border-t border-white/40 dark:border-slate-600/40">
+                              <p className="text-sm text-foreground/90 mt-2 pt-2 border-t border-border/50">
                                 <span className="font-semibold">Feedback:</span> {review.feedback}
                               </p>
                             )}
@@ -1193,9 +1171,9 @@ const [isReviewing, setIsReviewing] = useState(false)
 
                 {/* Review Decision */}
                 <div className="grid gap-2.5">
-                  <Label htmlFor="review-status" className="text-sm font-bold text-gray-900 dark:text-slate-200 flex items-center gap-1.5">
-                    <div className="h-1.5 w-1.5 rounded-full bg-gradient-to-r from-success to-success/70 shadow-lg shadow-success/50 animate-pulse"></div>
-                    Review Decision <span className="text-red-500 dark:text-red-400 ml-0.5">*</span>
+                  <Label htmlFor="review-status" className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                    <div className="h-1.5 w-1.5 rounded-full bg-success animate-pulse"></div>
+                    Review Decision <span className="text-destructive ml-0.5">*</span>
                   </Label>
                   <div className="flex gap-3 flex-col sm:flex-row">
                     <Button
@@ -1203,32 +1181,32 @@ const [isReviewing, setIsReviewing] = useState(false)
                       variant={reviewData.status === "Approved" ? "default" : "outline"}
                       className={
                         reviewData.status === "Approved"
-                          ? "flex-1 h-14 rounded-2xl bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 dark:from-green-600 dark:to-green-700 dark:hover:from-green-700 dark:hover:to-green-800 text-white shadow-xl shadow-green-500/40 transition-all duration-300 font-bold text-base hover:scale-[1.02] active:scale-[0.98]"
-                          : "flex-1 h-14 rounded-2xl border-2 border-green-300 dark:border-green-700/60 bg-white/40 dark:bg-slate-800/40 text-green-700 dark:text-green-400 hover:bg-green-50/80 dark:hover:bg-green-900/30 backdrop-blur-xl transition-all duration-300 font-bold text-base hover:border-green-400 dark:hover:border-green-600 hover:scale-[1.02] active:scale-[0.98]"
+                          ? "flex-1 h-12 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-md transition-all duration-200 font-bold text-sm sm:text-base"
+                          : "flex-1 h-12 rounded-xl border border-emerald-500/40 bg-emerald-500/5 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/15 transition-all duration-200 font-bold text-sm sm:text-base"
                       }
                       onClick={() => setReviewData({ ...reviewData, status: "Approved" })}
                     >
-                      <ThumbsUp className="mr-2.5 h-5 w-5" /> Approve Submission
+                      <ThumbsUp className="mr-2 h-4 w-4" /> Approve Submission
                     </Button>
                     <Button
                       type="button"
                       variant={reviewData.status === "Rejected" ? "default" : "outline"}
                       className={
                         reviewData.status === "Rejected"
-                          ? "flex-1 h-14 rounded-2xl bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 dark:from-red-600 dark:to-red-700 dark:hover:from-red-700 dark:hover:to-red-800 text-white shadow-xl shadow-red-500/40 transition-all duration-300 font-bold text-base hover:scale-[1.02] active:scale-[0.98]"
-                          : "flex-1 h-14 rounded-2xl border-2 border-red-300 dark:border-red-700/60 bg-white/40 dark:bg-slate-800/40 text-red-700 dark:text-red-400 hover:bg-red-50/80 dark:hover:bg-red-900/30 backdrop-blur-xl transition-all duration-300 font-bold text-base hover:border-red-400 dark:hover:border-red-600 hover:scale-[1.02] active:scale-[0.98]"
+                          ? "flex-1 h-12 rounded-xl bg-destructive hover:bg-destructive/90 text-destructive-foreground shadow-md transition-all duration-200 font-bold text-sm sm:text-base"
+                          : "flex-1 h-12 rounded-xl border border-destructive/40 bg-destructive/5 text-destructive hover:bg-destructive/15 transition-all duration-200 font-bold text-sm sm:text-base"
                       }
                       onClick={() => setReviewData({ ...reviewData, status: "Rejected" })}
                     >
-                      <ThumbsDown className="mr-2.5 h-5 w-5" /> Reject Submission
+                      <ThumbsDown className="mr-2 h-4 w-4" /> Reject Submission
                     </Button>
                   </div>
                 </div>
 
                 {/* Feedback */}
                 <div className="grid gap-2.5">
-                  <Label htmlFor="feedback" className="text-sm font-bold text-gray-900 dark:text-slate-200 flex items-center gap-1.5">
-                    <div className="h-1.5 w-1.5 rounded-full bg-gradient-to-r from-warning to-warning/70 shadow-lg shadow-warning/50 animate-pulse"></div>
+                  <Label htmlFor="feedback" className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                    <div className="h-1.5 w-1.5 rounded-full bg-warning animate-pulse"></div>
                     Feedback (Optional)
                   </Label>
                   <Textarea
@@ -1237,21 +1215,19 @@ const [isReviewing, setIsReviewing] = useState(false)
                     value={reviewData.feedback}
                     onChange={(e) => setReviewData({ ...reviewData, feedback: e.target.value })}
                     rows={4}
-                    className="px-4 py-3.5 bg-gradient-to-br from-white/60 to-white/30 dark:from-slate-800/60 dark:to-slate-800/30 border-2 border-white/60 dark:border-slate-700/60 hover:border-white/80 dark:hover:border-slate-600/80 focus:border-warning/60 dark:focus:border-warning/60 focus-visible:ring-4 focus-visible:ring-warning/20 rounded-2xl resize-none transition-all duration-300 text-base placeholder:text-gray-500 dark:placeholder:text-slate-400 text-gray-900 dark:text-slate-100 backdrop-blur-xl font-medium"
+                    className="px-4 py-3 bg-muted/40 border border-border/70 focus:border-warning/60 rounded-xl resize-none transition-all duration-200 text-sm sm:text-base placeholder:text-muted-foreground text-foreground"
                   />
                 </div>
               </div>
             )}
           </div>
 
-          {/* Premium Glassmorphic Footer */}
-          <DialogFooter className="relative px-7 py-5 border-t border-white/40 dark:border-slate-700/60 bg-gradient-to-t from-white/80 via-white/60 to-white/30 dark:from-slate-800/80 dark:via-slate-800/60 dark:to-slate-800/30 backdrop-blur-2xl shadow-inner" style={{backdropFilter: 'blur(40px)'}}>
-            <div className="absolute inset-0 bg-gradient-to-r from-primary/5 via-transparent to-secondary/5 opacity-50"></div>
+          <DialogFooter className="relative px-6 py-4 border-t border-border/60 bg-muted/30">
             <div className="relative flex items-center gap-3 w-full sm:w-auto sm:ml-auto">
               <Button 
                 variant="outline" 
                 onClick={() => setReviewDialogOpen(false)} 
-                className="flex-1 sm:flex-none h-12 px-6 rounded-xl border-2 border-white/60 dark:border-slate-600/60 bg-white/40 dark:bg-slate-800/40 hover:border-gray-400/60 dark:hover:border-slate-500/60 hover:bg-white/60 dark:hover:bg-slate-700/50 transition-all duration-300 font-bold text-gray-900 dark:text-slate-100 backdrop-blur-lg hover:scale-[1.02] active:scale-[0.98] shadow-md"
+                className="flex-1 sm:flex-none h-11 px-5 rounded-xl font-semibold"
               >
                 <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />

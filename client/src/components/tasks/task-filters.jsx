@@ -7,6 +7,7 @@ import { RadioGroup, RadioGroupItem } from "../ui/radio-group"
 import { Checkbox } from "../ui/checkbox"
 import { Button } from "../ui/button"
 import { api } from "../../lib/api"
+import { TASK_STATUS_OPTIONS } from "../../lib/taskStatus"
 
 export function TaskFilters({ onFilterChange }) {
   const [status, setStatus] = useState([])
@@ -69,7 +70,7 @@ export function TaskFilters({ onFilterChange }) {
         <div className="space-y-3">
           <h3 className="text-sm font-semibold text-foreground/90">Status</h3>
           <div className="space-y-2.5">
-            {["Completed", "In Progress", "Pending"].map(stat => (
+            {TASK_STATUS_OPTIONS.map(stat => (
               <div key={stat} className="flex items-center space-x-2.5 p-2 rounded-lg hover:bg-muted/50 transition-colors">
                 <Checkbox
                   id={`status-${stat.toLowerCase()}`}

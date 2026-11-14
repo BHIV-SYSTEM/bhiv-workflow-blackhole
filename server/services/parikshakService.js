@@ -381,13 +381,7 @@ const invokeParikshak = async (submissionId, traceId, io) => {
                     traceId,
                     task.branch
                 );
-                console.log(`[TRACE_EMITTED] Task failed (Automated) - trace_id=${execContext?.traceId}`);
-
-                // If the task was previously "Completed", we might want to move it back to "In Progress" since the automated review failed it.
-                if (task.status === "Completed") {
-                    task.status = "In Progress";
-                    await task.save();
-                }
+                console.log(`[TRACE_EMITTED] Task failed (Automated, queued for manual review) - trace_id=${execContext?.traceId}`);
             }
         } catch (execErr) {
             console.error("[TRACE_FAILURE] Failed to emit automated review event:", execErr);

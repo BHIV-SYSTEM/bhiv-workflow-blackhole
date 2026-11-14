@@ -58,6 +58,7 @@ function normalizeRawIdleSeconds(act) {
 /**
  * Compute per-sample active/idle seconds and normalized productivity score (0-100)
  * scaled by the sample's actual interval_seconds (5s agent cadence vs 30s legacy).
+ * Uses graded pause credit (<30s, <120s, <300s) instead of a 30s 0-score cliff.
  */
 function evaluateSample(act) {
   const sampleSec = normalizeIntervalSeconds(act);
@@ -66,27 +67,38 @@ function evaluateSample(act) {
   const mouseEvents = Number(act?.mouse_event_count || 0);
   const rawIdle = normalizeRawIdleSeconds(act);
   const hasInput = keys > 0 || mouseScore > 0 || mouseEvents > 0;
+  const appName = act?.active_application?.name;
+  const isBgBrowserPoll = !hasInput && sampleSec >= 25 && (!appName || appName === 'Unknown' || appName === 'null');
+  const isDesktopSample = sampleSec <= 15 || (Boolean(appName) && appName !== 'Other' && appName !== 'Unknown' && appName !== 'null');
 
-  // An interval is truly idle only when there was no input AND system idle >= 30s.
-  // Short reading/thinking pauses (< 30s idle) count as active work, not idle penalties.
-  const isIdleSample = !hasInput && rawIdle >= 30;
+  // An interval is truly idle only when there is no input AND system idle >= 300s (5 minutes).
+  // Reading/thinking/call pauses under 5 minutes receive graded focus credit instead of 0.
+  const isIdleSample = !hasInput && rawIdle >= 300;
   const idleSec = isIdleSample ? sampleSec : 0;
   const activeSec = Math.max(0, sampleSec - idleSec);
 
   let qualityScore = 0;
   if (!isIdleSample) {
     const isDistraction = String(act?.app_category || '').toUpperCase() === 'DISTRACTION';
-    const baseCredit = isDistraction ? 15 : 55;
 
-    const keyCadencePerMin = (keys / sampleSec) * 60;
-    const keyBonus = Math.min(1, keyCadencePerMin / 120) * 30;
+    if (hasInput) {
+      const baseCredit = isDistraction ? 20 : 65;
+      const keyCadencePerMin = (keys / sampleSec) * 60;
+      const keyBonus = Math.min(1, keyCadencePerMin / 60) * 20;
 
-    const effectiveMouseScore = mouseScore > 0
-      ? Math.min(100, mouseScore)
-      : (mouseEvents > 0 ? Math.min(100, Math.round((((mouseEvents / sampleSec) * 60) / 240) * 100)) : 0);
-    const mouseBonus = (effectiveMouseScore / 100) * 15;
+      const effectiveMouseScore = mouseScore > 0
+        ? Math.min(100, mouseScore)
+        : (mouseEvents > 0 ? Math.min(100, Math.round((((mouseEvents / sampleSec) * 60) / 240) * 100)) : 0);
+      const mouseBonus = (effectiveMouseScore / 100) * 15;
 
-    qualityScore = Math.min(100, Math.round(baseCredit + keyBonus + mouseBonus));
+      qualityScore = Math.min(100, Math.round(baseCredit + keyBonus + mouseBonus));
+    } else if (rawIdle < 30) {
+      qualityScore = isDistraction ? 15 : 55;
+    } else if (rawIdle < 120) {
+      qualityScore = isDistraction ? 10 : 45;
+    } else {
+      qualityScore = isDistraction ? 5 : 25;
+    }
   }
 
   return {
@@ -98,7 +110,9 @@ function evaluateSample(act) {
     mouseEvents,
     qualityScore,
     hasInput,
-    isIdleSample
+    isIdleSample,
+    isBgBrowserPoll,
+    isDesktopSample
   };
 }
 
@@ -113,6 +127,9 @@ function summarizeActivitiesWithSession(activities = [], sessionInfo = null) {
   let totalTelemetrySec = 0;
   let totalIdleSeconds = 0;
   let weightedScoreSum = 0;
+  let nonBgTelemetrySec = 0;
+  let nonBgWeightedSum = 0;
+  let desktopSampleCount = 0;
   const appUsageMap = {};
 
   for (const act of logs) {
@@ -125,6 +142,14 @@ function summarizeActivitiesWithSession(activities = [], sessionInfo = null) {
     totalTelemetrySec += ev.sampleSec;
     totalIdleSeconds += ev.idleSec;
     weightedScoreSum += ev.qualityScore * ev.sampleSec;
+
+    if (ev.isDesktopSample) {
+      desktopSampleCount++;
+    }
+    if (!ev.isBgBrowserPoll) {
+      nonBgTelemetrySec += ev.sampleSec;
+      nonBgWeightedSum += ev.qualityScore * ev.sampleSec;
+    }
 
     const appName = act?.active_application?.name || 'Other';
     appUsageMap[appName] = (appUsageMap[appName] || 0) + ev.sampleSec;
@@ -140,7 +165,11 @@ function summarizeActivitiesWithSession(activities = [], sessionInfo = null) {
 
   let avgProductivityScore = 0;
   if (hasTelemetry && totalTelemetrySec > 0) {
-    avgProductivityScore = Math.min(100, Math.round(weightedScoreSum / totalTelemetrySec));
+    // When Desktop Agent is active, exclude 0-input background browser polls so they don't 6x dilute coding work
+    const useNonBg = desktopSampleCount > 0 && nonBgTelemetrySec > 0;
+    const denom = useNonBg ? nonBgTelemetrySec : totalTelemetrySec;
+    const numer = useNonBg ? nonBgWeightedSum : weightedScoreSum;
+    avgProductivityScore = Math.min(100, Math.round(numer / denom));
   } else if (sessionSec > 0) {
     avgProductivityScore = 50;
   }

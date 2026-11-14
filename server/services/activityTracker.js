@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const EmployeeActivity = require('../models/EmployeeActivity');
 const MonitoringAlert = require('../models/MonitoringAlert');
 const WebsiteWhitelist = require('../models/WebsiteWhitelist');
@@ -258,8 +259,8 @@ class ActivityTracker {
     // Add to buffer instead of saving immediately
     this.activityBuffer.get(sessionData.employeeId).push(activityData);
 
-    // Check for productivity drop
-    if (activity.productivity_score < 30) {
+    // Check for productivity drop (skip DB writes when MongoDB connection is down/reconnecting)
+    if (activity.productivity_score < 30 && mongoose.connection.readyState === 1) {
       await MonitoringAlert.createAlert({
         employee: sessionData.employeeId,
         alert_type: 'productivity_drop',
@@ -285,6 +286,9 @@ class ActivityTracker {
    * Flush activity buffer to database
    */
   async flushActivityBuffer() {
+    if (mongoose.connection.readyState !== 1) {
+      return;
+    }
     for (const [employeeId, activities] of this.activityBuffer) {
       if (activities.length > 0) {
         await this.flushEmployeeBuffer(employeeId);

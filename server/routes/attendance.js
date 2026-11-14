@@ -336,6 +336,9 @@ router.post('/start-day/:userId', auth, async (req, res) => {
       // Update existing record (restart after end-day)
       existingRecord.startDayTime = startTime;
       existingRecord.endDayTime = undefined; // Clear end time for new work session
+      existingRecord.hoursWorked = 0;
+      existingRecord.overtimeHours = 0;
+      existingRecord.breakTime = 0;
       existingRecord.startDayLocation = { latitude, longitude, address: finalAddress, accuracy };
       existingRecord.isPresent = true;
       existingRecord.source = 'StartDay';
@@ -399,6 +402,46 @@ router.post('/start-day/:userId', auth, async (req, res) => {
     }
     
     await dailyRecord.save();
+
+    // Keep WorkSession in sync so pause/resume and live timer always use a clean session for today
+    try {
+      const WorkSession = require('../models/WorkSession');
+      let workSession = await WorkSession.findOne({
+        employee: userId,
+        date: {
+          $gte: today,
+          $lt: new Date(today.getTime() + 24 * 60 * 60 * 1000)
+        }
+      });
+
+      if (workSession) {
+        workSession.startTime = startTime;
+        workSession.startDayTime = startTime;
+        workSession.endTime = undefined;
+        workSession.endDayTime = undefined;
+        workSession.pausedAt = undefined;
+        workSession.resumedAt = undefined;
+        workSession.totalBreakTime = 0;
+        workSession.status = 'active';
+        workSession.workLocation = workLocationType;
+        workSession.startLocation = { latitude, longitude, address: finalAddress, accuracy };
+      } else {
+        workSession = new WorkSession({
+          employee: userId,
+          date: today,
+          startTime,
+          startDayTime: startTime,
+          targetHours: 8,
+          status: 'active',
+          totalBreakTime: 0,
+          workLocation: workLocationType,
+          startLocation: { latitude, longitude, address: finalAddress, accuracy }
+        });
+      }
+      await workSession.save();
+    } catch (wsErr) {
+      console.warn(`⚠️ Non-fatal: Failed to sync WorkSession on start-day for user ${userId}:`, wsErr.message);
+    }
     
     // Safely update today's aim with work location if it exists (don't create default aims)
     try {
@@ -579,8 +622,22 @@ router.post('/end-day/:userId', auth, async (req, res) => {
     });
     
     let breakTimeMinutes = 0;
-    if (workSession && workSession.totalBreakTime) {
-      breakTimeMinutes = workSession.totalBreakTime;
+    if (workSession) {
+      if (workSession.status === 'paused' && workSession.pausedAt) {
+        const ongoingPauseMinutes = Math.max(0, Math.floor((endTime - new Date(workSession.pausedAt)) / (1000 * 60)));
+        workSession.totalBreakTime = (workSession.totalBreakTime || 0) + ongoingPauseMinutes;
+      }
+      breakTimeMinutes = workSession.totalBreakTime || 0;
+      workSession.status = 'completed';
+      workSession.endTime = endTime;
+      workSession.endDayTime = endTime;
+      workSession.pausedAt = null;
+      if (latitude && longitude) {
+        workSession.endLocation = { latitude, longitude, address, accuracy };
+      }
+      await workSession.save().catch((err) => {
+        console.warn(`⚠️ Non-fatal: Failed to complete WorkSession on end-day for ${userId}:`, err.message);
+      });
       console.log(`⏸️ Found ${breakTimeMinutes} minutes of break time for user ${userId}`);
     }
 

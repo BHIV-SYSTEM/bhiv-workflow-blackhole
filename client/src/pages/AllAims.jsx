@@ -172,11 +172,11 @@ function AllAims() {
     }
     switch (status) {
       case 'Completed':
-        return 'bg-green-100 text-green-800';
+        return 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30';
       case 'MVP Achieved':
-        return 'bg-yellow-100 text-yellow-800';
+        return 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30';
       default:
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-muted text-muted-foreground border border-border/60';
     }
   };
 
@@ -205,12 +205,12 @@ function AllAims() {
     const isPending = aim.isPending || (aim.progressPercentage === 0 && (!aim.progressEntries || aim.progressEntries.length === 0));
     
     return (
-      <div key={aim._id} className="border rounded-lg p-4 bg-white shadow-sm hover:shadow-md transition-shadow">
+      <div key={aim._id} className="border border-border/60 rounded-2xl p-4 sm:p-5 bg-card text-card-foreground shadow-sm hover:shadow-md transition-all">
         {/* Header with user info and tags */}
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-medium text-gray-900 flex items-center gap-1">
-              <User className="h-4 w-4" />
+            <span className="font-medium text-foreground flex items-center gap-1.5">
+              <User className="h-4 w-4 text-primary" />
               {aim.user?.name || "Unknown User"}
             </span>
             
@@ -224,7 +224,7 @@ function AllAims() {
             
             {/* Progress Percentage */}
             {aim.progressPercentage > 0 && (
-              <span className="px-2 py-1 text-xs bg-purple-100 text-purple-800 rounded-full flex items-center gap-1">
+              <span className="px-2 py-1 text-xs bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/30 rounded-full flex items-center gap-1">
                 <TrendingUp className="h-3 w-3" />
                 {aim.progressPercentage}%
               </span>
@@ -239,75 +239,75 @@ function AllAims() {
             </span>
           </div>
           
-          <div className="flex items-center gap-2 text-sm text-gray-500">
-            <Clock className="h-3 w-3" />
+          <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground">
+            <Clock className="h-3.5 w-3.5" />
             <span>Set at {formatTime(aim.createdAt)}</span>
           </div>
         </div>
 
         {/* Department info */}
         {aim.department && (
-          <div className="text-sm text-gray-600 mb-2">
-            <span className="font-medium">Department:</span> {aim.department.name}
+          <div className="text-xs sm:text-sm text-muted-foreground mb-2">
+            <span className="font-medium text-foreground">Department:</span> {aim.department.name}
           </div>
         )}
 
         {/* Main aim content */}
         <div className="mb-3">
-          <p className="text-sm text-gray-800 whitespace-pre-line leading-relaxed">
+          <p className="text-sm text-foreground/90 whitespace-pre-line leading-relaxed">
             {aim.aims}
           </p>
         </div>
 
         {/* Progress Information - Enhanced with actual progress entries */}
         {(aim.progressEntries && aim.progressEntries.length > 0) ? (
-          <div className="mt-3 p-3 bg-gray-50 rounded-lg">
-            <h4 className="text-xs font-semibold text-gray-700 mb-2 flex items-center gap-1">
-              <TrendingUp className="h-3 w-3" />
+          <div className="mt-3 p-3 bg-muted/40 border border-border/50 rounded-xl">
+            <h4 className="text-xs font-semibold text-foreground mb-2 flex items-center gap-1">
+              <TrendingUp className="h-3 w-3 text-primary" />
               Daily Progress ({aim.progressEntries.length} updates)
             </h4>
             
             {aim.progressEntries.map((entry, index) => (
-              <div key={entry._id} className="mb-3 p-2 bg-white rounded border-l-2 border-purple-200">
+              <div key={entry._id} className="mb-3 last:mb-0 p-2.5 bg-card/80 rounded-lg border-l-2 border-purple-500/60">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-medium text-purple-600">
+                  <span className="text-xs font-medium text-purple-600 dark:text-purple-400">
                     {entry.task?.title || 'General Progress'}
                   </span>
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-muted-foreground tabular-nums">
                     {formatTime(entry.date)} - {entry.progressPercentage}%
                   </span>
                 </div>
                 
                 {entry.notes && (
                   <div className="mb-1">
-                    <span className="text-xs font-medium text-gray-600">Notes: </span>
-                    <span className="text-xs text-gray-700">{entry.notes}</span>
+                    <span className="text-xs font-medium text-muted-foreground">Notes: </span>
+                    <span className="text-xs text-foreground/90">{entry.notes}</span>
                   </div>
                 )}
                 
                 {entry.achievements && (
                   <div className="mb-1">
-                    <span className="text-xs font-medium text-green-600 flex items-center gap-1">
+                    <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                       <CheckCircle className="h-3 w-3" />
                       Achievements: 
                     </span>
-                    <span className="text-xs text-gray-700 ml-1">{entry.achievements}</span>
+                    <span className="text-xs text-foreground/90 ml-1">{entry.achievements}</span>
                   </div>
                 )}
                 
                 {entry.blockers && (
                   <div>
-                    <span className="text-xs font-medium text-red-600 flex items-center gap-1">
+                    <span className="text-xs font-medium text-destructive flex items-center gap-1">
                       <AlertCircle className="h-3 w-3" />
                       Blockers: 
                     </span>
-                    <span className="text-xs text-gray-700 ml-1">{entry.blockers}</span>
+                    <span className="text-xs text-foreground/90 ml-1">{entry.blockers}</span>
                   </div>
                 )}
 
                 {entry.progressImages && entry.progressImages.length > 0 && (
                   <div className="mt-2">
-                    <span className="text-xs font-medium text-gray-600 flex items-center gap-1 mb-1">
+                    <span className="text-xs font-medium text-muted-foreground flex items-center gap-1 mb-1">
                       <ImageIcon className="h-3 w-3" />
                       {entry.progressImages.length} Image(s)
                     </span>
@@ -350,8 +350,8 @@ function AllAims() {
 
         {/* Work Session Info */}
         {aim.workSessionInfo && (aim.workSessionInfo.startDayTime || aim.workSessionInfo.totalHoursWorked > 0) && (
-          <div className="mt-3 p-3 bg-blue-50 rounded-lg">
-            <h4 className="text-xs font-semibold text-blue-700 mb-2 flex items-center gap-1">
+          <div className="mt-3 p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl">
+            <h4 className="text-xs font-semibold text-blue-600 dark:text-blue-400 mb-2 flex items-center gap-1">
               <Clock className="h-3 w-3" />
               Work Session
             </h4>
@@ -359,8 +359,8 @@ function AllAims() {
             <div className="grid grid-cols-2 gap-2 text-xs">
               {aim.workSessionInfo.startDayTime && (
                 <div className="flex items-center gap-1">
-                  <span className="font-medium text-blue-600">Start:</span>
-                  <span className="text-gray-700">
+                  <span className="font-medium text-blue-600 dark:text-blue-400">Start:</span>
+                  <span className="text-foreground/90">
                     {formatTime(aim.workSessionInfo.startDayTime)}
                   </span>
                 </div>
@@ -368,8 +368,8 @@ function AllAims() {
               
               {aim.workSessionInfo.endDayTime && (
                 <div className="flex items-center gap-1">
-                  <span className="font-medium text-blue-600">End:</span>
-                  <span className="text-gray-700">
+                  <span className="font-medium text-blue-600 dark:text-blue-400">End:</span>
+                  <span className="text-foreground/90">
                     {formatTime(aim.workSessionInfo.endDayTime)}
                   </span>
                 </div>
@@ -377,12 +377,12 @@ function AllAims() {
               
               {aim.workSessionInfo.totalHoursWorked > 0 && (
                 <div className="col-span-2 flex items-center gap-1">
-                  <span className="font-medium text-blue-600">Hours Worked:</span>
-                  <span className="text-gray-700 font-semibold">
+                  <span className="font-medium text-blue-600 dark:text-blue-400">Hours Worked:</span>
+                  <span className="text-foreground font-semibold tabular-nums">
                     {aim.workSessionInfo.totalHoursWorked}h
                   </span>
                   {aim.workSessionInfo.totalHoursWorked >= 8 && (
-                    <span className="text-green-600 text-xs">✓ Full Day</span>
+                    <span className="text-emerald-600 dark:text-emerald-400 text-xs">✓ Full Day</span>
                   )}
                 </div>
               )}
@@ -392,12 +392,12 @@ function AllAims() {
 
         {/* Completion Comment */}
         {aim.completionComment && (
-          <div className="mt-3 p-3 bg-green-50 rounded-lg">
-            <h4 className="text-xs font-semibold text-green-700 mb-1 flex items-center gap-1">
+          <div className="mt-3 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
+            <h4 className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 mb-1 flex items-center gap-1">
               <CheckCircle className="h-3 w-3" />
               Completion Comment
             </h4>
-            <p className="text-xs text-gray-700 leading-relaxed">
+            <p className="text-xs text-foreground/90 leading-relaxed">
               {aim.completionComment}
             </p>
           </div>
@@ -524,8 +524,8 @@ function AllAims() {
               <Label htmlFor="department-filter" className="mb-2 block">
                 Department
               </Label>
-              <Select value={selectedDepartment} onValueChange={setSelectedDepartment} className="bg-white border border-gray-300 rounded-md shadow-sm">
-                   <SelectTrigger id="department-filter" >
+              <Select value={selectedDepartment} onValueChange={setSelectedDepartment}>
+                   <SelectTrigger id="department-filter" className="bg-background border-border/70">
                   <SelectValue placeholder="All Departments" />
                 </SelectTrigger>
                 <SelectContent>

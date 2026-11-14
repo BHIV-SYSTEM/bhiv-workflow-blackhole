@@ -786,5 +786,15 @@ async function startServer() {
   }
 }
 
+// Process-level resilience guards so transient third-party promise leaks (e.g. headless display probes or DB reconnects)
+// are logged cleanly instead of taking down the HTTP server
+process.on('unhandledRejection', (reason) => {
+  console.error('⚠️ Unhandled Promise Rejection (non-fatal):', reason?.message || reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('⚠️ Uncaught Exception:', err?.stack || err);
+});
+
 // Start the server
 startServer();

@@ -42,6 +42,39 @@ const upload = multer({
 
 const MAX_UNPAGINATED_LIMIT = 100
 
+// Mark a task as Completed once the assignee submits or resubmits work for review.
+async function markTaskSubmittedCompleted(taskDoc, io) {
+  if (!taskDoc) return
+  if (taskDoc.status !== "Closed") {
+    taskDoc.status = "Completed"
+  }
+  taskDoc.progress = 100
+  taskDoc.submittedForReviewAt = new Date()
+  taskDoc.closedAt = taskDoc.closedAt || new Date()
+  await taskDoc.save()
+
+  if (io) {
+    io.emit("task:updated", taskDoc)
+    io.emit("task-updated", taskDoc)
+  }
+}
+
+// Reopen a rejected task back into In Progress so it leaves Completed stats/tabs cleanly.
+async function reopenRejectedTask(taskDoc, io) {
+  if (!taskDoc) return
+  taskDoc.status = "In Progress"
+  if ((Number(taskDoc.progress) || 0) >= 100) {
+    taskDoc.progress = 50
+  }
+  taskDoc.closedAt = null
+  await taskDoc.save()
+
+  if (io) {
+    io.emit("task:updated", taskDoc)
+    io.emit("task-updated", taskDoc)
+  }
+}
+
 // Get all submissions - paginated, only active users
 router.get("/", auth, async (req, res) => {
   try {
@@ -245,20 +278,9 @@ router.post("/", auth, upload.single("document"), async (req, res) => {
     // Populate user information
     await submission.populate("user", "name")
 
-    // 🔄 AUTO STATUS UPDATE: Update task status based on submission type
-    if (!originalSubmission) {
-      task.status = "Submitted for Review"
-      task.submittedForReviewAt = new Date()
-      task.progress = 100
-      console.log(`✅ Task ${taskId} marked as Submitted for Review`);
-      await task.save()
-    } else {
-      // Revision submission - mark as Submitted for Review as well
-      task.status = "Submitted for Review"
-      task.submittedForReviewAt = new Date()
-      console.log(`✅ Auto-updated task ${taskId} status: → Submitted for Review (Revision submitted)`);
-      await task.save()
-    }
+    // 🔄 AUTO STATUS UPDATE: Mark task as Completed once work is submitted (fresh or revision)
+    await markTaskSubmittedCompleted(task, req.io)
+    console.log(`✅ Task ${taskId} marked as Completed (${originalSubmission ? "Revision" : "Submission"} submitted)`);
 
     // Emit execution event with trace propagation
     let execContext;
@@ -375,6 +397,15 @@ router.put("/:id", auth, upload.single("document"), async (req, res) => {
       .populate("user", "name email")
       .populate("reviewHistory.reviewedBy", "name email")
 
+    // Sync parent task back to Completed on resubmission (e.g. after rejection)
+    if (submission.task?._id) {
+      const taskDoc = await Task.findById(submission.task._id)
+      await markTaskSubmittedCompleted(taskDoc, req.io)
+      if (updatedSubmission.task && taskDoc) {
+        updatedSubmission.task.status = taskDoc.status
+      }
+    }
+
     // Workflow: repo resubmissions go to Tester first; others continue to Admin
     const hasRepo = !!(updatedSubmission.githubLink && String(updatedSubmission.githubLink).trim())
     const recipients = hasRepo
@@ -469,19 +500,19 @@ router.put("/:id/review", auth, async (req, res) => {
 
     const task = await Task.findById(submission.task);
 
+    // Update parent task status deterministically based on review outcome
+    if (status === "Approved") {
+      await markTaskSubmittedCompleted(task, req.io)
+    } else if (status === "Rejected") {
+      await reopenRejectedTask(task, req.io)
+    }
+
     // Emit execution events based on review outcome
     let execContext;
     try {
       if (status === "Approved") {
         execContext = await emitTaskCompletedEvent(submission, traceId, task?.branch);
         console.log(`[TRACE_EMITTED] Task completed - trace_id=${execContext.traceId}`);
-        
-        // Mark task as completed
-        if (task && task.status !== "Completed") {
-          task.status = "Completed"
-          task.progress = 100
-          await task.save()
-        }
       } else if (status === "Rejected") {
         execContext = await emitTaskFailedEvent(
           submission, 
@@ -499,6 +530,7 @@ router.put("/:id/review", auth, async (req, res) => {
     if (req.io) {
       req.io.emit("submission-reviewed", {
         submission,
+        taskStatus: task?.status,
         trace_id: execContext?.traceId
       })
     }
@@ -508,7 +540,7 @@ router.put("/:id/review", auth, async (req, res) => {
       recipient: submission.user,
       type: "submission_reviewed",
       title: `Submission ${status}`,
-      message: `Your submission for task '${submission.task.title}' has been ${status.toLowerCase()}. Feedback: ${feedback || "None"}`,
+      message: `Your submission for task '${task?.title || "Task"}' has been ${status.toLowerCase()}. Feedback: ${feedback || "None"}`,
       task: submission.task,
     })
 
@@ -564,12 +596,20 @@ router.post("/:id/approve-and-assign-next", auth, async (req, res) => {
     };
     await submission.save();
 
-    // 2. Update Current Task to Closed & Completed
-    if (currentTask && currentTask.status !== "Closed") {
-      currentTask.status = "Closed";
-      currentTask.closedAt = new Date();
-      currentTask.progress = 100;
-      await currentTask.save();
+    // 2. Update Current Task based on review status
+    if (currentTask) {
+      if (status === "Rejected") {
+        await reopenRejectedTask(currentTask, req.io);
+      } else if (currentTask.status !== "Closed") {
+        currentTask.status = "Closed";
+        currentTask.closedAt = new Date();
+        currentTask.progress = 100;
+        await currentTask.save();
+        if (req.io) {
+          req.io.emit("task:updated", currentTask);
+          req.io.emit("task-updated", currentTask);
+        }
+      }
     }
 
     // 3. Emit Task Completed Event

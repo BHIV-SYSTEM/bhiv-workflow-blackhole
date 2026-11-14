@@ -117,10 +117,10 @@ const AdminAimsView = () => {
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'Completed': return 'text-green-600 bg-green-100 border-green-200';
-      case 'MVP Achieved': return 'text-purple-600 bg-purple-100 border-purple-200';
-      case 'Pending': return 'text-amber-600 bg-amber-100 border-amber-200';
-      default: return 'text-gray-600 bg-gray-100 border-gray-200';
+      case 'Completed': return 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/15 border-emerald-500/30';
+      case 'MVP Achieved': return 'text-purple-600 dark:text-purple-400 bg-purple-500/15 border-purple-500/30';
+      case 'Pending': return 'text-amber-600 dark:text-amber-400 bg-amber-500/15 border-amber-500/30';
+      default: return 'text-muted-foreground bg-muted border-border/60';
     }
   };
 
@@ -135,10 +135,10 @@ const AdminAimsView = () => {
 
   const getLocationColor = (location) => {
     switch (location) {
-      case 'Home': return 'text-green-600 bg-green-100 border-green-200';
-      case 'Office': return 'text-blue-600 bg-blue-100 border-blue-200';
-      case 'Remote': return 'text-orange-600 bg-orange-100 border-orange-200';
-      default: return 'text-gray-600 bg-gray-100 border-gray-200';
+      case 'Home': return 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/15 border-emerald-500/30';
+      case 'Office': return 'text-blue-600 dark:text-blue-400 bg-blue-500/15 border-blue-500/30';
+      case 'Remote': return 'text-amber-600 dark:text-amber-400 bg-amber-500/15 border-amber-500/30';
+      default: return 'text-muted-foreground bg-muted border-border/60';
     }
   };
 
@@ -189,8 +189,8 @@ const AdminAimsView = () => {
     return (
       <div className="flex items-center justify-center p-8">
         <div className="text-center">
-          <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading aims and progress data...</p>
+          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading aims and progress data...</p>
         </div>
       </div>
     );
@@ -199,12 +199,12 @@ const AdminAimsView = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl border border-border/60 bg-card/70 shadow-sm">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">All User Aims & Progress</h1>
-          <p className="text-gray-600">Monitor daily aims completion and work location tracking</p>
+          <h1 className="text-2xl font-heading font-bold text-foreground">All User Aims & Progress</h1>
+          <p className="text-muted-foreground text-sm">Monitor daily aims completion and work location tracking</p>
         </div>
-        <Button onClick={exportData} className="flex items-center gap-2">
+        <Button onClick={exportData} className="flex items-center gap-2 rounded-xl self-start sm:self-auto">
           <Download className="w-4 h-4" />
           Export Data
         </Button>
@@ -227,7 +227,7 @@ const AdminAimsView = () => {
             <div>
               <label className="text-sm font-medium mb-2 block">Search Users</label>
               <div className="relative">
-                <Search className="w-4 h-4 absolute left-3 top-3 text-gray-400" />
+                <Search className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" />
                 <Input
                   placeholder="Search by name or email..."
                   value={searchTerm}
@@ -287,56 +287,56 @@ const AdminAimsView = () => {
 
       {/* Stats Overview */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
+        <Card interactive>
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Total Aims</p>
-                <p className="text-2xl font-bold">{filteredAims.length}</p>
+                <p className="text-sm text-muted-foreground">Total Aims</p>
+                <p className="text-2xl font-bold tabular-nums">{filteredAims.length}</p>
               </div>
-              <Target className="w-8 h-8 text-blue-600" />
+              <Target className="w-8 h-8 text-blue-500" />
             </div>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card interactive>
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Work From Home</p>
-                <p className="text-2xl font-bold text-green-600">
+                <p className="text-sm text-muted-foreground">Work From Home</p>
+                <p className="text-2xl font-bold tabular-nums text-emerald-500">
                   {filteredAims.filter(a => a.workLocation === 'Home').length}
                 </p>
               </div>
-              <Home className="w-8 h-8 text-green-600" />
+              <Home className="w-8 h-8 text-emerald-500" />
             </div>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card interactive>
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Office Work</p>
-                <p className="text-2xl font-bold text-blue-600">
+                <p className="text-sm text-muted-foreground">Office Work</p>
+                <p className="text-2xl font-bold tabular-nums text-blue-500">
                   {filteredAims.filter(a => a.workLocation === 'Office').length}
                 </p>
               </div>
-              <Building className="w-8 h-8 text-blue-600" />
+              <Building className="w-8 h-8 text-blue-500" />
             </div>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card interactive>
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Completed</p>
-                <p className="text-2xl font-bold text-green-600">
+                <p className="text-sm text-muted-foreground">Completed</p>
+                <p className="text-2xl font-bold tabular-nums text-emerald-500">
                   {filteredAims.filter(a => a.completionStatus === 'Completed' || a.completionStatus === 'MVP Achieved').length}
                 </p>
               </div>
-              <CheckCircle className="w-8 h-8 text-green-600" />
+              <CheckCircle className="w-8 h-8 text-emerald-500" />
             </div>
           </CardContent>
         </Card>
@@ -357,14 +357,14 @@ const AdminAimsView = () => {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.05 }}
             >
-              <Card className="hover:shadow-lg transition-shadow">
+              <Card className="hover:shadow-md transition-shadow">
                 <CardContent className="p-6">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-3">
+                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2.5 mb-3">
                         <div className="flex items-center gap-2">
-                          <Users className="w-5 h-5 text-gray-500" />
-                          <span className="font-semibold text-gray-900">
+                          <Users className="w-5 h-5 text-muted-foreground" />
+                          <span className="font-semibold text-foreground">
                             {aim.user?.name || 'Unknown User'}
                           </span>
                         </div>
@@ -372,7 +372,7 @@ const AdminAimsView = () => {
                         <Badge className={`${getLocationColor(aim.workLocation)} flex items-center gap-1`}>
                           <LocationIcon className="w-3 h-3" />
                           {aim.workLocation}
-                          {aim.workLocation === 'Home' && <span className="ml-1 text-xs font-bold">🏠 WFH</span>}
+                          {aim.workLocation === 'Home' && <span className="ml-1 text-xs font-bold">WFH</span>}
                         </Badge>
 
                         <Badge className={`${getStatusColor(aim.completionStatus)} flex items-center gap-1`}>
@@ -380,44 +380,44 @@ const AdminAimsView = () => {
                           {aim.completionStatus}
                         </Badge>
 
-                        <Badge className={hasProgress ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}>
-                          Progress: {hasProgress ? 'Set ✓' : 'Not Set ✗'}
+                        <Badge className={hasProgress ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30' : 'bg-destructive/15 text-destructive border-destructive/30'}>
+                          Progress: {hasProgress ? 'Set' : 'Not Set'}
                         </Badge>
 
                         {/* Progress Percentage Badge */}
                         {userProgress && userProgress.progressPercentage !== undefined && (
-                          <Badge className="bg-blue-100 text-blue-700 border-blue-200">
+                          <Badge className="bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30">
                             {userProgress.progressPercentage}% Complete
                           </Badge>
                         )}
                       </div>
 
                       <div className="mb-3">
-                        <p className="text-gray-700 line-clamp-2">
+                        <p className="text-foreground/85 line-clamp-2">
                           {aim.aims}
                         </p>
                       </div>
 
                       {aim.completionComment && (
-                        <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                        <div className="mb-3 p-3 bg-blue-500/10 border border-blue-500/25 rounded-xl">
                           <div className="flex items-center gap-2 mb-1">
-                            <MessageCircle className="w-4 h-4 text-blue-600" />
-                            <span className="text-sm font-medium text-blue-900">Completion Comment</span>
+                            <MessageCircle className="w-4 h-4 text-blue-500" />
+                            <span className="text-sm font-medium text-blue-600 dark:text-blue-300">Completion Comment</span>
                           </div>
-                          <p className="text-sm text-blue-800">{aim.completionComment}</p>
+                          <p className="text-sm text-foreground/85">{aim.completionComment}</p>
                         </div>
                       )}
 
                       {hasProgress && (
-                        <div className="mb-3 p-3 bg-green-50 border border-green-200 rounded-md">
+                        <div className="mb-3 p-3 bg-emerald-500/10 border border-emerald-500/25 rounded-xl">
                           <div className="flex items-center gap-2 mb-1">
-                            <BarChart3 className="w-4 h-4 text-green-600" />
-                            <span className="text-sm font-medium text-green-900">Daily Progress</span>
+                            <BarChart3 className="w-4 h-4 text-emerald-500" />
+                            <span className="text-sm font-medium text-emerald-600 dark:text-emerald-300">Daily Progress</span>
                             {userProgress.progressPercentage !== undefined && (
                               <div className="ml-auto">
-                                <div className="w-20 bg-gray-200 rounded-full h-2">
+                                <div className="w-20 bg-muted rounded-full h-2">
                                   <div 
-                                    className="bg-green-600 h-2 rounded-full" 
+                                    className="bg-emerald-500 h-2 rounded-full" 
                                     style={{ width: `${userProgress.progressPercentage}%` }}
                                   ></div>
                                 </div>
@@ -458,7 +458,7 @@ const AdminAimsView = () => {
                                   />
                                 ))}
                                 {userProgress.progressImages.length > 3 && (
-                                  <div className="w-16 h-16 bg-gray-200 rounded border flex items-center justify-center text-xs text-gray-600">
+                                  <div className="w-16 h-16 bg-muted rounded border border-border flex items-center justify-center text-xs text-muted-foreground">
                                     +{userProgress.progressImages.length - 3}
                                   </div>
                                 )}
@@ -468,18 +468,18 @@ const AdminAimsView = () => {
                         </div>
                       )}
 
-                      <div className="flex items-center justify-between text-sm text-gray-500">
+                      <div className="flex items-center justify-between text-sm text-muted-foreground">
                         <span>{aim.user?.email}</span>
                         <span>Updated: {formatDateTime(aim.updatedAt)}</span>
                       </div>
                     </div>
 
-                    <div className="ml-4">
+                    <div className="sm:ml-4 shrink-0">
                       <Button
                         onClick={() => viewAimDetails(aim)}
                         variant="outline"
                         size="sm"
-                        className="flex items-center gap-2"
+                        className="flex items-center gap-2 rounded-xl"
                       >
                         <Eye className="w-4 h-4" />
                         View Details
@@ -495,8 +495,8 @@ const AdminAimsView = () => {
         {filteredAims.length === 0 && (
           <Card>
             <CardContent className="p-8 text-center">
-              <Target className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-600">No aims found for the selected criteria.</p>
+              <Target className="w-12 h-12 text-muted-foreground/50 mx-auto mb-4" />
+              <p className="text-muted-foreground">No aims found for the selected criteria.</p>
             </CardContent>
           </Card>
         )}
@@ -593,9 +593,9 @@ const AdminAimsView = () => {
                             <span>Progress</span>
                             <span>{userProgress.progressPercentage}%</span>
                           </div>
-                          <div className="w-full bg-gray-200 rounded-full h-3">
+                          <div className="w-full bg-muted rounded-full h-3">
                             <div 
-                              className="bg-blue-600 h-3 rounded-full transition-all duration-300" 
+                              className="bg-primary h-3 rounded-full transition-all duration-300" 
                               style={{ width: `${userProgress.progressPercentage}%` }}
                             ></div>
                           </div>
@@ -604,7 +604,7 @@ const AdminAimsView = () => {
                       {userProgress.notes && (
                         <div>
                           <h4 className="font-medium mb-2">Notes:</h4>
-                          <p className="bg-gray-50 p-3 rounded-md whitespace-pre-line">
+                          <p className="bg-muted/40 border border-border/50 p-3 rounded-xl whitespace-pre-line text-sm">
                             {userProgress.notes}
                           </p>
                         </div>
@@ -612,7 +612,7 @@ const AdminAimsView = () => {
                       {userProgress.achievements && (
                         <div>
                           <h4 className="font-medium mb-2">Achievements:</h4>
-                          <p className="bg-green-50 p-3 rounded-md whitespace-pre-line">
+                          <p className="bg-emerald-500/10 border border-emerald-500/25 p-3 rounded-xl whitespace-pre-line text-sm">
                             {userProgress.achievements}
                           </p>
                         </div>
@@ -620,7 +620,7 @@ const AdminAimsView = () => {
                       {userProgress.blockers && (
                         <div>
                           <h4 className="font-medium mb-2">Blockers:</h4>
-                          <p className="bg-red-50 p-3 rounded-md whitespace-pre-line">
+                          <p className="bg-destructive/10 border border-destructive/25 p-3 rounded-xl whitespace-pre-line text-sm">
                             {userProgress.blockers}
                           </p>
                         </div>

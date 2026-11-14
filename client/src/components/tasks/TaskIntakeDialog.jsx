@@ -179,20 +179,20 @@ export function TaskIntakeDialog({ open, onOpenChange, onTaskRegistered }) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[720px] max-h-[90vh] overflow-y-auto bg-slate-950 text-slate-100 border border-slate-800 shadow-2xl p-6">
+      <DialogContent className="sm:max-w-[720px] max-h-[90vh] overflow-y-auto bg-card text-card-foreground border border-border/70 shadow-2xl rounded-2xl p-6">
         <DialogHeader className="space-y-2">
-          <div className="flex items-center gap-2">
-            <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-primary/15 border border-primary/25 text-primary">
               <MessageSquare className="h-5 w-5" />
             </div>
             <div>
-              <DialogTitle className="text-xl font-bold flex items-center gap-2">
+              <DialogTitle className="text-xl font-heading font-bold flex flex-wrap items-center gap-2 text-foreground">
                 Task Intake & Registration Gate
-                <Badge variant="outline" className="text-amber-400 border-amber-500/30 bg-amber-500/10 text-xs">
+                <Badge variant="outline" className="text-amber-600 dark:text-amber-400 border-amber-500/35 bg-amber-500/10 text-xs">
                   Pending Validation Gate
                 </Badge>
               </DialogTitle>
-              <DialogDescription className="text-slate-400 text-xs mt-0.5">
+              <DialogDescription className="text-muted-foreground text-xs mt-0.5">
                 Register WhatsApp messages, meeting instructions, or lead directives with verifiable provenance before beginning execution.
               </DialogDescription>
             </div>
@@ -200,34 +200,34 @@ export function TaskIntakeDialog({ open, onOpenChange, onTaskRegistered }) {
         </DialogHeader>
 
         {/* Gate Warning Banner */}
-        <div className="p-3 rounded-lg bg-amber-950/40 border border-amber-500/30 flex items-start gap-3">
-          <ShieldAlert className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
-          <div className="text-xs text-amber-200/90 leading-relaxed">
-            <span className="font-semibold text-amber-300">BHIV Execution Gate Rule: </span>
+        <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3">
+          <ShieldAlert className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+          <div className="text-xs text-amber-800 dark:text-amber-200/90 leading-relaxed">
+            <span className="font-semibold text-amber-900 dark:text-amber-300">BHIV Execution Gate Rule: </span>
             Registering a task does not authorise immediate execution. The task will be marked{" "}
-            <span className="font-mono bg-amber-500/20 px-1 py-0.5 rounded text-amber-200">Pending Validation</span>.
-            Work cannot transition to <span className="font-mono bg-blue-500/20 px-1 py-0.5 rounded text-blue-200">In Progress</span> until approved by an authorised Project Lead.
+            <span className="font-mono bg-amber-500/20 px-1.5 py-0.5 rounded text-amber-900 dark:text-amber-200">Pending Validation</span>.
+            Work cannot transition to <span className="font-mono bg-blue-500/20 px-1.5 py-0.5 rounded text-blue-800 dark:text-blue-200">In Progress</span> until approved by an authorised Project Lead.
           </div>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 pt-2">
           {/* Section 1: Provenance & Source */}
-          <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-3">
-            <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">
-              <FileText className="h-4 w-4 text-emerald-400" />
+          <div className="p-4 rounded-xl bg-muted/40 border border-border/60 space-y-3">
+            <h4 className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center gap-2">
+              <FileText className="h-4 w-4 text-primary" />
               1. Origin & Provenance Metadata
             </h4>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <Label className="text-xs text-slate-300">Task Source *</Label>
+                <Label className="text-xs text-foreground">Task Source *</Label>
                 <Select
                   value={formData.sourceType}
                   onValueChange={(val) => handleChange("sourceType", val)}
                 >
-                  <SelectTrigger className="mt-1 bg-slate-900 border-slate-700 text-xs">
+                  <SelectTrigger className="mt-1 bg-background border-border/70 text-xs rounded-xl">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="bg-slate-900 border-slate-700 text-slate-200 text-xs">
+                  <SelectContent className="bg-popover border-border/70 text-popover-foreground text-xs rounded-xl">
                     <SelectItem value="WHATSAPP">WhatsApp Message</SelectItem>
                     <SelectItem value="DIRECT_LEAD">Direct Lead Instruction</SelectItem>
                     <SelectItem value="MEETING">Meeting / Discussion</SelectItem>
@@ -238,9 +238,9 @@ export function TaskIntakeDialog({ open, onOpenChange, onTaskRegistered }) {
               </div>
 
               <div>
-                <Label className="text-xs text-slate-300">Originating Person *</Label>
+                <Label className="text-xs text-foreground">Originating Person *</Label>
                 <Input
-                  className="mt-1 bg-slate-900 border-slate-700 text-xs placeholder:text-slate-500"
+                  className="mt-1 bg-background border-border/70 text-xs placeholder:text-muted-foreground rounded-xl"
                   placeholder="e.g. Project Lead / Supervisor / Admin"
                   value={formData.originatingPerson}
                   onChange={(e) => handleChange("originatingPerson", e.target.value)}
@@ -248,9 +248,9 @@ export function TaskIntakeDialog({ open, onOpenChange, onTaskRegistered }) {
               </div>
 
               <div>
-                <Label className="text-xs text-slate-300">Source Reference / Chat ID</Label>
+                <Label className="text-xs text-foreground">Source Reference / Chat ID</Label>
                 <Input
-                  className="mt-1 bg-slate-900 border-slate-700 text-xs placeholder:text-slate-500"
+                  className="mt-1 bg-background border-border/70 text-xs placeholder:text-muted-foreground rounded-xl"
                   placeholder="e.g. WA Group / Msg Link / 04 Nov"
                   value={formData.sourceReference}
                   onChange={(e) => handleChange("sourceReference", e.target.value)}
@@ -260,17 +260,17 @@ export function TaskIntakeDialog({ open, onOpenChange, onTaskRegistered }) {
 
             {/* Verbatim message textarea */}
             <div className="space-y-1.5 pt-1">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs text-slate-300 flex items-center gap-1.5">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <Label className="text-xs text-foreground flex items-center gap-1.5">
                   Raw Original Task Instruction (Verbatim) *
-                  <span className="text-slate-500 font-normal text-[11px]">(Preserved immutably in DB)</span>
+                  <span className="text-muted-foreground font-normal text-[11px]">(Preserved immutably in DB)</span>
                 </Label>
                 <Button
                   type="button"
                   size="xs"
                   variant="ghost"
                   onClick={handleAutoExtract}
-                  className="h-6 text-[11px] text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/40 gap-1 px-2"
+                  className="h-6 text-[11px] text-primary hover:bg-primary/10 gap-1 px-2 rounded-lg"
                 >
                   <Sparkles className="h-3 w-3" />
                   Auto-parse fields
@@ -279,7 +279,7 @@ export function TaskIntakeDialog({ open, onOpenChange, onTaskRegistered }) {
               <Textarea
                 rows={4}
                 required
-                className="bg-slate-950 font-mono text-xs border-slate-700 text-slate-200 focus:border-emerald-500 placeholder:text-slate-600"
+                className="bg-background font-mono text-xs border-border/70 text-foreground focus:border-primary placeholder:text-muted-foreground rounded-xl"
                 placeholder="Paste the verbatim WhatsApp message or directive here...
 Example:
 BHIV TASK ASSIGNMENT: ISHAN
@@ -292,18 +292,18 @@ OBJECTIVE: Implement a workflow where every team member must register their assi
           </div>
 
           {/* Section 2: Task Definition & Specifications */}
-          <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-3">
-            <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-blue-400" />
+          <div className="p-4 rounded-xl bg-muted/40 border border-border/60 space-y-3">
+            <h4 className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-blue-500" />
               2. Task Registration Details
             </h4>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="sm:col-span-2">
-                <Label className="text-xs text-slate-300">Task Title *</Label>
+                <Label className="text-xs text-foreground">Task Title *</Label>
                 <Input
                   required
-                  className="mt-1 bg-slate-900 border-slate-700 text-xs placeholder:text-slate-500"
+                  className="mt-1 bg-background border-border/70 text-xs placeholder:text-muted-foreground rounded-xl"
                   placeholder="e.g. Build the Task Intake, Registration and Execution Gate"
                   value={formData.title}
                   onChange={(e) => handleChange("title", e.target.value)}
@@ -311,15 +311,15 @@ OBJECTIVE: Implement a workflow where every team member must register their assi
               </div>
 
               <div>
-                <Label className="text-xs text-slate-300">Priority</Label>
+                <Label className="text-xs text-foreground">Priority</Label>
                 <Select
                   value={formData.priority}
                   onValueChange={(val) => handleChange("priority", val)}
                 >
-                  <SelectTrigger className="mt-1 bg-slate-900 border-slate-700 text-xs">
+                  <SelectTrigger className="mt-1 bg-background border-border/70 text-xs rounded-xl">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="bg-slate-900 border-slate-700 text-slate-200 text-xs">
+                  <SelectContent className="bg-popover border-border/70 text-popover-foreground text-xs rounded-xl">
                     <SelectItem value="Low">Low</SelectItem>
                     <SelectItem value="Medium">Medium</SelectItem>
                     <SelectItem value="High">High</SelectItem>
@@ -329,20 +329,20 @@ OBJECTIVE: Implement a workflow where every team member must register their assi
               </div>
 
               <div>
-                <Label className="text-xs text-slate-300">Target Due Date</Label>
+                <Label className="text-xs text-foreground">Target Due Date</Label>
                 <Input
                   type="date"
-                  className="mt-1 bg-slate-900 border-slate-700 text-xs"
+                  className="mt-1 bg-background border-border/70 text-xs rounded-xl"
                   value={formData.dueDate}
                   onChange={(e) => handleChange("dueDate", e.target.value)}
                 />
               </div>
 
               <div className="sm:col-span-2">
-                <Label className="text-xs text-slate-300">Scope of Work</Label>
+                <Label className="text-xs text-foreground">Scope of Work</Label>
                 <Textarea
                   rows={2}
-                  className="mt-1 bg-slate-900 border-slate-700 text-xs placeholder:text-slate-500"
+                  className="mt-1 bg-background border-border/70 text-xs placeholder:text-muted-foreground rounded-xl"
                   placeholder="Summary of deliverables and scope..."
                   value={formData.scope}
                   onChange={(e) => handleChange("scope", e.target.value)}
@@ -350,10 +350,10 @@ OBJECTIVE: Implement a workflow where every team member must register their assi
               </div>
 
               <div className="sm:col-span-2">
-                <Label className="text-xs text-slate-300">Expected Outcome & Acceptance Criteria</Label>
+                <Label className="text-xs text-foreground">Expected Outcome & Acceptance Criteria</Label>
                 <Textarea
                   rows={2}
-                  className="mt-1 bg-slate-900 border-slate-700 text-xs placeholder:text-slate-500"
+                  className="mt-1 bg-background border-border/70 text-xs placeholder:text-muted-foreground rounded-xl"
                   placeholder="Acceptance criteria (e.g. 1. WhatsApp task registered, 2. Lead approval gate, 3. Parikshak review closure)..."
                   value={formData.acceptanceCriteria}
                   onChange={(e) => handleChange("acceptanceCriteria", e.target.value)}
@@ -361,9 +361,9 @@ OBJECTIVE: Implement a workflow where every team member must register their assi
               </div>
 
               <div className="sm:col-span-2">
-                <Label className="text-xs text-slate-300">Screenshot / Evidence Reference Link</Label>
+                <Label className="text-xs text-foreground">Screenshot / Evidence Reference Link</Label>
                 <Input
-                  className="mt-1 bg-slate-900 border-slate-700 text-xs placeholder:text-slate-500"
+                  className="mt-1 bg-background border-border/70 text-xs placeholder:text-muted-foreground rounded-xl"
                   placeholder="https://... (screenshot or chat backup link if applicable)"
                   value={formData.attachmentUrl}
                   onChange={(e) => handleChange("attachmentUrl", e.target.value)}
@@ -373,16 +373,16 @@ OBJECTIVE: Implement a workflow where every team member must register their assi
           </div>
 
           <DialogFooter className="flex sm:justify-between items-center gap-3 pt-2">
-            <p className="text-[11px] text-slate-400 flex items-center gap-1">
-              <AlertCircle className="h-3.5 w-3.5 text-amber-400" />
-              Auto-assigns unique <span className="font-mono text-emerald-400">T-WHT-XXXX</span> ID.
+            <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+              <AlertCircle className="h-3.5 w-3.5 text-amber-500" />
+              Auto-assigns unique <span className="font-mono text-primary">T-WHT-XXXX</span> ID.
             </p>
             <div className="flex items-center gap-2">
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                className="border-slate-700 text-slate-300 hover:bg-slate-800"
+                className="rounded-xl"
                 onClick={() => onOpenChange(false)}
                 disabled={isSubmitting}
               >
@@ -392,7 +392,7 @@ OBJECTIVE: Implement a workflow where every team member must register their assi
                 type="submit"
                 size="sm"
                 disabled={isSubmitting}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium gap-2 shadow-lg shadow-emerald-900/30"
+                className="gradient-primary text-primary-foreground font-medium gap-2 rounded-xl shadow-glow-primary"
               >
                 {isSubmitting ? (
                   <>Registering...</>

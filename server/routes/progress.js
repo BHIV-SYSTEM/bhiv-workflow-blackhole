@@ -7,6 +7,33 @@ const User = require("../models/User");
 const { check, validationResult } = require("express-validator");
 const multer = require("multer");
 const { uploadProgressImage } = require("../utils/cloudinary");
+const { signalTaskCompleted } = require("../services/karmaClient");
+
+// Synchronize task progress and lifecycle status across progress create/update endpoints
+async function syncTaskWithProgress(taskDoc, progressPercentage) {
+  const numericProgress = Number(progressPercentage) || 0;
+  const previousStatus = taskDoc.status;
+  taskDoc.progress = numericProgress;
+
+  if (numericProgress >= 100) {
+    if (!["Closed", "Submitted for Review"].includes(taskDoc.status)) {
+      taskDoc.status = "Completed";
+      taskDoc.closedAt = taskDoc.closedAt || new Date();
+      console.log(`✅ Auto-updated task ${taskDoc._id} status: ${previousStatus} → Completed (100% progress)`);
+    }
+  } else if (["Pending", "Pending Validation", "Approved"].includes(taskDoc.status)) {
+    taskDoc.status = "In Progress";
+    console.log(`✅ Auto-updated task ${taskDoc._id} status: ${previousStatus} → In Progress (${numericProgress}% progress)`);
+  }
+
+  await taskDoc.save();
+
+  if (taskDoc.status === "Completed" && previousStatus !== "Completed" && taskDoc.assignee) {
+    signalTaskCompleted(taskDoc.assignee, taskDoc._id, taskDoc.title).catch(() => {});
+  }
+
+  return previousStatus !== taskDoc.status;
+}
 
 // Helper to get branch filter from request
 const getBranchQuery = (req) => {
@@ -240,16 +267,7 @@ router.post(
 
       const progress = await newProgress.save();
 
-      // Update task progress and auto-change status to "In Progress" if pending
-      taskDoc.progress = progressPercentage;
-      
-      // 🔄 AUTO STATUS UPDATE: If task is Pending, Pending Validation, or Approved, change to In Progress
-      if (['Pending', 'Pending Validation', 'Approved'].includes(taskDoc.status)) {
-        taskDoc.status = 'In Progress';
-        console.log(`✅ Auto-updated task ${task} status to In Progress (User started working)`);
-      }
-      
-      await taskDoc.save();
+      const taskStatusChanged = await syncTaskWithProgress(taskDoc, progressPercentage);
 
       // Update today's aim with progress information
       const Aim = require("../models/Aim");
@@ -305,6 +323,11 @@ router.post(
           user
         });
 
+        if (taskStatusChanged) {
+          req.io.emit("task-updated", taskDoc);
+          req.io.emit("task:updated", taskDoc);
+        }
+
         // Emit aim update if aim was updated
         if (todayAim) {
           req.io.emit("aim-updated", {
@@ -358,15 +381,7 @@ router.put("/:id", auth, async (req, res) => {
     // Update task progress and auto-change status if needed
     const task = await Task.findById(progress.task);
     if (task) {
-      task.progress = progressPercentage;
-      
-      // 🔄 AUTO STATUS UPDATE: If task is Pending, change to In Progress
-      if (task.status === 'Pending') {
-        task.status = 'In Progress';
-        console.log(`✅ Auto-updated task ${task._id} status: Pending → In Progress (Progress updated)`);
-      }
-      
-      await task.save();
+      const taskStatusChanged = await syncTaskWithProgress(task, progressPercentage);
 
       // Notify via Socket.IO
       if (req.io) {
@@ -377,8 +392,9 @@ router.put("/:id", auth, async (req, res) => {
         });
         
         // Emit task status update if changed
-        if (task.status === 'In Progress') {
+        if (taskStatusChanged || task.status === 'In Progress' || task.status === 'Completed') {
           req.io.emit("task-updated", task);
+          req.io.emit("task:updated", task);
         }
       }
     }

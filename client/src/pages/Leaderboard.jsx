@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { api } from "../lib/api";
 import { formatDate } from "../lib/dateFormat";
+import { isTaskCompleted } from "../lib/taskStatus";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs";
 import {
@@ -53,8 +54,8 @@ const Leaderboard = () => {
         api.get(`/users/${userId}/submissions`).catch(() => []),
       ]);
 
-      const completedTasks = tasks.filter((task) => task.status === "Completed");
-      const pendingTasks = tasks.filter((task) => task.status !== "Completed");
+      const completedTasks = tasks.filter((task) => isTaskCompleted(task));
+      const pendingTasks = tasks.filter((task) => !isTaskCompleted(task));
 
       setUserDetails({
         ...user,

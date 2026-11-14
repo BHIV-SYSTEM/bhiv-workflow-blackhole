@@ -129,34 +129,10 @@ employeeActivitySchema.statics.getActivitySummary = async function(employeeId, s
   ]);
 };
 
-// Instance method to calculate productivity score (scaled to sample interval_seconds)
+// Instance method to calculate productivity score (delegates to unified telemetryMetrics helper)
 employeeActivitySchema.methods.calculateProductivityScore = function() {
-  let idleSec = this.idle_duration || 0;
-  if (idleSec > 10000) idleSec = Math.round(idleSec / 1000);
-  const keys = this.keystroke_count || 0;
-  const mouse = this.mouse_activity_score || 0;
-  const mouseEvents = this.mouse_event_count || 0;
-  const sampleSec = (this.interval_seconds && this.interval_seconds >= 1 && this.interval_seconds <= 120)
-    ? this.interval_seconds
-    : 30;
-  const hasInput = keys > 0 || mouse > 0 || mouseEvents > 0;
-
-  // Truly idle only when no input AND system idle >= 30s
-  if (!hasInput && idleSec >= 30) {
-    this.productivity_score = 0;
-    return 0;
-  }
-
-  const isDistraction = String(this.app_category || '').toUpperCase() === 'DISTRACTION';
-  const baseCredit = isDistraction ? 15 : 55;
-  const keyCadencePerMin = (keys / sampleSec) * 60;
-  const keyBonus = Math.min(1, keyCadencePerMin / 120) * 30;
-  const effectiveMouseScore = mouse > 0
-    ? Math.min(100, mouse)
-    : (mouseEvents > 0 ? Math.min(100, Math.round((((mouseEvents / sampleSec) * 60) / 240) * 100)) : 0);
-  const mouseBonus = (effectiveMouseScore / 100) * 15;
-
-  this.productivity_score = Math.min(100, Math.round(baseCredit + keyBonus + mouseBonus));
+  const { evaluateSample } = require('../utils/telemetryMetrics');
+  this.productivity_score = evaluateSample(this).qualityScore;
   return this.productivity_score;
 };
 

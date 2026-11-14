@@ -144,25 +144,25 @@ const EnhancedSalaryDashboard = () => {
 
   if (loading && !dashboardData) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-[70vh]">
         <div className="text-center">
-          <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-600">Loading salary data...</p>
+          <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading salary data...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 p-6">
+    <div className="min-h-full pb-8">
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 p-5 sm:p-6 rounded-2xl border border-border/60 bg-card/70 shadow-sm">
           <div>
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-green-600 via-blue-600 to-purple-600 bg-clip-text text-transparent">
+            <h1 className="text-2xl sm:text-3xl font-heading font-bold tracking-tight text-foreground">
               Enhanced Salary Management
             </h1>
-            <p className="text-gray-600 mt-1">
+            <p className="text-muted-foreground mt-1 text-sm sm:text-base">
               Live attendance integration with WFH tracking and biometric data
             </p>
           </div>
@@ -172,7 +172,7 @@ const EnhancedSalaryDashboard = () => {
             <select
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
-              className="px-4 py-2 border rounded-lg bg-white"
+              className="px-3.5 py-2 border border-border/70 rounded-xl bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
             >
               {Array.from({ length: 12 }, (_, i) => (
                 <option key={i + 1} value={i + 1}>
@@ -184,7 +184,7 @@ const EnhancedSalaryDashboard = () => {
             <select
               value={selectedYear}
               onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-              className="px-4 py-2 border rounded-lg bg-white"
+              className="px-3.5 py-2 border border-border/70 rounded-xl bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
             >
               {Array.from({ length: 3 }, (_, i) => (
                 <option key={2024 + i} value={2024 + i}>
@@ -201,7 +201,7 @@ const EnhancedSalaryDashboard = () => {
                 onChange={handleBiometricUpload}
                 className="hidden"
               />
-              <Button className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700">
+              <Button className="gradient-primary text-primary-foreground rounded-xl shadow-glow-primary hover:opacity-95">
                 <Upload className="w-4 h-4 mr-2" />
                 Upload Biometric
               </Button>
@@ -212,6 +212,7 @@ const EnhancedSalaryDashboard = () => {
               onClick={exportToExcel}
               variant="outline"
               disabled={!dashboardData}
+              className="rounded-xl"
             >
               <Download className="w-4 h-4 mr-2" />
               Export Report
@@ -228,7 +229,7 @@ const EnhancedSalaryDashboard = () => {
         )}
 
         {success && (
-          <Alert className="bg-green-50 text-green-800 border-green-200">
+          <Alert className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30">
             <CheckCircle className="h-4 w-4" />
             <AlertDescription>{success}</AlertDescription>
           </Alert>
@@ -240,14 +241,14 @@ const EnhancedSalaryDashboard = () => {
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
                 <div className="flex-1">
-                  <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                  <div className="h-2 bg-muted rounded-full overflow-hidden">
                     <div 
-                      className="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-300"
+                      className="h-full gradient-primary transition-all duration-300"
                       style={{ width: `${uploadProgress}%` }}
                     />
                   </div>
                 </div>
-                <span className="text-sm font-medium text-gray-600">{uploadProgress}%</span>
+                <span className="text-sm font-medium tabular-nums text-muted-foreground">{uploadProgress}%</span>
               </div>
             </CardContent>
           </Card>
@@ -255,78 +256,78 @@ const EnhancedSalaryDashboard = () => {
 
         {/* Summary Cards */}
         {dashboardData?.stats && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <Card className="border-0 shadow-lg bg-gradient-to-br from-green-50 to-emerald-50">
-              <CardContent className="p-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card interactive className="border-l-4 border-l-emerald-500">
+              <CardContent className="p-5 sm:p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-green-600">Total Payroll</p>
-                    <p className="text-2xl font-bold text-green-900">
+                    <p className="text-sm font-medium text-muted-foreground">Total Payroll</p>
+                    <p className="text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400 mt-1">
                       ${dashboardData.stats.totalSalary.toLocaleString()}
                     </p>
-                    <p className="text-xs text-green-600 mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       Avg: ${dashboardData.stats.averageSalary.toLocaleString()}
                     </p>
                   </div>
-                  <div className="p-3 bg-green-100 rounded-full">
-                    <DollarSign className="w-6 h-6 text-green-600" />
+                  <div className="p-3 bg-emerald-500/10 rounded-xl">
+                    <DollarSign className="w-6 h-6 text-emerald-500" />
                   </div>
                 </div>
               </CardContent>
             </Card>
 
-            <Card className="border-0 shadow-lg bg-gradient-to-br from-blue-50 to-cyan-50">
-              <CardContent className="p-6">
+            <Card interactive className="border-l-4 border-l-blue-500">
+              <CardContent className="p-5 sm:p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-blue-600">Total Hours</p>
-                    <p className="text-2xl font-bold text-blue-900">
+                    <p className="text-sm font-medium text-muted-foreground">Total Hours</p>
+                    <p className="text-2xl font-bold tabular-nums text-blue-600 dark:text-blue-400 mt-1">
                       {dashboardData.stats.totalHours.toLocaleString()}
                     </p>
-                    <p className="text-xs text-blue-600 mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       Avg: {dashboardData.stats.averageHours.toFixed(1)} hrs/employee
                     </p>
                   </div>
-                  <div className="p-3 bg-blue-100 rounded-full">
-                    <Clock className="w-6 h-6 text-blue-600" />
+                  <div className="p-3 bg-blue-500/10 rounded-xl">
+                    <Clock className="w-6 h-6 text-blue-500" />
                   </div>
                 </div>
               </CardContent>
             </Card>
 
-            <Card className="border-0 shadow-lg bg-gradient-to-br from-purple-50 to-violet-50">
-              <CardContent className="p-6">
+            <Card interactive className="border-l-4 border-l-purple-500">
+              <CardContent className="p-5 sm:p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-purple-600">WFH Days</p>
-                    <p className="text-2xl font-bold text-purple-900">
+                    <p className="text-sm font-medium text-muted-foreground">WFH Days</p>
+                    <p className="text-2xl font-bold tabular-nums text-purple-600 dark:text-purple-400 mt-1">
                       {dashboardData.stats.totalWFHDays}
                     </p>
-                    <p className="text-xs text-purple-600 mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       Office: {dashboardData.stats.totalOfficeDays}
                     </p>
                   </div>
-                  <div className="p-3 bg-purple-100 rounded-full">
-                    <Home className="w-6 h-6 text-purple-600" />
+                  <div className="p-3 bg-purple-500/10 rounded-xl">
+                    <Home className="w-6 h-6 text-purple-500" />
                   </div>
                 </div>
               </CardContent>
             </Card>
 
-            <Card className="border-0 shadow-lg bg-gradient-to-br from-orange-50 to-amber-50">
-              <CardContent className="p-6">
+            <Card interactive className="border-l-4 border-l-amber-500">
+              <CardContent className="p-5 sm:p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-orange-600">Employees</p>
-                    <p className="text-2xl font-bold text-orange-900">
+                    <p className="text-sm font-medium text-muted-foreground">Employees</p>
+                    <p className="text-2xl font-bold tabular-nums text-amber-600 dark:text-amber-400 mt-1">
                       {dashboardData.stats.totalEmployees}
                     </p>
-                    <p className="text-xs text-orange-600 mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       {dashboardData.stats.employeesNeedingReview} need review
                     </p>
                   </div>
-                  <div className="p-3 bg-orange-100 rounded-full">
-                    <Users className="w-6 h-6 text-orange-600" />
+                  <div className="p-3 bg-amber-500/10 rounded-xl">
+                    <Users className="w-6 h-6 text-amber-500" />
                   </div>
                 </div>
               </CardContent>
@@ -339,7 +340,7 @@ const EnhancedSalaryDashboard = () => {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <FileSpreadsheet className="w-5 h-5" />
+                <FileSpreadsheet className="w-5 h-5 text-primary" />
                 Employee Salary Breakdown
               </CardTitle>
               <CardDescription>
@@ -350,51 +351,51 @@ const EnhancedSalaryDashboard = () => {
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
-                    <tr className="border-b">
-                      <th className="text-left p-3 text-sm font-medium text-gray-600">Employee</th>
-                      <th className="text-center p-3 text-sm font-medium text-gray-600">Department</th>
-                      <th className="text-center p-3 text-sm font-medium text-gray-600">Present</th>
-                      <th className="text-center p-3 text-sm font-medium text-gray-600">WFH</th>
-                      <th className="text-center p-3 text-sm font-medium text-gray-600">Office</th>
-                      <th className="text-center p-3 text-sm font-medium text-gray-600">Hours</th>
-                      <th className="text-center p-3 text-sm font-medium text-gray-600">OT</th>
-                      <th className="text-right p-3 text-sm font-medium text-gray-600">Salary</th>
-                      <th className="text-center p-3 text-sm font-medium text-gray-600">Status</th>
+                    <tr className="border-b border-border/60">
+                      <th className="text-left p-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Employee</th>
+                      <th className="text-center p-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Department</th>
+                      <th className="text-center p-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Present</th>
+                      <th className="text-center p-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">WFH</th>
+                      <th className="text-center p-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Office</th>
+                      <th className="text-center p-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Hours</th>
+                      <th className="text-center p-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">OT</th>
+                      <th className="text-right p-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Salary</th>
+                      <th className="text-center p-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Status</th>
                     </tr>
                   </thead>
                   <tbody>
                     {dashboardData.employees.map((emp) => (
-                      <tr key={emp.user.id} className="border-b hover:bg-gray-50">
+                      <tr key={emp.user.id} className="border-b border-border/50 hover:bg-muted/40 transition-colors">
                         <td className="p-3">
                           <div>
-                            <p className="font-medium text-gray-900">{emp.user.name}</p>
-                            <p className="text-xs text-gray-500">{emp.user.email}</p>
+                            <p className="font-medium text-foreground">{emp.user.name}</p>
+                            <p className="text-xs text-muted-foreground">{emp.user.email}</p>
                           </div>
                         </td>
                         <td className="text-center p-3">
                           <Badge variant="outline">{emp.user.department || 'N/A'}</Badge>
                         </td>
-                        <td className="text-center p-3 font-medium">{emp.summary.daysPresent}</td>
-                        <td className="text-center p-3">
+                        <td className="text-center p-3 font-medium tabular-nums">{emp.summary.daysPresent}</td>
+                        <td className="text-center p-3 tabular-nums">
                           <div className="flex items-center justify-center gap-1">
                             <Home className="w-4 h-4 text-purple-500" />
                             {emp.summary.wfhDays}
                           </div>
                         </td>
-                        <td className="text-center p-3">
+                        <td className="text-center p-3 tabular-nums">
                           <div className="flex items-center justify-center gap-1">
                             <Building className="w-4 h-4 text-blue-500" />
                             {emp.summary.officeDays}
                           </div>
                         </td>
-                        <td className="text-center p-3 font-medium">{emp.summary.totalHoursWorked.toFixed(1)}</td>
-                        <td className="text-center p-3 text-orange-600">{emp.summary.totalOvertimeHours.toFixed(1)}</td>
-                        <td className="text-right p-3 font-bold text-green-600">${emp.totalSalary.toLocaleString()}</td>
+                        <td className="text-center p-3 font-medium tabular-nums">{emp.summary.totalHoursWorked.toFixed(1)}</td>
+                        <td className="text-center p-3 text-amber-500 tabular-nums">{emp.summary.totalOvertimeHours.toFixed(1)}</td>
+                        <td className="text-right p-3 font-bold tabular-nums text-emerald-500">${emp.totalSalary.toLocaleString()}</td>
                         <td className="text-center p-3">
                           {emp.status === 'needs_review' ? (
                             <Badge variant="destructive">Review</Badge>
                           ) : (
-                            <Badge className="bg-green-100 text-green-800">OK</Badge>
+                            <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">OK</Badge>
                           )}
                         </td>
                       </tr>
@@ -407,15 +408,15 @@ const EnhancedSalaryDashboard = () => {
         )}
 
         {/* Info Card */}
-        <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
+        <Card className="bg-primary/5 border-primary/25">
           <CardContent className="p-6">
             <div className="flex items-start gap-4">
-              <div className="p-3 bg-blue-100 rounded-full">
-                <AlertCircle className="w-6 h-6 text-blue-600" />
+              <div className="p-3 bg-primary/15 rounded-xl shrink-0">
+                <AlertCircle className="w-6 h-6 text-primary" />
               </div>
               <div className="flex-1">
-                <h3 className="font-semibold text-blue-900 mb-2">How It Works</h3>
-                <ul className="space-y-1 text-sm text-blue-800">
+                <h3 className="font-semibold text-foreground mb-2">How It Works</h3>
+                <ul className="space-y-1 text-sm text-muted-foreground">
                   <li>✓ Automatically calculates working hours from live attendance records</li>
                   <li>✓ Integrates biometric data with 30-minute allowance for start/end times</li>
                   <li>✓ Tracks WFH vs Office days from AIM records</li>

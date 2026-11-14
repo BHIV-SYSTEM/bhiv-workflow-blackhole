@@ -126,33 +126,33 @@ export function DashboardHeader({ sidebarOpen, onSidebarToggle }) {
   }
 
   return (
-    <div className="w-full h-16 border-b border-border bg-card/95 backdrop-blur-sm shadow-sm">
-      <div className="h-full flex items-center justify-between px-4 md:px-6 lg:px-8 gap-4">
+    <div className="w-full h-16 border-b border-border/60 bg-card/85 backdrop-blur-md shadow-xs">
+      <div className="h-full flex items-center justify-between px-3 sm:px-4 md:px-6 lg:px-8 gap-2 sm:gap-4">
         {/* Left Spacer - Mobile Menu */}
         <div className="flex items-center flex-shrink-0 w-auto">
           <div className="md:hidden">
             <MobileMenuButton 
               isOpen={sidebarOpen} 
               onClick={onSidebarToggle} 
-              className="transition-all duration-300 hover:scale-110" 
+              className="transition-all duration-200 hover:bg-primary/10" 
             />
           </div>
         </div>
 
         {/* Center Section - Search Bar (Desktop) */}
-        <div className="hidden md:flex flex-1 items-center justify-center">
+        <div className="hidden md:flex flex-1 items-center justify-center min-w-0">
           <div className="w-full max-w-2xl">
             <EnhancedSearch onUserSelect={handleUserSelect} />
           </div>
-          </div>
+        </div>
 
-          {/* Mobile Search - Icon Only */}
-        <div className="md:hidden flex-1">
-            <EnhancedSearch onUserSelect={handleUserSelect} compact />
-          </div>
+        {/* Mobile Search - Icon Only */}
+        <div className="md:hidden flex-1 min-w-0">
+          <EnhancedSearch onUserSelect={handleUserSelect} compact />
+        </div>
 
         {/* Right Section - Action Buttons */}
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
             <BranchSwitcher />
             <NotificationsPopover />
             <Alerts />

@@ -2,10 +2,10 @@ const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
 const sharp = require('sharp');
-const screenshot = require('screenshot-desktop');
 const ScreenCapture = require('../models/ScreenCapture');
 const MonitoringAlert = require('../models/MonitoringAlert');
 const { uploadRegularScreenshot } = require('../utils/cloudinary');
+const { captureSafeScreenshot } = require('../utils/safeScreenshot');
 
 class ScreenCaptureService {
   constructor() {
@@ -78,15 +78,10 @@ class ScreenCaptureService {
 
 
 
-      // Take screenshot with error handling for headless environments
-      let screenshotBuffer;
-      try {
-        screenshotBuffer = await screenshot({ format: 'png' });
-      } catch (screenshotError) {
-        console.log('📸 Screenshot failed, creating placeholder:', screenshotError.message);
-
+      // Take screenshot with safe headless guard
+      let screenshotBuffer = await captureSafeScreenshot({ format: 'png' });
+      if (!screenshotBuffer) {
         // Create a placeholder image for headless environments
-        const sharp = require('sharp');
         screenshotBuffer = await sharp({
           create: {
             width: 1920,
@@ -97,8 +92,6 @@ class ScreenCaptureService {
         })
         .png()
         .toBuffer();
-
-        console.log('📸 Created placeholder screenshot for headless environment');
       }
 
       // Calculate hash for delta detection

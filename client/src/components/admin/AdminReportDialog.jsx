@@ -507,44 +507,33 @@ export function AdminReportDialog({ open, onOpenChange }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent 
-        className="max-w-[95vw] lg:max-w-7xl max-h-[95vh] overflow-hidden border-none rounded-2xl shadow-2xl p-0"
-        style={{
-          background: 'rgba(30, 30, 30, 0.85)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-          boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.37)'
-        }}
+        className="max-w-[95vw] lg:max-w-7xl max-h-[95vh] overflow-hidden border border-border/70 bg-card/95 backdrop-blur-xl rounded-2xl shadow-2xl p-0"
       >
         <div className="flex flex-col h-[95vh]">
           <DialogHeader 
-            className="sticky top-0 z-10 border-b border-white/10 px-6 pt-6 pb-4"
-            style={{
-              background: 'rgba(30, 30, 30, 0.85)',
-              backdropFilter: 'blur(20px)',
-              WebkitBackdropFilter: 'blur(20px)',
-            }}
+            className="sticky top-0 z-10 border-b border-border/70 bg-card/95 backdrop-blur-xl px-4 sm:px-6 pt-5 pb-4"
           >
             <div className="flex flex-col gap-4">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-3">
                 <div>
-                  <DialogTitle className="text-2xl font-bold text-white">
+                  <DialogTitle className="text-xl sm:text-2xl font-bold text-foreground tracking-tight">
                     Admin Dashboard Report
                   </DialogTitle>
-                  <DialogDescription className="mt-1 text-gray-400">
-                    Comprehensive report for <span className="font-semibold text-blue-400">{getFilterLabel()}</span>
+                  <DialogDescription className="mt-1 text-muted-foreground">
+                    Comprehensive report for <span className="font-semibold text-primary">{getFilterLabel()}</span>
                   </DialogDescription>
                 </div>
               </div>
               
               {/* Date Navigation & Filter Buttons */}
-              <div className="flex flex-col gap-3 p-4 rounded-lg border border-white/10 bg-white/5 backdrop-blur-sm">
+              <div className="flex flex-col gap-3 p-3 sm:p-4 rounded-xl border border-border/70 bg-muted/40 backdrop-blur-sm">
                 {/* Date Picker with Navigation */}
-                <div className="flex items-center justify-center gap-3">
+                <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
                   <Button
                     variant="outline"
                     size="icon"
                     onClick={handlePreviousDate}
-                    className="bg-white/5 border-white/20 text-gray-300 hover:bg-white/10 hover:text-white hover:border-white/30 transition-all duration-200"
+                    className="bg-background/70 border-border/70 text-foreground hover:bg-muted transition-all duration-200"
                   >
                     <ChevronLeft className="h-5 w-5" />
                   </Button>
@@ -553,20 +542,20 @@ export function AdminReportDialog({ open, onOpenChange }) {
                     <PopoverTrigger asChild>
                       <Button
                         variant="outline"
-                        className="w-64 justify-center bg-gradient-to-br from-blue-500/20 to-purple-500/20 border-blue-500/30 hover:border-blue-500/50 text-white font-semibold text-lg transition-all duration-200"
+                        className="w-full sm:w-64 justify-center bg-primary/10 border-primary/30 hover:bg-primary/15 hover:border-primary/50 text-foreground font-semibold text-sm sm:text-base transition-all duration-200"
                       >
-                        <CalendarIcon className="mr-3 h-5 w-5" />
-                        {format(selectedDate, "EEEE, MMMM d, yyyy")}
+                        <CalendarIcon className="mr-2 sm:mr-3 h-4 w-4 sm:h-5 sm:w-5 text-primary shrink-0" />
+                        <span className="truncate">{format(selectedDate, "EEEE, MMMM d, yyyy")}</span>
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0 bg-gray-900 border-gray-700" align="center">
+                    <PopoverContent className="w-auto p-0 bg-popover border-border/70" align="center">
                       <Calendar
                         mode="single"
                         selected={selectedDate}
                         onSelect={handleDateSelect}
                         disabled={(date) => date > new Date()}
                         initialFocus
-                        className="rounded-md bg-gray-900 text-white"
+                        className="rounded-md bg-popover text-popover-foreground"
                       />
                     </PopoverContent>
                   </Popover>
@@ -576,7 +565,7 @@ export function AdminReportDialog({ open, onOpenChange }) {
                     size="icon"
                     onClick={handleNextDate}
                     disabled={format(selectedDate, "yyyy-MM-dd") === format(new Date(), "yyyy-MM-dd")}
-                    className="bg-white/5 border-white/20 text-gray-300 hover:bg-white/10 hover:text-white hover:border-white/30 transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                    className="bg-background/70 border-border/70 text-foreground hover:bg-muted transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed"
                   >
                     <ChevronRight className="h-5 w-5" />
                   </Button>
@@ -586,7 +575,7 @@ export function AdminReportDialog({ open, onOpenChange }) {
                     size="sm"
                     onClick={fetchReport}
                     disabled={isLoading}
-                    className="bg-white/5 border-white/20 text-gray-300 hover:bg-white/10 hover:text-white hover:border-white/30 font-medium px-4 py-2 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="bg-background/70 border-border/70 text-foreground hover:bg-muted font-medium px-4 py-2 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isLoading ? (
                       <>
@@ -606,149 +595,93 @@ export function AdminReportDialog({ open, onOpenChange }) {
           </DialogHeader>
           
           <div 
-            className="flex-1 overflow-y-auto px-6 pb-4 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent"
-            style={{
-              background: 'rgba(20, 20, 20, 0.6)'
-            }}
+            className="flex-1 overflow-y-auto px-4 sm:px-6 pb-4 bg-background/40 custom-scrollbar"
           >
 
             {isLoading ? (
               <div className="flex items-center justify-center py-20">
                 <div className="flex flex-col items-center gap-4">
                   <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                  <p className="text-gray-400">Loading report data...</p>
+                  <p className="text-muted-foreground">Loading report data...</p>
                 </div>
               </div>
             ) : reportData ? (
               <div className="space-y-6 pt-6">
                 {/* Main Dashboard Stats */}
-                <Card 
-                  className="border border-white/10 shadow-lg rounded-xl overflow-hidden"
-                  style={{
-                    background: 'rgba(50, 50, 50, 0.8)',
-                    backdropFilter: 'blur(10px)'
-                  }}
-                >
-                  <CardHeader 
-                    className="border-b border-white/10"
-                    style={{
-                      background: 'rgba(40, 40, 40, 0.6)'
-                    }}
-                  >
-                    <CardTitle className="flex items-center gap-2 text-white">
-                      <div className="p-2 rounded-lg bg-gradient-to-br from-primary to-accent">
-                        <TrendingUp className="h-5 w-5 text-white" />
+                <Card className="border border-border/70 bg-card shadow-sm rounded-xl overflow-hidden">
+                  <CardHeader className="border-b border-border/70 bg-muted/40">
+                    <CardTitle className="flex items-center gap-2 text-foreground">
+                      <div className="p-2 rounded-lg bg-primary/15 text-primary">
+                        <TrendingUp className="h-5 w-5" />
                       </div>
                       Main Dashboard Statistics
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="pt-6">
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                      <div 
-                        className="text-center p-5 rounded-xl border border-white/10 shadow-sm hover:shadow-md transition-all hover:scale-105"
-                        style={{
-                          background: 'rgba(59, 130, 246, 0.15)',
-                          backdropFilter: 'blur(10px)'
-                        }}
-                      >
-                        <div className="text-3xl font-bold text-blue-400 mb-1">{reportData.dashboardStats.totalTasks}</div>
-                        <div className="text-sm font-medium text-gray-300">Total Tasks</div>
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+                      <div className="text-center p-4 sm:p-5 rounded-xl border border-blue-500/20 bg-blue-500/10 shadow-sm hover:shadow-md transition-all">
+                        <div className="text-2xl sm:text-3xl font-bold text-blue-500 dark:text-blue-400 tabular-nums mb-1">{reportData.dashboardStats.totalTasks}</div>
+                        <div className="text-xs sm:text-sm font-medium text-muted-foreground">Total Tasks</div>
                       </div>
-                      <div 
-                        className="text-center p-5 rounded-xl border border-white/10 shadow-sm hover:shadow-md transition-all hover:scale-105"
-                        style={{
-                          background: 'rgba(34, 197, 94, 0.15)',
-                          backdropFilter: 'blur(10px)'
-                        }}
-                      >
-                        <div className="text-3xl font-bold text-green-400 mb-1">{reportData.dashboardStats.completedTasks}</div>
-                        <div className="text-sm font-medium text-gray-300">Completed</div>
+                      <div className="text-center p-4 sm:p-5 rounded-xl border border-emerald-500/20 bg-emerald-500/10 shadow-sm hover:shadow-md transition-all">
+                        <div className="text-2xl sm:text-3xl font-bold text-emerald-500 dark:text-emerald-400 tabular-nums mb-1">{reportData.dashboardStats.completedTasks}</div>
+                        <div className="text-xs sm:text-sm font-medium text-muted-foreground">Completed</div>
                       </div>
-                      <div 
-                        className="text-center p-5 rounded-xl border border-white/10 shadow-sm hover:shadow-md transition-all hover:scale-105"
-                        style={{
-                          background: 'rgba(249, 115, 22, 0.15)',
-                          backdropFilter: 'blur(10px)'
-                        }}
-                      >
-                        <div className="text-3xl font-bold text-orange-400 mb-1">{reportData.dashboardStats.inProgressTasks}</div>
-                        <div className="text-sm font-medium text-gray-300">In Progress</div>
+                      <div className="text-center p-4 sm:p-5 rounded-xl border border-amber-500/20 bg-amber-500/10 shadow-sm hover:shadow-md transition-all">
+                        <div className="text-2xl sm:text-3xl font-bold text-amber-500 dark:text-amber-400 tabular-nums mb-1">{reportData.dashboardStats.inProgressTasks}</div>
+                        <div className="text-xs sm:text-sm font-medium text-muted-foreground">In Progress</div>
                       </div>
-                      <div 
-                        className="text-center p-5 rounded-xl border border-white/10 shadow-sm hover:shadow-md transition-all hover:scale-105"
-                        style={{
-                          background: 'rgba(239, 68, 68, 0.15)',
-                          backdropFilter: 'blur(10px)'
-                        }}
-                      >
-                        <div className="text-3xl font-bold text-red-400 mb-1">{reportData.dashboardStats.pendingTasks}</div>
-                        <div className="text-sm font-medium text-gray-300">Pending</div>
+                      <div className="text-center p-4 sm:p-5 rounded-xl border border-red-500/20 bg-red-500/10 shadow-sm hover:shadow-md transition-all">
+                        <div className="text-2xl sm:text-3xl font-bold text-red-500 dark:text-red-400 tabular-nums mb-1">{reportData.dashboardStats.pendingTasks}</div>
+                        <div className="text-xs sm:text-sm font-medium text-muted-foreground">Pending</div>
                       </div>
-                      <div 
-                        className="text-center p-5 rounded-xl border border-white/10 shadow-sm hover:shadow-md transition-all hover:scale-105"
-                        style={{
-                          background: 'rgba(168, 85, 247, 0.15)',
-                          backdropFilter: 'blur(10px)'
-                        }}
-                      >
-                        <div className="text-3xl font-bold text-purple-400 mb-1">{reportData.dashboardStats.totalUsers}</div>
-                        <div className="text-sm font-medium text-gray-300">Total Users</div>
+                      <div className="text-center p-4 sm:p-5 rounded-xl border border-purple-500/20 bg-purple-500/10 shadow-sm hover:shadow-md transition-all">
+                        <div className="text-2xl sm:text-3xl font-bold text-purple-500 dark:text-purple-400 tabular-nums mb-1">{reportData.dashboardStats.totalUsers}</div>
+                        <div className="text-xs sm:text-sm font-medium text-muted-foreground">Total Users</div>
                       </div>
-                      <div 
-                        className="text-center p-5 rounded-xl border border-white/10 shadow-sm hover:shadow-md transition-all hover:scale-105"
-                        style={{
-                          background: 'rgba(99, 102, 241, 0.15)',
-                          backdropFilter: 'blur(10px)'
-                        }}
-                      >
-                        <div className="text-3xl font-bold text-indigo-400 mb-1">{reportData.dashboardStats.totalDepartments}</div>
-                        <div className="text-sm font-medium text-gray-300">Departments</div>
+                      <div className="text-center p-4 sm:p-5 rounded-xl border border-indigo-500/20 bg-indigo-500/10 shadow-sm hover:shadow-md transition-all">
+                        <div className="text-2xl sm:text-3xl font-bold text-indigo-500 dark:text-indigo-400 tabular-nums mb-1">{reportData.dashboardStats.totalDepartments}</div>
+                        <div className="text-xs sm:text-sm font-medium text-muted-foreground">Departments</div>
                       </div>
                     </div>
                   </CardContent>
                 </Card>
 
                 <Tabs defaultValue="departments" className="w-full">
-                  <TabsList 
-                    className="grid w-full grid-cols-6 border border-white/10 rounded-lg p-1"
-                    style={{
-                      background: 'rgba(40, 40, 40, 0.6)',
-                      backdropFilter: 'blur(10px)'
-                    }}
-                  >
+                  <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 md:grid-cols-6 h-auto gap-1 border border-border/70 bg-muted/40 rounded-xl p-1">
                     <TabsTrigger 
                       value="departments"
-                      className="data-[state=active]:bg-gradient-to-br data-[state=active]:from-primary data-[state=active]:to-accent data-[state=active]:text-white text-gray-300 hover:text-white hover:bg-white/10 text-xs md:text-sm"
+                      className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-muted-foreground hover:text-foreground text-xs md:text-sm py-2"
                     >
                       Departments
                     </TabsTrigger>
                     <TabsTrigger 
                       value="user-info"
-                      className="data-[state=active]:bg-gradient-to-br data-[state=active]:from-primary data-[state=active]:to-accent data-[state=active]:text-white text-gray-300 hover:text-white hover:bg-white/10 text-xs md:text-sm"
+                      className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-muted-foreground hover:text-foreground text-xs md:text-sm py-2"
                     >
                       User Info
                     </TabsTrigger>
                     <TabsTrigger 
                       value="present"
-                      className="data-[state=active]:bg-gradient-to-br data-[state=active]:from-primary data-[state=active]:to-accent data-[state=active]:text-white text-gray-300 hover:text-white hover:bg-white/10 text-xs md:text-sm"
+                      className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-muted-foreground hover:text-foreground text-xs md:text-sm py-2"
                     >
                       Present
                     </TabsTrigger>
                     <TabsTrigger 
                       value="absent"
-                      className="data-[state=active]:bg-gradient-to-br data-[state=active]:from-primary data-[state=active]:to-accent data-[state=active]:text-white text-gray-300 hover:text-white hover:bg-white/10 text-xs md:text-sm"
+                      className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-muted-foreground hover:text-foreground text-xs md:text-sm py-2"
                     >
                       Absent
                     </TabsTrigger>
                     <TabsTrigger 
                       value="zero-tasks"
-                      className="data-[state=active]:bg-gradient-to-br data-[state=active]:from-primary data-[state=active]:to-accent data-[state=active]:text-white text-gray-300 hover:text-white hover:bg-white/10 text-xs md:text-sm"
+                      className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-muted-foreground hover:text-foreground text-xs md:text-sm py-2"
                     >
                       Zero Tasks
                     </TabsTrigger>
                     <TabsTrigger 
                       value="progress"
-                      className="data-[state=active]:bg-gradient-to-br data-[state=active]:from-primary data-[state=active]:to-accent data-[state=active]:text-white text-gray-300 hover:text-white hover:bg-white/10 text-xs md:text-sm"
+                      className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-muted-foreground hover:text-foreground text-xs md:text-sm py-2"
                     >
                       Progress
                     </TabsTrigger>
@@ -756,22 +689,11 @@ export function AdminReportDialog({ open, onOpenChange }) {
 
                   {/* Department-wise Task Count */}
                   <TabsContent value="departments" className="space-y-4 mt-4">
-                    <Card 
-                      className="border border-white/10 shadow-lg rounded-xl overflow-hidden"
-                      style={{
-                        background: 'rgba(50, 50, 50, 0.8)',
-                        backdropFilter: 'blur(10px)'
-                      }}
-                    >
-                      <CardHeader 
-                        className="border-b border-white/10"
-                        style={{
-                          background: 'rgba(40, 40, 40, 0.6)'
-                        }}
-                      >
-                        <CardTitle className="flex items-center gap-2 text-white">
-                          <div className="p-2 rounded-lg bg-gradient-to-br from-primary to-accent">
-                            <Building2 className="h-5 w-5 text-white" />
+                    <Card className="border border-border/70 bg-card shadow-sm rounded-xl overflow-hidden">
+                      <CardHeader className="border-b border-border/70 bg-muted/40">
+                        <CardTitle className="flex items-center gap-2 text-foreground">
+                          <div className="p-2 rounded-lg bg-primary/15 text-primary">
+                            <Building2 className="h-5 w-5" />
                           </div>
                           Department-wise Task Count
                         </CardTitle>
@@ -780,37 +702,26 @@ export function AdminReportDialog({ open, onOpenChange }) {
                         <div className="overflow-x-auto">
                           <Table>
                             <TableHeader>
-                              <TableRow 
-                                className="border-b border-white/10"
-                                style={{
-                                  background: 'rgba(40, 40, 40, 0.6)'
-                                }}
-                              >
-                                <TableHead className="text-white font-semibold">Department</TableHead>
-                                <TableHead className="text-white font-semibold">Total Tasks</TableHead>
-                                <TableHead className="text-white font-semibold">Completed</TableHead>
-                                <TableHead className="text-white font-semibold">In Progress</TableHead>
-                                <TableHead className="text-white font-semibold">Pending</TableHead>
+                              <TableRow className="border-b border-border/70 bg-muted/40 hover:bg-muted/40">
+                                <TableHead className="text-foreground font-semibold">Department</TableHead>
+                                <TableHead className="text-foreground font-semibold">Total Tasks</TableHead>
+                                <TableHead className="text-foreground font-semibold">Completed</TableHead>
+                                <TableHead className="text-foreground font-semibold">In Progress</TableHead>
+                                <TableHead className="text-foreground font-semibold">Pending</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
                               {reportData.departmentTaskCounts.map((dept) => (
                                 <TableRow 
                                   key={dept.id} 
-                                  className="border-b border-white/10 hover:bg-white/5 transition-colors"
-                                  style={{
-                                    background: 'rgba(50, 50, 50, 0.4)'
-                                  }}
+                                  className="border-b border-border/50 hover:bg-muted/30 transition-colors"
                                 >
-                                  <TableCell className="font-medium text-gray-100">{dept.name}</TableCell>
-                                  <TableCell className="text-gray-300">{dept.totalTasks}</TableCell>
+                                  <TableCell className="font-medium text-foreground">{dept.name}</TableCell>
+                                  <TableCell className="text-muted-foreground tabular-nums">{dept.totalTasks}</TableCell>
                                   <TableCell>
                                     <Badge 
                                       variant="outline" 
-                                      className="text-green-400 border-green-500/30"
-                                      style={{
-                                        background: 'rgba(34, 197, 94, 0.15)'
-                                      }}
+                                      className="bg-emerald-500/15 text-emerald-500 dark:text-emerald-400 border-emerald-500/30 tabular-nums"
                                     >
                                       {dept.completedTasks}
                                     </Badge>
@@ -818,10 +729,7 @@ export function AdminReportDialog({ open, onOpenChange }) {
                                   <TableCell>
                                     <Badge 
                                       variant="outline" 
-                                      className="text-orange-400 border-orange-500/30"
-                                      style={{
-                                        background: 'rgba(249, 115, 22, 0.15)'
-                                      }}
+                                      className="bg-amber-500/15 text-amber-500 dark:text-amber-400 border-amber-500/30 tabular-nums"
                                     >
                                       {dept.inProgressTasks}
                                     </Badge>
@@ -829,10 +737,7 @@ export function AdminReportDialog({ open, onOpenChange }) {
                                   <TableCell>
                                     <Badge 
                                       variant="outline" 
-                                      className="text-red-400 border-red-500/30"
-                                      style={{
-                                        background: 'rgba(239, 68, 68, 0.15)'
-                                      }}
+                                      className="bg-red-500/15 text-red-500 dark:text-red-400 border-red-500/30 tabular-nums"
                                     >
                                       {dept.pendingTasks}
                                     </Badge>
@@ -848,22 +753,11 @@ export function AdminReportDialog({ open, onOpenChange }) {
 
                   {/* User Info - Only users who started day */}
                   <TabsContent value="user-info" className="space-y-4 mt-4">
-                    <Card 
-                      className="border border-white/10 shadow-lg rounded-xl overflow-hidden"
-                      style={{
-                        background: 'rgba(50, 50, 50, 0.8)',
-                        backdropFilter: 'blur(10px)'
-                      }}
-                    >
-                      <CardHeader 
-                        className="border-b border-white/10"
-                        style={{
-                          background: 'rgba(40, 40, 40, 0.6)'
-                        }}
-                      >
-                        <CardTitle className="flex items-center gap-2 text-white">
-                          <div className="p-2 rounded-lg bg-gradient-to-br from-primary to-accent">
-                            <Users className="h-5 w-5 text-white" />
+                    <Card className="border border-border/70 bg-card shadow-sm rounded-xl overflow-hidden">
+                      <CardHeader className="border-b border-border/70 bg-muted/40">
+                        <CardTitle className="flex items-center gap-2 text-foreground">
+                          <div className="p-2 rounded-lg bg-primary/15 text-primary">
+                            <Users className="h-5 w-5" />
                           </div>
                           User Info ({reportData.usersWithStartDay?.length || 0} users started day)
                         </CardTitle>
@@ -873,19 +767,14 @@ export function AdminReportDialog({ open, onOpenChange }) {
                           <div className="overflow-x-auto">
                             <Table>
                               <TableHeader>
-                                <TableRow 
-                                  className="border-b border-white/10"
-                                  style={{
-                                    background: 'rgba(40, 40, 40, 0.6)'
-                                  }}
-                                >
-                                  <TableHead className="text-white font-semibold">Employee ID</TableHead>
-                                  <TableHead className="text-white font-semibold">Name</TableHead>
-                                  <TableHead className="text-white font-semibold">Aims</TableHead>
-                                  <TableHead className="text-white font-semibold">Start Time</TableHead>
-                                  <TableHead className="text-white font-semibold">End Time</TableHead>
-                                  <TableHead className="text-white font-semibold">Hours</TableHead>
-                                  <TableHead className="text-white font-semibold">Status</TableHead>
+                                <TableRow className="border-b border-border/70 bg-muted/40 hover:bg-muted/40">
+                                  <TableHead className="text-foreground font-semibold">Employee ID</TableHead>
+                                  <TableHead className="text-foreground font-semibold">Name</TableHead>
+                                  <TableHead className="text-foreground font-semibold">Aims</TableHead>
+                                  <TableHead className="text-foreground font-semibold">Start Time</TableHead>
+                                  <TableHead className="text-foreground font-semibold">End Time</TableHead>
+                                  <TableHead className="text-foreground font-semibold">Hours</TableHead>
+                                  <TableHead className="text-foreground font-semibold">Status</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
@@ -895,49 +784,42 @@ export function AdminReportDialog({ open, onOpenChange }) {
                                   return (
                                     <TableRow 
                                       key={user.userId} 
-                                      className="border-b border-white/10 hover:bg-white/5 transition-colors"
-                                      style={{
-                                        background: 'rgba(50, 50, 50, 0.4)'
-                                      }}
+                                      className="border-b border-border/50 hover:bg-muted/30 transition-colors"
                                     >
                                       <TableCell className="font-mono font-bold text-xs text-primary whitespace-nowrap">
                                         {user.employeeId || formatEmployeeId(user.userEmail)}
                                       </TableCell>
-                                      <TableCell className="font-medium text-gray-100">{user.userName}</TableCell>
+                                      <TableCell className="font-medium text-foreground">{user.userName}</TableCell>
                                       <TableCell>
                                         <div className="max-w-xs">
-                                          <p className="text-sm text-gray-300">
+                                          <p className="text-sm text-muted-foreground">
                                             {userAim?.aims || user.aims || "No aims set"}
                                           </p>
                                         </div>
                                       </TableCell>
                                       <TableCell>
-                                        <div className="flex items-center gap-1 text-green-400">
+                                        <div className="flex items-center gap-1 text-emerald-500 dark:text-emerald-400 tabular-nums">
                                           <Clock className="h-3 w-3" />
                                           {user.startDayTime ? formatTime(user.startDayTime) : "N/A"}
                                         </div>
                                       </TableCell>
                                       <TableCell>
-                                        <div className="flex items-center gap-1 text-red-400">
+                                        <div className="flex items-center gap-1 text-red-500 dark:text-red-400 tabular-nums">
                                           <Clock className="h-3 w-3" />
                                           {user.endDayTime ? formatTime(user.endDayTime) : "Active"}
                                         </div>
                                       </TableCell>
-                                      <TableCell className="font-semibold text-white">
+                                      <TableCell className="font-semibold text-foreground tabular-nums">
                                         {formatHours(getTotalHours(user))}
                                       </TableCell>
                                       <TableCell>
                                         <Badge
+                                          variant="outline"
                                           className={
                                             user.workLocationType === "Home" || user.workLocationType === "Remote"
-                                              ? "text-blue-400 border-blue-500/30"
-                                              : "text-purple-400 border-purple-500/30"
+                                              ? "bg-blue-500/15 text-blue-500 dark:text-blue-400 border-blue-500/30"
+                                              : "bg-purple-500/15 text-purple-500 dark:text-purple-400 border-purple-500/30"
                                           }
-                                          style={{
-                                            background: user.workLocationType === "Home" || user.workLocationType === "Remote"
-                                              ? 'rgba(59, 130, 246, 0.15)'
-                                              : 'rgba(168, 85, 247, 0.15)'
-                                          }}
                                         >
                                           {user.workLocationType === "Home" || user.workLocationType === "Remote" ? "WFH" : "Office"}
                                         </Badge>
@@ -950,8 +832,8 @@ export function AdminReportDialog({ open, onOpenChange }) {
                           </div>
                         ) : (
                           <div className="text-center py-8">
-                            <UserX className="h-12 w-12 mx-auto mb-4 text-gray-500" />
-                            <p className="text-gray-400">No users started their day on this date</p>
+                            <UserX className="h-12 w-12 mx-auto mb-4 text-muted-foreground/60" />
+                            <p className="text-muted-foreground">No users started their day on this date</p>
                           </div>
                         )}
                       </CardContent>
@@ -960,22 +842,11 @@ export function AdminReportDialog({ open, onOpenChange }) {
 
                   {/* Present Users */}
                   <TabsContent value="present" className="space-y-4 mt-4">
-                    <Card 
-                      className="border border-white/10 shadow-lg rounded-xl overflow-hidden"
-                      style={{
-                        background: 'rgba(50, 50, 50, 0.8)',
-                        backdropFilter: 'blur(10px)'
-                      }}
-                    >
-                      <CardHeader 
-                        className="border-b border-white/10"
-                        style={{
-                          background: 'rgba(40, 40, 40, 0.6)'
-                        }}
-                      >
-                        <CardTitle className="flex items-center gap-2 text-white">
-                          <div className="p-2 rounded-lg bg-gradient-to-br from-green-500 to-green-600">
-                            <UserCheck className="h-5 w-5 text-white" />
+                    <Card className="border border-border/70 bg-card shadow-sm rounded-xl overflow-hidden">
+                      <CardHeader className="border-b border-border/70 bg-muted/40">
+                        <CardTitle className="flex items-center gap-2 text-foreground">
+                          <div className="p-2 rounded-lg bg-emerald-500/15 text-emerald-500 dark:text-emerald-400">
+                            <UserCheck className="h-5 w-5" />
                           </div>
                           Present Users ({reportData.usersWithStartDay?.length || 0} users)
                         </CardTitle>
@@ -985,62 +856,48 @@ export function AdminReportDialog({ open, onOpenChange }) {
                           <div className="overflow-x-auto">
                             <Table>
                               <TableHeader>
-                                <TableRow 
-                                  className="border-b border-white/10"
-                                  style={{
-                                    background: 'rgba(40, 40, 40, 0.6)'
-                                  }}
-                                >
-                                  <TableHead className="text-white font-semibold">Employee ID</TableHead>
-                                  <TableHead className="text-white font-semibold">Name</TableHead>
-                                  <TableHead className="text-white font-semibold">Email</TableHead>
-                                  <TableHead className="text-white font-semibold">Start Time</TableHead>
-                                  <TableHead className="text-white font-semibold">WFH/Office</TableHead>
-                                  <TableHead className="text-white font-semibold">Status</TableHead>
+                                <TableRow className="border-b border-border/70 bg-muted/40 hover:bg-muted/40">
+                                  <TableHead className="text-foreground font-semibold">Employee ID</TableHead>
+                                  <TableHead className="text-foreground font-semibold">Name</TableHead>
+                                  <TableHead className="text-foreground font-semibold">Email</TableHead>
+                                  <TableHead className="text-foreground font-semibold">Start Time</TableHead>
+                                  <TableHead className="text-foreground font-semibold">WFH/Office</TableHead>
+                                  <TableHead className="text-foreground font-semibold">Status</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
                                 {reportData.usersWithStartDay.map((user) => (
                                   <TableRow 
                                     key={user.userId} 
-                                    className="border-b border-white/10 hover:bg-white/5 transition-colors"
-                                    style={{
-                                      background: 'rgba(50, 50, 50, 0.4)'
-                                    }}
+                                    className="border-b border-border/50 hover:bg-muted/30 transition-colors"
                                   >
                                     <TableCell className="font-mono font-bold text-xs text-primary whitespace-nowrap">
                                       {user.employeeId || formatEmployeeId(user.userEmail)}
                                     </TableCell>
-                                    <TableCell className="font-medium text-gray-100">{user.userName}</TableCell>
-                                    <TableCell className="text-gray-300">{user.userEmail}</TableCell>
+                                    <TableCell className="font-medium text-foreground">{user.userName}</TableCell>
+                                    <TableCell className="text-muted-foreground">{user.userEmail}</TableCell>
                                     <TableCell>
-                                      <div className="flex items-center gap-1 text-green-400">
+                                      <div className="flex items-center gap-1 text-emerald-500 dark:text-emerald-400 tabular-nums">
                                         <Clock className="h-3 w-3" />
                                         {user.startDayTime ? formatTime(user.startDayTime) : "N/A"}
                                       </div>
                                     </TableCell>
                                     <TableCell>
                                       <Badge
+                                        variant="outline"
                                         className={
                                           user.workLocationType === "Home" || user.workLocationType === "Remote"
-                                            ? "text-blue-400 border-blue-500/30"
-                                            : "text-purple-400 border-purple-500/30"
+                                            ? "bg-blue-500/15 text-blue-500 dark:text-blue-400 border-blue-500/30"
+                                            : "bg-purple-500/15 text-purple-500 dark:text-purple-400 border-purple-500/30"
                                         }
-                                        style={{
-                                          background: user.workLocationType === "Home" || user.workLocationType === "Remote"
-                                            ? 'rgba(59, 130, 246, 0.15)'
-                                            : 'rgba(168, 85, 247, 0.15)'
-                                        }}
                                       >
                                         {user.workLocationType === "Home" || user.workLocationType === "Remote" ? "WFH" : "Office"}
                                       </Badge>
                                     </TableCell>
                                     <TableCell>
                                       <Badge
-                                        className="text-green-400 border-green-500/30"
-                                        style={{
-                                          background: 'rgba(34, 197, 94, 0.15)'
-                                        }}
+                                        variant="outline"
+                                        className="bg-emerald-500/15 text-emerald-500 dark:text-emerald-400 border-emerald-500/30"
                                       >
                                         Present
                                       </Badge>
@@ -1052,8 +909,8 @@ export function AdminReportDialog({ open, onOpenChange }) {
                           </div>
                         ) : (
                           <div className="text-center py-8">
-                            <UserX className="h-12 w-12 mx-auto mb-4 text-gray-500" />
-                            <p className="text-gray-400">No users present on this date</p>
+                            <UserX className="h-12 w-12 mx-auto mb-4 text-muted-foreground/60" />
+                            <p className="text-muted-foreground">No users present on this date</p>
                           </div>
                         )}
                       </CardContent>
@@ -1062,22 +919,11 @@ export function AdminReportDialog({ open, onOpenChange }) {
 
                   {/* Absent Users */}
                   <TabsContent value="absent" className="space-y-4 mt-4">
-                    <Card 
-                      className="border border-white/10 shadow-lg rounded-xl overflow-hidden"
-                      style={{
-                        background: 'rgba(50, 50, 50, 0.8)',
-                        backdropFilter: 'blur(10px)'
-                      }}
-                    >
-                      <CardHeader 
-                        className="border-b border-white/10"
-                        style={{
-                          background: 'rgba(40, 40, 40, 0.6)'
-                        }}
-                      >
-                        <CardTitle className="flex items-center gap-2 text-white">
-                          <div className="p-2 rounded-lg bg-gradient-to-br from-red-500 to-red-600">
-                            <UserX className="h-5 w-5 text-white" />
+                    <Card className="border border-border/70 bg-card shadow-sm rounded-xl overflow-hidden">
+                      <CardHeader className="border-b border-border/70 bg-muted/40">
+                        <CardTitle className="flex items-center gap-2 text-foreground">
+                          <div className="p-2 rounded-lg bg-red-500/15 text-red-500 dark:text-red-400">
+                            <UserX className="h-5 w-5" />
                           </div>
                           Absent Users ({(reportData.dashboardStats?.totalUsers || 0) - (reportData.usersWithStartDay?.length || 0)} users)
                         </CardTitle>
@@ -1093,52 +939,39 @@ export function AdminReportDialog({ open, onOpenChange }) {
                               <div className="overflow-x-auto">
                                 <Table>
                                   <TableHeader>
-                                    <TableRow 
-                                      className="border-b border-white/10"
-                                      style={{
-                                        background: 'rgba(40, 40, 40, 0.6)'
-                                      }}
-                                    >
-                                      <TableHead className="text-white font-semibold">Employee ID</TableHead>
-                                  <TableHead className="text-white font-semibold">Name</TableHead>
-                                      <TableHead className="text-white font-semibold">Email</TableHead>
-                                      <TableHead className="text-white font-semibold">Role</TableHead>
-                                      <TableHead className="text-white font-semibold">Department</TableHead>
-                                      <TableHead className="text-white font-semibold">Status</TableHead>
+                                    <TableRow className="border-b border-border/70 bg-muted/40 hover:bg-muted/40">
+                                      <TableHead className="text-foreground font-semibold">Employee ID</TableHead>
+                                      <TableHead className="text-foreground font-semibold">Name</TableHead>
+                                      <TableHead className="text-foreground font-semibold">Email</TableHead>
+                                      <TableHead className="text-foreground font-semibold">Role</TableHead>
+                                      <TableHead className="text-foreground font-semibold">Department</TableHead>
+                                      <TableHead className="text-foreground font-semibold">Status</TableHead>
                                     </TableRow>
                                   </TableHeader>
                                   <TableBody>
                                     {absentUsers.map((user) => (
                                       <TableRow 
                                         key={user.userId} 
-                                        className="border-b border-white/10 hover:bg-white/5 transition-colors"
-                                        style={{
-                                          background: 'rgba(50, 50, 50, 0.4)'
-                                        }}
+                                        className="border-b border-border/50 hover:bg-muted/30 transition-colors"
                                       >
                                         <TableCell className="font-mono font-bold text-xs text-primary whitespace-nowrap">
                                           {user.employeeId || formatEmployeeId(user.email)}
                                         </TableCell>
-                                        <TableCell className="font-medium text-gray-100">{user.name}</TableCell>
-                                        <TableCell className="text-gray-300">{user.email}</TableCell>
+                                        <TableCell className="font-medium text-foreground">{user.name}</TableCell>
+                                        <TableCell className="text-muted-foreground">{user.email}</TableCell>
                                         <TableCell>
                                           <Badge 
                                             variant="outline" 
-                                            className="text-gray-300 border-white/10"
-                                            style={{
-                                              background: 'rgba(40, 40, 40, 0.6)'
-                                            }}
+                                            className="bg-muted/60 text-foreground border-border/70"
                                           >
                                             {user.role}
                                           </Badge>
                                         </TableCell>
-                                        <TableCell className="text-gray-300">{user.department}</TableCell>
+                                        <TableCell className="text-muted-foreground">{user.department}</TableCell>
                                         <TableCell>
                                           <Badge
-                                            className="text-red-400 border-red-500/30"
-                                            style={{
-                                              background: 'rgba(239, 68, 68, 0.15)'
-                                            }}
+                                            variant="outline"
+                                            className="bg-red-500/15 text-red-500 dark:text-red-400 border-red-500/30"
                                           >
                                             Absent
                                           </Badge>
@@ -1152,8 +985,8 @@ export function AdminReportDialog({ open, onOpenChange }) {
                           } else {
                             return (
                               <div className="text-center py-8">
-                                <CheckCircle className="h-12 w-12 mx-auto mb-4 text-green-400" />
-                                <p className="text-gray-400">All users are present today!</p>
+                                <CheckCircle className="h-12 w-12 mx-auto mb-4 text-emerald-500 dark:text-emerald-400" />
+                                <p className="text-muted-foreground">All users are present today!</p>
                               </div>
                             )
                           }
@@ -1164,22 +997,11 @@ export function AdminReportDialog({ open, onOpenChange }) {
 
                   {/* Zero Task Employees */}
                   <TabsContent value="zero-tasks" className="space-y-4 mt-4">
-                    <Card 
-                      className="border border-white/10 shadow-lg rounded-xl overflow-hidden"
-                      style={{
-                        background: 'rgba(50, 50, 50, 0.8)',
-                        backdropFilter: 'blur(10px)'
-                      }}
-                    >
-                      <CardHeader 
-                        className="border-b border-white/10"
-                        style={{
-                          background: 'rgba(40, 40, 40, 0.6)'
-                        }}
-                      >
-                        <CardTitle className="flex items-center gap-2 text-white">
-                          <div className="p-2 rounded-lg bg-gradient-to-br from-primary to-accent">
-                            <AlertCircle className="h-5 w-5 text-white" />
+                    <Card className="border border-border/70 bg-card shadow-sm rounded-xl overflow-hidden">
+                      <CardHeader className="border-b border-border/70 bg-muted/40">
+                        <CardTitle className="flex items-center gap-2 text-foreground">
+                          <div className="p-2 rounded-lg bg-primary/15 text-primary">
+                            <AlertCircle className="h-5 w-5" />
                           </div>
                           Employees with 0 Tasks ({reportData.zeroTaskEmployees.length} employees)
                         </CardTitle>
@@ -1189,46 +1011,35 @@ export function AdminReportDialog({ open, onOpenChange }) {
                           <div className="overflow-x-auto">
                             <Table>
                               <TableHeader>
-                                <TableRow 
-                                  className="border-b border-white/10"
-                                  style={{
-                                    background: 'rgba(40, 40, 40, 0.6)'
-                                  }}
-                                >
-                                  <TableHead className="text-white font-semibold">Employee ID</TableHead>
-                                  <TableHead className="text-white font-semibold">Name</TableHead>
-                                  <TableHead className="text-white font-semibold">Email</TableHead>
-                                  <TableHead className="text-white font-semibold">Role</TableHead>
-                                  <TableHead className="text-white font-semibold">Department</TableHead>
-                                  <TableHead className="text-white font-semibold">Action</TableHead>
+                                <TableRow className="border-b border-border/70 bg-muted/40 hover:bg-muted/40">
+                                  <TableHead className="text-foreground font-semibold">Employee ID</TableHead>
+                                  <TableHead className="text-foreground font-semibold">Name</TableHead>
+                                  <TableHead className="text-foreground font-semibold">Email</TableHead>
+                                  <TableHead className="text-foreground font-semibold">Role</TableHead>
+                                  <TableHead className="text-foreground font-semibold">Department</TableHead>
+                                  <TableHead className="text-foreground font-semibold">Action</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
                                 {reportData.zeroTaskEmployees.map((emp) => (
                                   <TableRow 
                                     key={emp.userId} 
-                                    className="border-b border-white/10 hover:bg-white/5 transition-colors"
-                                    style={{
-                                      background: 'rgba(50, 50, 50, 0.4)'
-                                    }}
+                                    className="border-b border-border/50 hover:bg-muted/30 transition-colors"
                                   >
                                     <TableCell className="font-mono font-bold text-xs text-primary whitespace-nowrap">
                                       {emp.employeeId || formatEmployeeId(emp.email)}
                                     </TableCell>
-                                    <TableCell className="font-medium text-gray-100">{emp.name}</TableCell>
-                                    <TableCell className="text-gray-300">{emp.email}</TableCell>
+                                    <TableCell className="font-medium text-foreground">{emp.name}</TableCell>
+                                    <TableCell className="text-muted-foreground">{emp.email}</TableCell>
                                     <TableCell>
                                       <Badge 
                                         variant="outline" 
-                                        className="text-gray-300 border-white/10"
-                                        style={{
-                                          background: 'rgba(40, 40, 40, 0.6)'
-                                        }}
+                                        className="bg-muted/60 text-foreground border-border/70"
                                       >
                                         {emp.role}
                                       </Badge>
                                     </TableCell>
-                                    <TableCell className="text-gray-300">{emp.department}</TableCell>
+                                    <TableCell className="text-muted-foreground">{emp.department}</TableCell>
                                     <TableCell>
                                       <Button
                                         variant="outline"
@@ -1237,7 +1048,7 @@ export function AdminReportDialog({ open, onOpenChange }) {
                                           setSelectedEmployeeId(emp.userId)
                                           setIsCreateTaskOpen(true)
                                         }}
-                                        className="bg-green-500 hover:bg-green-600 text-white border-green-500 shadow-lg"
+                                        className="bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 shadow-sm"
                                       >
                                         Assign Task
                                       </Button>
@@ -1249,8 +1060,8 @@ export function AdminReportDialog({ open, onOpenChange }) {
                           </div>
                         ) : (
                           <div className="text-center py-8">
-                            <CheckCircle className="h-12 w-12 mx-auto mb-4 text-green-400" />
-                            <p className="text-gray-400">All employees have tasks assigned!</p>
+                            <CheckCircle className="h-12 w-12 mx-auto mb-4 text-emerald-500 dark:text-emerald-400" />
+                            <p className="text-muted-foreground">All employees have tasks assigned!</p>
                           </div>
                         )}
                       </CardContent>
@@ -1259,22 +1070,11 @@ export function AdminReportDialog({ open, onOpenChange }) {
 
                   {/* User Progress Updates */}
                   <TabsContent value="progress" className="space-y-4 mt-4">
-                    <Card 
-                      className="border border-white/10 shadow-lg rounded-xl overflow-hidden"
-                      style={{
-                        background: 'rgba(50, 50, 50, 0.8)',
-                        backdropFilter: 'blur(10px)'
-                      }}
-                    >
-                      <CardHeader 
-                        className="border-b border-white/10"
-                        style={{
-                          background: 'rgba(40, 40, 40, 0.6)'
-                        }}
-                      >
-                        <CardTitle className="flex items-center gap-2 text-white">
-                          <div className="p-2 rounded-lg bg-gradient-to-br from-primary to-accent">
-                            <TrendingUp className="h-5 w-5 text-white" />
+                    <Card className="border border-border/70 bg-card shadow-sm rounded-xl overflow-hidden">
+                      <CardHeader className="border-b border-border/70 bg-muted/40">
+                        <CardTitle className="flex items-center gap-2 text-foreground">
+                          <div className="p-2 rounded-lg bg-primary/15 text-primary">
+                            <TrendingUp className="h-5 w-5" />
                           </div>
                           User Progress Updates ({reportData.userProgressUpdates.length} updates)
                         </CardTitle>
@@ -1285,17 +1085,13 @@ export function AdminReportDialog({ open, onOpenChange }) {
                             {reportData.userProgressUpdates.map((progress) => (
                               <Card 
                                 key={progress.id} 
-                                className="border-l-4 border-l-primary border-white/10"
-                                style={{
-                                  background: 'rgba(50, 50, 50, 0.6)',
-                                  backdropFilter: 'blur(10px)'
-                                }}
+                                className="border border-border/70 border-l-4 border-l-primary bg-muted/30"
                               >
                                 <CardContent className="pt-4">
-                                  <div className="flex items-start justify-between">
-                                    <div className="flex-1">
-                                      <div className="flex items-center gap-2 mb-2">
-                                        <span className="font-semibold text-white">{progress.userName}</span>
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex flex-wrap items-center gap-2 mb-2">
+                                        <span className="font-semibold text-foreground">{progress.userName}</span>
                                         <Badge 
                                           variant="outline" 
                                           className="text-primary border-primary/30 font-mono font-bold text-xs"
@@ -1304,43 +1100,35 @@ export function AdminReportDialog({ open, onOpenChange }) {
                                         </Badge>
                                         <Badge 
                                           variant="outline" 
-                                          className="text-gray-300 border-white/10"
-                                          style={{
-                                            background: 'rgba(40, 40, 40, 0.6)'
-                                          }}
+                                          className="bg-muted/60 text-muted-foreground border-border/70"
                                         >
                                           {progress.userEmail}
                                         </Badge>
                                       </div>
-                                      <p className="text-sm text-gray-300 mb-2">
-                                        Task: <span className="font-medium text-white">{progress.taskTitle}</span>
+                                      <p className="text-sm text-muted-foreground mb-2">
+                                        Task: <span className="font-medium text-foreground">{progress.taskTitle}</span>
                                       </p>
                                       <div className="flex items-center gap-4 mb-2">
                                         <div className="flex items-center gap-2">
-                                          <span className="text-sm font-medium text-gray-300">Progress:</span>
-                                          <div 
-                                            className="w-32 rounded-full h-2"
-                                            style={{
-                                              background: 'rgba(40, 40, 40, 0.6)'
-                                            }}
-                                          >
+                                          <span className="text-sm font-medium text-muted-foreground">Progress:</span>
+                                          <div className="w-32 rounded-full h-2 bg-muted overflow-hidden">
                                             <div
                                               className="bg-gradient-to-r from-primary to-accent h-2 rounded-full"
                                               style={{ width: `${progress.progressPercentage}%` }}
                                             />
                                           </div>
-                                          <span className="text-sm text-gray-300">{progress.progressPercentage}%</span>
+                                          <span className="text-sm text-foreground tabular-nums">{progress.progressPercentage}%</span>
                                         </div>
                                       </div>
                                       {progress.notes && (
-                                        <p className="text-sm mt-2 text-gray-300">
-                                          <strong className="text-white">Notes:</strong> {progress.notes}
+                                        <p className="text-sm mt-2 text-muted-foreground">
+                                          <strong className="text-foreground">Notes:</strong> {progress.notes}
                                         </p>
                                       )}
                                       {Array.isArray(progress.achievements) && progress.achievements.length > 0 && (
                                         <div className="mt-2">
-                                          <strong className="text-sm text-white">Achievements:</strong>
-                                          <ul className="list-disc list-inside text-sm text-gray-300 mt-1">
+                                          <strong className="text-sm text-foreground">Achievements:</strong>
+                                          <ul className="list-disc list-inside text-sm text-muted-foreground mt-1">
                                             {progress.achievements.map((ach, idx) => (
                                               <li key={idx}>{ach}</li>
                                             ))}
@@ -1348,7 +1136,7 @@ export function AdminReportDialog({ open, onOpenChange }) {
                                         </div>
                                       )}
                                     </div>
-                                    <div className="text-xs text-gray-500">
+                                    <div className="text-xs text-muted-foreground shrink-0 tabular-nums">
                                       {format(new Date(progress.createdAt), "h:mm a")}
                                     </div>
                                   </div>
@@ -1358,8 +1146,8 @@ export function AdminReportDialog({ open, onOpenChange }) {
                           </div>
                         ) : (
                           <div className="text-center py-8">
-                            <Clock className="h-12 w-12 mx-auto mb-4 text-gray-500" />
-                            <p className="text-gray-400">No progress updates for this date</p>
+                            <Clock className="h-12 w-12 mx-auto mb-4 text-muted-foreground/60" />
+                            <p className="text-muted-foreground">No progress updates for this date</p>
                           </div>
                         )}
                       </CardContent>
@@ -1369,26 +1157,19 @@ export function AdminReportDialog({ open, onOpenChange }) {
             </div>
           ) : (
             <div className="text-center py-20">
-              <p className="text-gray-400">No data available</p>
+              <p className="text-muted-foreground">No data available</p>
             </div>
           )}
           </div>
           
-          <DialogFooter 
-            className="sticky bottom-0 z-10 border-t border-white/10 px-6 py-4 mt-auto"
-            style={{
-              background: 'rgba(30, 30, 30, 0.85)',
-              backdropFilter: 'blur(20px)',
-              WebkitBackdropFilter: 'blur(20px)',
-            }}
-          >
-            <div className="flex w-full justify-between items-center">
-              <div className="flex gap-2">
+          <DialogFooter className="sticky bottom-0 z-10 border-t border-border/70 bg-card/95 backdrop-blur-xl px-4 sm:px-6 py-4 mt-auto">
+            <div className="flex flex-wrap gap-3 w-full justify-between items-center">
+              <div className="flex flex-wrap gap-2">
                 <Button 
                   variant="outline" 
                   onClick={downloadCSV}
                   disabled={!reportData || isLoading}
-                  className="bg-green-500/20 border-green-500/30 text-green-400 hover:bg-green-500/30 hover:text-green-300"
+                  className="bg-emerald-500/15 border-emerald-500/30 text-emerald-500 dark:text-emerald-400 hover:bg-emerald-500/25"
                 >
                   <Download className="mr-2 h-4 w-4" />
                   Download CSV
@@ -1397,24 +1178,24 @@ export function AdminReportDialog({ open, onOpenChange }) {
                   variant="outline" 
                   onClick={downloadPDF}
                   disabled={!reportData || isLoading}
-                  className="bg-blue-500/20 border-blue-500/30 text-blue-400 hover:bg-blue-500/30 hover:text-blue-300"
+                  className="bg-blue-500/15 border-blue-500/30 text-blue-500 dark:text-blue-400 hover:bg-blue-500/25"
                 >
                   <Download className="mr-2 h-4 w-4" />
                   Download PDF
                 </Button>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button 
                   variant="outline" 
                   onClick={() => onOpenChange(false)}
-                  className="bg-white/5 border-white/10 text-gray-300 hover:bg-white/10 hover:text-white"
+                  className="bg-background/70 border-border/70 text-foreground hover:bg-muted"
                 >
                   Close
                 </Button>
                 <Button 
                   onClick={fetchReport} 
                   disabled={isLoading}
-                  className="bg-gradient-to-br from-primary to-accent hover:opacity-90 text-white border-none shadow-lg"
+                  className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
                 >
                   {isLoading ? (
                     <>

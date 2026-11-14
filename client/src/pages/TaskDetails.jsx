@@ -856,10 +856,18 @@ function TaskDetails() {
         })
       }
 
-      const submissionResponse = await axios.get(`${API_URL}/submissions/task/${id}`, {
-        headers: { "x-auth-token": token },
-      })
+      const [submissionResponse, taskResponse] = await Promise.all([
+        axios.get(`${API_URL}/submissions/task/${id}`, {
+          headers: { "x-auth-token": token },
+        }),
+        axios.get(`${API_URL}/tasks/${id}`, {
+          headers: { "x-auth-token": token },
+        }),
+      ])
       setSubmission(submissionResponse.data)
+      if (taskResponse.data) {
+        setTask(taskResponse.data)
+      }
 
       setIsSubmissionDialogOpen(false)
     } catch (error) {
@@ -917,24 +925,24 @@ function TaskDetails() {
   const displayTitle = task.title || "Task Details";
 
   return (
-    <div className="space-y-6 p-4 md:p-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" onClick={() => navigate(-1)} className="h-9 w-9">
+    <div className="space-y-6 pb-8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 sm:p-5 rounded-2xl border border-border/60 bg-card/70 shadow-sm">
+        <div className="flex items-center gap-2 min-w-0">
+          <Button variant="ghost" size="icon" onClick={() => navigate(-1)} className="h-9 w-9 shrink-0 rounded-xl">
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <h1 className="text-2xl font-bold tracking-tight">{displayTitle}</h1>
+          <h1 className="text-xl sm:text-2xl font-heading font-bold tracking-tight truncate">{displayTitle}</h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {task.task_id && (
-            <Badge variant="outline" className="font-mono text-xs border-emerald-500/30 text-emerald-400 bg-emerald-500/5">
+            <Badge variant="outline" className="font-mono text-xs border-primary/30 text-primary bg-primary/5">
               {task.task_id}
             </Badge>
           )}
           <Badge className={getStatusColor(task.status)}>{task.status}</Badge>
           <Badge className={getPriorityColor(task.priority)}>{task.priority}</Badge>
           {task.department && (
-            <Badge variant="outline" className="border-[1px] border-muted-foreground/20">
+            <Badge variant="outline" className="border-border/70">
               {task.department.name}
             </Badge>
           )}
@@ -943,45 +951,45 @@ function TaskDetails() {
 
       {/* BHIV Execution Gate Banner */}
       {task.status === "Pending Validation" && (
-        <Card className="border-2 border-amber-500/40 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent">
+        <Card className="border border-amber-500/40 bg-amber-500/10">
           <CardContent className="p-5 space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400">
+                <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-500">
                   <Lock className="h-6 w-6" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-base text-amber-300">
+                  <h3 className="font-bold text-base text-amber-700 dark:text-amber-300">
                     Execution Gate Locked: Awaiting Lead Authorisation
                   </h3>
-                  <p className="text-xs text-amber-200/80">
+                  <p className="text-xs text-amber-700/80 dark:text-amber-200/80">
                     {task.sourceType || "WhatsApp"} task submitted by {task.originatingPerson || "Candidate"}. Work cannot begin until authorized.
                   </p>
                 </div>
               </div>
-              <Badge variant="outline" className="border-amber-400/50 text-amber-300 bg-amber-500/10 text-xs self-start sm:self-auto">
+              <Badge variant="outline" className="border-amber-500/50 text-amber-700 dark:text-amber-300 bg-amber-500/10 text-xs self-start sm:self-auto">
                 Pending Validation Gate
               </Badge>
             </div>
 
             {isLeadOrAdmin ? (
               <div className="pt-3 border-t border-amber-500/20 space-y-3">
-                <div className="text-xs font-medium text-amber-200">
+                <div className="text-xs font-medium text-amber-800 dark:text-amber-200">
                   Authorised Project Lead Action: Review scope and approve or return for revision.
                 </div>
                 <Textarea
                   placeholder="Optional approval notes or reason for returning..."
                   value={authNotes}
                   onChange={(e) => setAuthNotes(e.target.value)}
-                  className="bg-slate-900/80 border-amber-500/30 text-xs text-slate-100 placeholder:text-slate-500"
+                  className="bg-background/80 border-amber-500/30 text-xs text-foreground placeholder:text-muted-foreground"
                   rows={2}
                 />
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                   <Button
                     size="sm"
                     disabled={isAuthorizing}
                     onClick={() => handleAuthorize("APPROVE")}
-                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs gap-1.5 shadow-md shadow-emerald-950/40"
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs gap-1.5 shadow-sm"
                   >
                     <ShieldCheck className="h-4 w-4" />
                     Authorize Task Execution
@@ -991,7 +999,7 @@ function TaskDetails() {
                     variant="outline"
                     disabled={isAuthorizing}
                     onClick={() => handleAuthorize("RETURN")}
-                    className="border-rose-500/40 text-rose-400 hover:bg-rose-500/10 text-xs gap-1.5"
+                    className="border-rose-500/40 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 text-xs gap-1.5"
                   >
                     <XCircle className="h-4 w-4" />
                     Return for Clarification
@@ -999,7 +1007,7 @@ function TaskDetails() {
                 </div>
               </div>
             ) : (
-              <p className="text-xs text-amber-300/70 italic">
+              <p className="text-xs text-amber-700/80 dark:text-amber-300/80 italic">
                 You are assigned to this task. Please wait for an authorized Project Lead or Manager to review and approve your submission before starting work.
               </p>
             )}
@@ -1008,17 +1016,17 @@ function TaskDetails() {
       )}
 
       {task.status === "Approved" && (
-        <Card className="border-2 border-cyan-500/30 bg-gradient-to-r from-cyan-500/10 via-cyan-500/5 to-transparent">
+        <Card className="border border-cyan-500/35 bg-cyan-500/10">
           <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-cyan-500/20 text-cyan-400">
+              <div className="p-2 rounded-lg bg-cyan-500/20 text-cyan-500">
                 <ShieldCheck className="h-5 w-5" />
               </div>
               <div>
-                <h4 className="font-semibold text-sm text-cyan-300">
+                <h4 className="font-semibold text-sm text-cyan-700 dark:text-cyan-300">
                   Execution Gate Passed: Task Authorized by Lead
                 </h4>
-                <p className="text-xs text-cyan-200/70">
+                <p className="text-xs text-cyan-700/80 dark:text-cyan-200/80">
                   {task.authorizedAt ? `Approved on ${formatDate(task.authorizedAt)}.` : ""} Ready to transition to In Progress.
                 </p>
               </div>
@@ -1028,7 +1036,7 @@ function TaskDetails() {
                 size="sm"
                 disabled={isAuthorizing}
                 onClick={handleStartExecution}
-                className="bg-cyan-600 hover:bg-cyan-500 text-white font-medium text-xs gap-1.5 shadow-md self-start sm:self-auto"
+                className="bg-cyan-600 hover:bg-cyan-500 text-white font-medium text-xs gap-1.5 shadow-sm self-start sm:self-auto"
               >
                 <PlayCircle className="h-4 w-4" />
                 Start Execution (Move to In Progress)
@@ -1039,11 +1047,11 @@ function TaskDetails() {
       )}
 
       {task.status === "Returned" && (
-        <Card className="border-2 border-rose-500/30 bg-rose-950/20">
+        <Card className="border border-rose-500/35 bg-rose-500/10">
           <CardContent className="p-4 flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 text-rose-400 shrink-0 mt-0.5" />
-            <div className="text-xs text-rose-200">
-              <span className="font-semibold text-rose-300">Task Returned for Clarification: </span>
+            <AlertTriangle className="h-5 w-5 text-rose-500 shrink-0 mt-0.5" />
+            <div className="text-xs text-rose-700 dark:text-rose-200">
+              <span className="font-semibold text-rose-700 dark:text-rose-300">Task Returned for Clarification: </span>
               {task.returnedFeedback || "Please contact your lead or revise the task details."}
             </div>
           </CardContent>
@@ -1051,10 +1059,10 @@ function TaskDetails() {
       )}
 
       {task.status === "Closed" && (
-        <Card className="border-2 border-emerald-500/30 bg-emerald-950/20">
+        <Card className="border border-emerald-500/35 bg-emerald-500/10">
           <CardContent className="p-4 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5 text-xs text-emerald-200">
-              <CheckCircle className="h-5 w-5 text-emerald-400 shrink-0" />
+            <div className="flex items-center gap-2.5 text-xs text-emerald-700 dark:text-emerald-200">
+              <CheckCircle className="h-5 w-5 text-emerald-500 shrink-0" />
               <span>
                 <strong>Parikshak Review Passed:</strong> Task deliverables verified and task closed in Niyantran.
               </span>
@@ -1074,11 +1082,11 @@ function TaskDetails() {
           </CardHeader>
           <CardContent className="space-y-6">
             <Tabs defaultValue={task.originalInstruction ? "provenance" : "description"}>
-              <TabsList className="grid w-full grid-cols-4">
-                <TabsTrigger value="description">Description</TabsTrigger>
-                <TabsTrigger value="provenance">Provenance & Gate</TabsTrigger>
-                <TabsTrigger value="dependencies">Dependencies</TabsTrigger>
-                <TabsTrigger value="submission">Submission</TabsTrigger>
+              <TabsList className="flex w-full overflow-x-auto no-scrollbar sm:grid sm:grid-cols-4 h-auto p-1 gap-1">
+                <TabsTrigger value="description" className="shrink-0">Description</TabsTrigger>
+                <TabsTrigger value="provenance" className="shrink-0">Provenance & Gate</TabsTrigger>
+                <TabsTrigger value="dependencies" className="shrink-0">Dependencies</TabsTrigger>
+                <TabsTrigger value="submission" className="shrink-0">Submission</TabsTrigger>
               </TabsList>
               <TabsContent value="description" className="space-y-4 pt-4">
                 {/* Parikshak PDF Download Banner if URL is detected */}
@@ -1098,7 +1106,7 @@ function TaskDetails() {
                           <FileText className="h-5 w-5" />
                         </div>
                         <div>
-                          <p className="font-bold text-gray-900 dark:text-white text-sm">Official Parikshak Task PDF Briefing</p>
+                          <p className="font-bold text-foreground text-sm">Official Parikshak Task PDF Briefing</p>
                           <p className="text-xs text-muted-foreground">Download full task specification, deliverables, and acceptance criteria.</p>
                         </div>
                       </div>
@@ -1115,7 +1123,7 @@ function TaskDetails() {
                 })()}
 
                 <div className="prose max-w-none dark:prose-invert">
-                  <div className="whitespace-pre-line text-sm leading-relaxed text-gray-800 dark:text-gray-200">
+                  <div className="whitespace-pre-line text-sm leading-relaxed text-foreground/90">
                     {(() => {
                       const rawDesc = task.description || "";
                       const desc = (() => {
@@ -1166,30 +1174,30 @@ function TaskDetails() {
                 </div>
                 {/* Task Specification & PDF Document Brief */}
                 {(documents[0]?.url || task.notes) && (
-                  <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
-                    <h3 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                      <FileText className="h-4 w-4 text-indigo-500" />
+                  <div className="mt-4 pt-4 border-t border-border/60 space-y-3">
+                    <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+                      <FileText className="h-4 w-4 text-primary" />
                       Task Specification & Documents
                     </h3>
                     <div className="grid gap-2">
                       {/* Primary PDF Task Brief Card */}
-                      <div className="flex items-center justify-between p-3 bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-200 dark:border-indigo-800/60 rounded-xl">
+                      <div className="flex items-center justify-between p-3 bg-primary/10 border border-primary/25 rounded-xl">
                         <div className="flex items-center gap-2.5 min-w-0">
-                          <div className="p-2 bg-indigo-600 rounded-lg text-white shrink-0">
+                          <div className="p-2 bg-primary rounded-lg text-primary-foreground shrink-0">
                             <FileText className="h-4 w-4" />
                           </div>
                           <div className="min-w-0">
-                            <p className="text-xs font-bold text-gray-900 dark:text-gray-100 truncate">
+                            <p className="text-xs font-bold text-foreground truncate">
                               {documents[0]?.fileName || `task_brief_${task._id}.pdf`}
                             </p>
-                            <p className="text-[10px] text-gray-500 dark:text-gray-400">Official PDF Brief Specification</p>
+                            <p className="text-[10px] text-muted-foreground">Official PDF Brief Specification</p>
                           </div>
                         </div>
                         <a
                           href={documents[0]?.url || `${API_URL}/tasks/${task._id}/pdf`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg flex items-center gap-1 shrink-0 transition-colors shadow-xs"
+                          className="px-3 py-1.5 bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-semibold rounded-lg flex items-center gap-1 shrink-0 transition-colors shadow-xs"
                         >
                           <ExternalLink className="h-3 w-3" />
                           <span>View PDF Brief</span>
@@ -1198,21 +1206,21 @@ function TaskDetails() {
 
                       {/* Additional Distinct Attachments */}
                       {documents.slice(1).filter(d => d.url && d.url !== documents[0]?.url).map((doc, index) => (
-                        <div key={index} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl">
+                        <div key={index} className="flex items-center justify-between p-3 bg-muted/40 border border-border/60 rounded-xl">
                           <div className="flex items-center gap-2.5 min-w-0">
-                            <div className="p-2 bg-slate-700 rounded-lg text-white shrink-0">
+                            <div className="p-2 bg-secondary rounded-lg text-secondary-foreground shrink-0">
                               <FileText className="h-4 w-4" />
                             </div>
                             <div className="min-w-0">
-                              <p className="text-xs font-bold text-gray-900 dark:text-gray-100 truncate">{doc.fileName}</p>
-                              <p className="text-[10px] text-gray-500 dark:text-gray-400">{doc.fileType}</p>
+                              <p className="text-xs font-bold text-foreground truncate">{doc.fileName}</p>
+                              <p className="text-[10px] text-muted-foreground">{doc.fileType}</p>
                             </div>
                           </div>
                           <a
                             href={doc.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="px-3 py-1.5 bg-slate-700 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg flex items-center gap-1 shrink-0 transition-colors shadow-xs"
+                            className="px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-xs font-semibold rounded-lg flex items-center gap-1 shrink-0 transition-colors shadow-xs border border-border/60"
                           >
                             <ExternalLink className="h-3 w-3" />
                             <span>View Attachment</span>
@@ -1244,45 +1252,45 @@ function TaskDetails() {
                 )}
               </TabsContent>
               <TabsContent value="provenance" className="space-y-4 pt-4">
-                <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
+                <div className="p-4 sm:p-5 rounded-2xl bg-muted/30 border border-border/60 space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2 rounded-lg bg-primary/15 text-primary">
                         <MessageSquare className="h-4 w-4" />
                       </div>
                       <div>
-                        <h3 className="text-sm font-bold text-white">Immutable Provenance & Intake Record</h3>
-                        <p className="text-xs text-slate-400">Preserved source instruction, originator, and authorization trail</p>
+                        <h3 className="text-sm font-bold text-foreground">Immutable Provenance & Intake Record</h3>
+                        <p className="text-xs text-muted-foreground">Preserved source instruction, originator, and authorization trail</p>
                       </div>
                     </div>
                     {task.task_id && (
-                      <Badge variant="outline" className="font-mono text-xs border-emerald-500/30 text-emerald-400 bg-emerald-500/5">
+                      <Badge variant="outline" className="font-mono text-xs border-primary/30 text-primary bg-primary/5">
                         {task.task_id}
                       </Badge>
                     )}
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                    <div className="p-3 rounded-lg bg-slate-950/80 border border-slate-800">
-                      <span className="text-slate-500 block mb-0.5">Task Origin</span>
-                      <span className="font-semibold text-slate-200">{task.sourceType || "WhatsApp / Direct"}</span>
+                    <div className="p-3 rounded-xl bg-card/80 border border-border/60">
+                      <span className="text-muted-foreground block mb-0.5">Task Origin</span>
+                      <span className="font-semibold text-foreground">{task.sourceType || "WhatsApp / Direct"}</span>
                     </div>
-                    <div className="p-3 rounded-lg bg-slate-950/80 border border-slate-800">
-                      <span className="text-slate-500 block mb-0.5">Originating Person</span>
-                      <span className="font-semibold text-slate-200">{task.originatingPerson || "Project Lead"}</span>
+                    <div className="p-3 rounded-xl bg-card/80 border border-border/60">
+                      <span className="text-muted-foreground block mb-0.5">Originating Person</span>
+                      <span className="font-semibold text-foreground">{task.originatingPerson || "Project Lead"}</span>
                     </div>
-                    <div className="p-3 rounded-lg bg-slate-950/80 border border-slate-800">
-                      <span className="text-slate-500 block mb-0.5">Source Reference</span>
-                      <span className="font-semibold text-slate-200">{task.sourceReference || "Direct Directive"}</span>
+                    <div className="p-3 rounded-xl bg-card/80 border border-border/60">
+                      <span className="text-muted-foreground block mb-0.5">Source Reference</span>
+                      <span className="font-semibold text-foreground">{task.sourceReference || "Direct Directive"}</span>
                     </div>
                   </div>
 
                   {task.originalInstruction && (
                     <div>
-                      <span className="text-xs font-semibold text-slate-300 block mb-1.5">
+                      <span className="text-xs font-semibold text-foreground block mb-1.5">
                         Raw Original Instruction (Verbatim Preserved):
                       </span>
-                      <pre className="p-3.5 rounded-lg bg-slate-950 border border-slate-800 text-xs font-mono text-emerald-300 whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">
+                      <pre className="p-3.5 rounded-xl bg-card/90 border border-border/60 text-xs font-mono text-primary whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">
                         {task.originalInstruction}
                       </pre>
                     </div>
@@ -1290,8 +1298,8 @@ function TaskDetails() {
 
                   {task.scope && (
                     <div>
-                      <span className="text-xs font-semibold text-slate-300 block mb-1">Defined Scope of Work:</span>
-                      <p className="text-xs text-slate-300 p-3 rounded-lg bg-slate-950/80 border border-slate-800 leading-relaxed whitespace-pre-wrap">
+                      <span className="text-xs font-semibold text-foreground block mb-1">Defined Scope of Work:</span>
+                      <p className="text-xs text-muted-foreground p-3 rounded-xl bg-card/80 border border-border/60 leading-relaxed whitespace-pre-wrap">
                         {task.scope}
                       </p>
                     </div>
@@ -1299,8 +1307,8 @@ function TaskDetails() {
 
                   {task.acceptanceCriteria && (
                     <div>
-                      <span className="text-xs font-semibold text-slate-300 block mb-1">Acceptance Criteria & Parikshak Verification:</span>
-                      <p className="text-xs text-slate-300 p-3 rounded-lg bg-slate-950/80 border border-slate-800 leading-relaxed whitespace-pre-wrap">
+                      <span className="text-xs font-semibold text-foreground block mb-1">Acceptance Criteria & Parikshak Verification:</span>
+                      <p className="text-xs text-muted-foreground p-3 rounded-xl bg-card/80 border border-border/60 leading-relaxed whitespace-pre-wrap">
                         {task.acceptanceCriteria}
                       </p>
                     </div>
@@ -1308,14 +1316,14 @@ function TaskDetails() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 text-xs">
                     {task.authorizedAt && (
-                      <div className="p-3 rounded-lg bg-cyan-950/30 border border-cyan-500/20 text-cyan-200">
+                      <div className="p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/25 text-cyan-700 dark:text-cyan-200">
                         <span className="font-semibold block mb-0.5">Authorisation Audit:</span>
                         Approved on {formatDate(task.authorizedAt)}
-                        {task.authorizationNotes && <p className="mt-1 text-slate-300 italic">"{task.authorizationNotes}"</p>}
+                        {task.authorizationNotes && <p className="mt-1 text-foreground/80 italic">"{task.authorizationNotes}"</p>}
                       </div>
                     )}
                     {task.executionStartedAt && (
-                      <div className="p-3 rounded-lg bg-blue-950/30 border border-blue-500/20 text-blue-200">
+                      <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/25 text-blue-700 dark:text-blue-200">
                         <span className="font-semibold block mb-0.5">Execution Started:</span>
                         {formatDate(task.executionStartedAt)}
                       </div>

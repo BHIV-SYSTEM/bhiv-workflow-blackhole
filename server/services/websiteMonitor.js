@@ -350,103 +350,88 @@ class WebsiteMonitor {
    */
   async getActiveWindowLinux() {
     try {
-      console.log('🐧 Attempting Linux browser detection...');
+      // Skip host-level process/X11 scraping and fake simulations inside headless containers
+      if (!process.env.DISPLAY && !process.env.WAYLAND_DISPLAY && process.env.ENABLE_HEADLESS_SIMULATION !== 'true') {
+        if (!this._loggedHeadlessLinux) {
+          this._loggedHeadlessLinux = true;
+          console.log('🐧 Headless Linux environment (no DISPLAY) - skipping server-side Linux browser polling');
+        }
+        return null;
+      }
+
       const { exec } = require('child_process');
       const util = require('util');
       const execAsync = util.promisify(exec);
 
-      // Method 1: Process-based detection (works in headless environments)
-      try {
-        console.log('🔍 Checking for browser processes...');
-
-        // Try multiple process detection methods
-        let processInfo = '';
+      // Method 1: Process-based detection (only if ps is available)
+      if (!this._psUnavailable) {
         try {
-          const { stdout } = await execAsync('ps aux | grep -E "(chrome|firefox|chromium|edge)" | grep -v grep');
-          processInfo = stdout;
-        } catch (psError) {
-          console.log('❌ ps command not available, trying alternative...');
+          let processInfo = '';
           try {
-            // Alternative: check /proc directory
-            const { stdout } = await execAsync('find /proc -name "comm" -exec grep -l "chrome\\|firefox\\|chromium" {} \\; 2>/dev/null | head -5');
-            if (stdout.trim()) {
-              processInfo = 'chrome process found';
+            const { stdout } = await execAsync('ps aux | grep -E "(chrome|firefox|chromium|edge)" | grep -v grep');
+            processInfo = stdout;
+          } catch (psError) {
+            this._psUnavailable = true;
+            console.log('❌ ps command not available, checking /proc fallback...');
+            try {
+              const { stdout } = await execAsync('find /proc -name "comm" -exec grep -l "chrome\\|firefox\\|chromium" {} \\; 2>/dev/null | head -5');
+              if (stdout.trim()) {
+                processInfo = 'chrome process found';
+              }
+            } catch (procError) {
+              // Ignore /proc read errors in restricted containers
             }
-          } catch (procError) {
-            console.log('❌ /proc method also failed');
           }
-        }
 
-        if (processInfo.trim()) {
-          console.log('✅ Browser processes found');
-
-          // Since we found browser processes, return a generic browser activity
-          return {
-            title: 'Browser Activity Detected',
-            application: 'Google Chrome',
-            url: 'unknown',
-            isProcessBased: true
-          };
+          if (processInfo.trim()) {
+            return {
+              title: 'Browser Activity Detected',
+              application: 'Google Chrome',
+              url: 'unknown',
+              isProcessBased: true
+            };
+          }
+        } catch (processError) {
+          console.log('❌ Process detection failed:', processError.message);
         }
-      } catch (processError) {
-        console.log('❌ Process detection failed:', processError.message);
       }
 
-      // Method 2: Try X11 detection with virtual display (if DISPLAY is set)
-      try {
-        const { stdout: displayEnv } = await execAsync('echo $DISPLAY');
-        if (displayEnv.trim()) {
-          console.log('🔍 X11 display available, trying window detection...');
-
-          // Try xdotool with existing display
+      // Method 2: Try X11 detection with display (if DISPLAY is set)
+      if (process.env.DISPLAY) {
+        try {
           const { stdout: activeWindow } = await execAsync('xdotool getactivewindow getwindowname 2>/dev/null');
           const windowTitle = activeWindow.trim();
 
           if (windowTitle) {
-            console.log('✅ Window detected via xdotool:', windowTitle);
             return {
               title: windowTitle,
               application: 'Browser',
               isWindowBased: true
             };
           }
+        } catch (x11Error) {
+          // Ignore X11 error when no active window
         }
-      } catch (x11Error) {
-        console.log('❌ X11 detection failed:', x11Error.message);
       }
 
-      // Method 3: Simulate browser activity for testing (in headless environment)
-      try {
-        console.log('🔍 Generating simulated browser activity for headless environment...');
-
-        // Check if this is a monitoring session that should have activity
-        const currentTime = new Date();
-        const shouldSimulateActivity = Math.random() < 0.3; // 30% chance of activity
-
-        if (shouldSimulateActivity) {
-          const simulatedSites = [
-            { title: 'YouTube - Watch Videos', url: 'https://youtube.com', application: 'Google Chrome' },
-            { title: 'Facebook - Social Network', url: 'https://facebook.com', application: 'Google Chrome' },
-            { title: 'Instagram - Photos and Videos', url: 'https://instagram.com', application: 'Google Chrome' },
-            { title: 'Twitter - Social Media', url: 'https://twitter.com', application: 'Google Chrome' },
-            { title: 'Netflix - Watch Movies', url: 'https://netflix.com', application: 'Google Chrome' }
-          ];
-
-          const randomSite = simulatedSites[Math.floor(Math.random() * simulatedSites.length)];
-          console.log('🎭 Simulated browser activity:', randomSite.title);
-
-          return {
-            title: randomSite.title,
-            application: randomSite.application,
-            url: randomSite.url,
-            isSimulated: true
-          };
-        }
-      } catch (simulationError) {
-        console.log('❌ Simulation failed:', simulationError.message);
+      // Method 3: Simulate browser activity ONLY when explicitly enabled for testing
+      if (process.env.ENABLE_HEADLESS_SIMULATION === 'true' && Math.random() < 0.3) {
+        const simulatedSites = [
+          { title: 'YouTube - Watch Videos', url: 'https://youtube.com', application: 'Google Chrome' },
+          { title: 'Facebook - Social Network', url: 'https://facebook.com', application: 'Google Chrome' },
+          { title: 'Instagram - Photos and Videos', url: 'https://instagram.com', application: 'Google Chrome' },
+          { title: 'Twitter - Social Media', url: 'https://twitter.com', application: 'Google Chrome' },
+          { title: 'Netflix - Watch Movies', url: 'https://netflix.com', application: 'Google Chrome' }
+        ];
+        const randomSite = simulatedSites[Math.floor(Math.random() * simulatedSites.length)];
+        return {
+          title: randomSite.title,
+          application: randomSite.application,
+          url: randomSite.url,
+          isSimulated: true
+        };
       }
 
-      console.log('❌ No browser activity detected on Linux');
       return null;
 
     } catch (error) {
