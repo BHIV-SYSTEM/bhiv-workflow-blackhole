@@ -25,30 +25,54 @@ import { api } from '../../lib/api';
 const ConsentSettings = () => {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [isMonitoringPaused, setIsMonitoringPaused] = useState(true);
+  const [isMonitoringPaused, setIsMonitoringPaused] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isFetchingStatus, setIsFetchingStatus] = useState(true);
+
+  const storedUser = (() => {
+    try {
+      return JSON.parse(localStorage.getItem('WorkflowUser') || 'null');
+    } catch {
+      return null;
+    }
+  })();
+  const userId = user?.id || user?._id || storedUser?.id || storedUser?._id;
 
   useEffect(() => {
+    let active = true;
     // Fetch the user's current consent status
     const fetchConsentStatus = async () => {
+      if (!userId) {
+        if (active) setIsFetchingStatus(false);
+        return;
+      }
       try {
-        const response = await api.get(`/users/${user._id}`);
-        setIsMonitoringPaused(response.monitoringPaused);
+        setIsFetchingStatus(true);
+        const response = await api.get(`/users/${userId}`);
+        if (active) {
+          setIsMonitoringPaused(Boolean(response?.monitoringPaused));
+        }
       } catch (error) {
         console.error('Error fetching consent status:', error);
+      } finally {
+        if (active) setIsFetchingStatus(false);
       }
     };
 
-    if (user) {
-      fetchConsentStatus();
-    }
-  }, [user]);
+    fetchConsentStatus();
+    return () => {
+      active = false;
+    };
+  }, [userId]);
 
   const handleConsentChange = async (paused) => {
     setIsMonitoringPaused(paused);
     setIsLoading(true);
     try {
-      await api.post('/consent', { consent: !paused });
+      const response = await api.post('/consent', { consent: !paused });
+      if (typeof response?.monitoringPaused === 'boolean') {
+        setIsMonitoringPaused(response.monitoringPaused);
+      }
       toast({
         title: "Success",
         description: paused ? "Monitoring has been paused" : "Monitoring has been resumed",
@@ -119,7 +143,7 @@ const ConsentSettings = () => {
               id="monitoring-pause"
               checked={isMonitoringPaused} 
               onCheckedChange={handleConsentChange}
-              disabled={isLoading}
+              disabled={isLoading || isFetchingStatus}
               className="data-[state=checked]:bg-purple-500"
             />
           </div>
