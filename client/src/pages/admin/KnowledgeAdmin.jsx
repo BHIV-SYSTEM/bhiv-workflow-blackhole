@@ -1,63 +1,34 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { API_URL } from '@/lib/api';
 import { useAuth } from '@/context/auth-context';
+import { useSocket } from '@/context/socket-context';
 import { 
-    Tablet, Database, CheckCircle2, AlertCircle, FileText, Send, 
-    Sparkles, Layers, ShieldCheck, RefreshCw, UserCheck, BookOpen, 
-    Search, Bot, ArrowRight, Play, CheckCircle, Code, User
+    User, Users, Sparkles, CheckCircle2, AlertCircle, RefreshCw, 
+    Search, ArrowRight, ArrowLeft, BookOpen, Clock, ShieldCheck, 
+    Code, FileText, ChevronRight, Eye, Send, Check, X, 
+    Filter, Database, Layers, ExternalLink, HelpCircle
 } from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle
+} from '@/components/ui/dialog';
 
 const KnowledgeAdmin = () => {
-    // Access authenticated user context from Niyantran
     const { user } = useAuth();
+    const { socket } = useSocket();
 
-    // Determine default author name from user object or fallback storage
-    const getInitialUserName = () => {
-        if (user?.name) return user.name;
-        try {
-            const storedUser = localStorage.getItem('user') || localStorage.getItem('WorkflowUser');
-            if (storedUser) {
-                const parsed = JSON.parse(storedUser);
-                if (parsed.name) return parsed.name;
-            }
-        } catch (e) {}
-        return localStorage.getItem('userName') || 'Niyantran User';
-    };
-
-    const [productId, setProductId] = useState('BHIV');
-    const [individualId, setIndividualId] = useState(getInitialUserName());
-    const [datasetType, setDatasetType] = useState('product_knowledge');
-    const [source, setSource] = useState('');
-    const [provenance, setProvenance] = useState('');
-    const [content, setContent] = useState('');
-    const [submitting, setSubmitting] = useState(false);
-    const [response, setResponse] = useState(null);
-    const [error, setError] = useState(null);
-    const [datasets, setDatasets] = useState([]);
-    const [loadingDatasets, setLoadingDatasets] = useState(false);
-
-    // Synchronize individualId when logged-in user state resolves
-    useEffect(() => {
-        if (user?.name) {
-            setIndividualId(user.name);
-        }
-    }, [user]);
-
-    // AI Agent 8-Point Query State
-    const [agentRepoUrl, setAgentRepoUrl] = useState('');
-    const [agentTaskId, setAgentTaskId] = useState('');
-    const [queryingDb, setQueryingDb] = useState(false);
-    const [dbQueryResult, setDbQueryResult] = useState(null);
-    const [runningIntake, setRunningIntake] = useState(false);
-    const [intakeResult, setIntakeResult] = useState(null);
+    const isAdmin = user?.role === 'Admin' || user?.role === 'Manager';
 
     const getAuthHeaders = () => {
         const token = localStorage.getItem('WorkflowToken') || localStorage.getItem('token');
@@ -67,679 +38,959 @@ const KnowledgeAdmin = () => {
         };
     };
 
-    // Fetch existing ingested datasets from Parikshak API via proxy
-    const fetchDatasets = async () => {
-        setLoadingDatasets(true);
+    // View mode: 'GLOBAL' (Admin overview) | 'DEDICATED' (Individual user hub)
+    const [viewMode, setViewMode] = useState(isAdmin ? 'GLOBAL' : 'DEDICATED');
+    const [selectedMember, setSelectedMember] = useState(null);
+
+    // Data State
+    const [complianceData, setComplianceData] = useState({
+        totalActive: 151,
+        totalFilled: 6,
+        totalPending: 145,
+        compliancePercentage: 4,
+        departments: [],
+        users: []
+    });
+    const [loadingCompliance, setLoadingCompliance] = useState(false);
+    const [syllabusData, setSyllabusData] = useState({ total_tasks: 37, departments: {} });
+    const [_loadingSyllabus, setLoadingSyllabus] = useState(false);
+
+    // Filter & Search State (Global Hub)
+    const [searchQuery, setSearchQuery] = useState('');
+    const [selectedDeptFilter, setSelectedDeptFilter] = useState('ALL');
+    const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'INGESTED' | 'MISSING'
+
+    // Dedicated View Context Ingest / Edit state
+    const [inlineContextText, setInlineContextText] = useState('');
+    const [inlineProductId, setInlineProductId] = useState('BHIV');
+    const [savingInlineContext, setSavingInlineContext] = useState(false);
+    const [inlineFeedback, setInlineFeedback] = useState(null);
+
+    // Quick Ingest Modal State (Global Hub)
+    const [quickModalOpen, setQuickModalOpen] = useState(false);
+    const [modalCandidate, setModalCandidate] = useState(null);
+    const [modalContextText, setModalContextText] = useState('');
+    const [modalProductId, setModalProductId] = useState('BHIV');
+    const [submittingModal, setSubmittingModal] = useState(false);
+    const [modalFeedback, setModalFeedback] = useState(null);
+
+    // Expandable context previews in table
+    const [expandedContextIds, setExpandedContextIds] = useState({});
+
+    // Fetch Compliance Data
+    const fetchCompliance = async () => {
+        setLoadingCompliance(true);
         try {
-            const res = await axios.get(`${API_URL}/knowledge/datasets`, {
-                headers: getAuthHeaders()
-            });
-            if (res.data) {
-                setDatasets(res.data.datasets || []);
+            const res = await axios.get(`${API_URL}/knowledge/compliance`, { headers: getAuthHeaders() });
+            if (res.data && res.data.users) {
+                setComplianceData(res.data);
             }
         } catch (err) {
-            console.error('Failed to load datasets:', err);
+            console.warn('Compliance load fallback:', err.message);
         } finally {
-            setLoadingDatasets(false);
+            setLoadingCompliance(false);
+        }
+    };
+
+    // Fetch Syllabus Data
+    const fetchSyllabus = async () => {
+        setLoadingSyllabus(true);
+        try {
+            const res = await axios.get(`${API_URL}/knowledge/syllabus`, { headers: getAuthHeaders() });
+            if (res.data && res.data.departments) {
+                setSyllabusData(res.data);
+            }
+        } catch (err) {
+            console.warn('Syllabus load fallback:', err.message);
+        } finally {
+            setLoadingSyllabus(false);
         }
     };
 
     useEffect(() => {
-        fetchDatasets();
+        fetchCompliance();
+        fetchSyllabus();
     }, []);
 
-    // Query DB for Top 4 Knowledge Items
-    const handleQueryDb = async () => {
-        setQueryingDb(true);
-        setError(null);
-        try {
-            const res = await axios.get(`${API_URL}/knowledge/query-8-points`, {
-                headers: getAuthHeaders(),
-                params: {
-                    product_id: productId,
-                    candidate_name: individualId || user?.name
-                }
-            });
-            if (res.data) {
-                setDbQueryResult(res.data);
-            }
-        } catch (err) {
-            setError(err.response?.data?.detail || err.message || 'Error querying database');
-        } finally {
-            setQueryingDb(false);
-        }
-    };
+    // WebSocket real-time listener
+    useEffect(() => {
+        if (!socket) return;
+        const handleSync = (data) => {
+            console.log('⚡ Real-time knowledge sync received:', data);
+            fetchCompliance();
+        };
+        socket.on('knowledge:sync', handleSync);
+        return () => {
+            socket.off('knowledge:sync', handleSync);
+        };
+    }, [socket]);
 
-    // Run 8-point autonomous AI intake
-    const handleRunAutoIntake = async () => {
-        setRunningIntake(true);
-        setError(null);
-        setIntakeResult(null);
+    // Determine current user object for dedicated mode
+    const currentMember = useMemo(() => {
+        if (selectedMember) return selectedMember;
+        
+        // Find matching logged in user in compliance users
+        if (complianceData.users?.length > 0 && user) {
+            const match = complianceData.users.find(u => 
+                (u.email && user.email && u.email.toLowerCase() === user.email.toLowerCase()) ||
+                (u.name && user.name && u.name.toLowerCase() === user.name.toLowerCase()) ||
+                (u.employeeId && user.employeeId && u.employeeId.toUpperCase() === user.employeeId.toUpperCase())
+            );
+            if (match) return match;
+        }
+
+        // Default fallback to logged in user profile
+        return {
+            id: user?._id || user?.id || 'current-user',
+            name: user?.name || 'Current Employee',
+            email: user?.email || '',
+            employeeId: user?.employeeId || 'BHIV-USR',
+            role: user?.role || 'User',
+            department: user?.department || 'AI ML',
+            hasContext: false,
+            injectedContext: null
+        };
+    }, [selectedMember, complianceData.users, user]);
+
+    // Filtered users for Global Hub
+    const filteredUsers = useMemo(() => {
+        let list = complianceData.users || [];
+
+        if (selectedDeptFilter !== 'ALL') {
+            list = list.filter(u => (u.department || '').toUpperCase() === selectedDeptFilter.toUpperCase());
+        }
+
+        if (statusFilter === 'INGESTED') {
+            list = list.filter(u => u.hasContext);
+        } else if (statusFilter === 'MISSING') {
+            list = list.filter(u => !u.hasContext);
+        }
+
+        if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase().trim();
+            list = list.filter(u => 
+                (u.name || '').toLowerCase().includes(q) ||
+                (u.email || '').toLowerCase().includes(q) ||
+                (u.employeeId || '').toLowerCase().includes(q) ||
+                (u.department || '').toLowerCase().includes(q)
+            );
+        }
+
+        return list;
+    }, [complianceData.users, selectedDeptFilter, statusFilter, searchQuery]);
+
+    // Get Department tasks for current member
+    const currentDeptTasks = useMemo(() => {
+        if (!syllabusData.departments) return [];
+        const dept = currentMember?.department || 'AI ML';
+        
+        // Match department tasks
+        const exactMatch = syllabusData.departments[dept];
+        if (exactMatch && exactMatch.length > 0) return exactMatch;
+
+        // Fallback matching
+        for (const [dName, tasks] of Object.entries(syllabusData.departments)) {
+            if (dept.toUpperCase().includes(dName.toUpperCase()) || dName.toUpperCase().includes(dept.toUpperCase())) {
+                return tasks;
+            }
+        }
+        return syllabusData.departments['Governance & System'] || [];
+    }, [syllabusData.departments, currentMember]);
+
+    // Handle Inline Context Ingest / Update (Dedicated View)
+    const handleSaveInlineContext = async (e) => {
+        e.preventDefault();
+        if (!inlineContextText.trim()) return;
+
+        setSavingInlineContext(true);
+        setInlineFeedback(null);
         try {
             const payload = {
-                repository_url_or_path: agentRepoUrl,
-                task_id_or_title: agentTaskId,
-                candidate_name: individualId || user?.name || 'Niyantran User',
-                product_id: productId
+                candidateName: currentMember.name,
+                employeeId: currentMember.employeeId || '',
+                department: currentMember.department || 'AI ML',
+                contextText: inlineContextText,
+                productId: inlineProductId || currentMember.department || 'BHIV'
             };
-            const res = await axios.post(`${API_URL}/knowledge/auto-intake`, payload, {
-                headers: getAuthHeaders()
-            });
-            setIntakeResult(res.data);
-            fetchDatasets();
-        } catch (err) {
-            setError(err.response?.data?.detail || err.message || 'Error running autonomous intake');
-        } finally {
-            setRunningIntake(false);
-        }
-    };
 
-    const handleIngest = async (e) => {
-        if (e) e.preventDefault();
-        if (!content.trim()) {
-            setError('Please paste ChatGPT transcript, markdown, or structured JSON content.');
-            return;
-        }
-
-        setSubmitting(true);
-        setError(null);
-        setResponse(null);
-
-        try {
-            let parsedContent = content.trim();
-            try {
-                if (parsedContent.startsWith('{') || parsedContent.startsWith('[')) {
-                    parsedContent = JSON.parse(parsedContent);
-                }
-            } catch (pErr) {
-                // Keep as raw text
+            await axios.post(`${API_URL}/knowledge/quick-ingest`, payload, { headers: getAuthHeaders() });
+            setInlineFeedback({ type: 'success', message: 'Context successfully injected & verified by Parikshak!' });
+            setInlineContextText('');
+            await fetchCompliance();
+            
+            // If in admin preview, update selected member context
+            if (selectedMember) {
+                setSelectedMember(prev => ({
+                    ...prev,
+                    hasContext: true,
+                    injectedContext: {
+                        summary: inlineContextText.substring(0, 300),
+                        content: inlineContextText,
+                        product_id: inlineProductId,
+                        ingestion_timestamp: new Date().toISOString(),
+                        version: 'v1.0'
+                    }
+                }));
             }
+        } catch (err) {
+            setInlineFeedback({ type: 'error', message: err.response?.data?.detail || 'Failed to inject context.' });
+        } finally {
+            setSavingInlineContext(false);
+        }
+    };
 
+    // Handle Quick Modal Open (Global Hub)
+    const openQuickModalForUser = (member) => {
+        setModalCandidate(member);
+        setModalProductId(member.department === 'Web Development' ? 'Niyantran' : 'BHIV');
+        setModalContextText(member.injectedContext?.content || '');
+        setModalFeedback(null);
+        setQuickModalOpen(true);
+    };
+
+    // Handle Submit Quick Modal
+    const handleModalSubmit = async (e) => {
+        e.preventDefault();
+        if (!modalCandidate || !modalContextText.trim()) return;
+
+        setSubmittingModal(true);
+        setModalFeedback(null);
+        try {
             const payload = {
-                product_id: productId,
-                individual_id: (individualId || user?.name || '').trim() || 'Niyantran User',
-                dataset_type: datasetType,
-                content: parsedContent,
-                source: source.trim() || 'Niyantran-User-Ingest',
-                provenance: provenance.trim() || `niyantran-session-${productId.toLowerCase()}`,
-                version: 'v1.0'
+                candidateName: modalCandidate.name,
+                employeeId: modalCandidate.employeeId || '',
+                department: modalCandidate.department || 'AI ML',
+                contextText: modalContextText,
+                productId: modalProductId || 'BHIV'
             };
 
-            const res = await axios.post(`${API_URL}/knowledge/ingest`, payload, {
-                headers: getAuthHeaders()
-            });
-
-            setResponse(res.data);
-            setContent('');
-            fetchDatasets();
-            handleQueryDb();
+            await axios.post(`${API_URL}/knowledge/quick-ingest`, payload, { headers: getAuthHeaders() });
+            setModalFeedback({ type: 'success', message: `Context saved for ${modalCandidate.name}!` });
+            setTimeout(() => {
+                setQuickModalOpen(false);
+                setModalFeedback(null);
+            }, 1200);
+            await fetchCompliance();
         } catch (err) {
-            setError(err.response?.data?.detail || err.response?.data?.message || err.message || 'Error ingesting knowledge dataset');
+            setModalFeedback({ type: 'error', message: err.response?.data?.detail || 'Failed to save context.' });
         } finally {
-            setSubmitting(false);
+            setSubmittingModal(false);
         }
     };
 
-    const loadSampleForType = (type) => {
-        setDatasetType(type);
-        const activeName = individualId || user?.name || 'Niyantran User';
-        if (type === 'product_knowledge') {
-            setContent(`PRODUCT KNOWLEDGE (PKB-001)
-Product: ${productId}
-Author: ${activeName}
-Title: Core Governed Task Engine Invariants
-Domain: Niyantran Task Workflow System
-Key Standards:
-1. Append-only event journaling for all review decisions.
-2. Single-writer concurrency lock on evaluation persistent store.
-3. Cryptographic envelope validation for all candidate submissions.`);
-        } else if (type === 'architecture_decision') {
-            setContent(`PRODUCT ARCHITECTURE DECISION (ADR-009)
-Product: ${productId}
-Author: ${activeName}
-Title: Direct Integration with Parikshak RAG Engine
-Context: Niyantran delegates knowledge governance directly to Parikshak without local database mutations.
-Decision: All users submit knowledge directly through Express API proxy to Parikshak canonical store.
-Status: APPROVED`);
-        } else if (type === 'canonical_decision') {
-            setContent(`CANONICAL GOVERNANCE DECISION (CGD-004)
-Product: ${productId}
-Author: ${activeName}
-Policy: Mandatory AST & Assertion Verification
-Rule: Candidates must provide passing unit test suites and architectural proofs in REVIEW_PACKET.md.
-Validation: Automated scoring engine deducts 30 points if tests or AST validation fails.`);
-        } else if (type === 'individual_context') {
-            setContent(`INDIVIDUAL CONTEXT & TRACK RECORD (IND-001)
-Individual / Contributor: ${activeName}
-Product: ${productId}
-Track Record: Senior Engineer in Niyantran ecosystem focusing on deterministic workflow engines, micro-service orchestration, and automated evaluation engines.
-Strengths: Modular code design, clean test coverage, zero runtime memory leaks.
-Past Tasks Completed: T-GOV-001 (Deterministic Execution Core).`);
-        } else {
-            setContent(`# REVIEW PACKET — ${productId}
-Candidate: ${activeName}
-Task: ${agentTaskId || 'T-GOV-001'}
-Architecture verified. Test assertions passing.`);
-        }
+    // Switch Admin to inspect a specific member's dedicated view
+    const inspectMemberDedicated = (member) => {
+        setSelectedMember(member);
+        setViewMode('DEDICATED');
+        setInlineFeedback(null);
+        setInlineContextText('');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
-    const charCount = content.length;
-    const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0;
+    // Return to Global Hub
+    const returnToGlobalHub = () => {
+        setViewMode('GLOBAL');
+        setSelectedMember(null);
+        setInlineFeedback(null);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
 
     return (
-        <div className="container mx-auto p-4 sm:p-6 space-y-6 max-w-7xl animate-in fade-in duration-300 pt-2">
-            {/* Header */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border pb-5">
-                <div className="flex items-center gap-3.5">
-                    <div className="p-3 bg-gradient-to-br from-cyan-500/20 to-blue-600/20 border border-cyan-500/30 rounded-2xl text-cyan-500 shadow-sm shrink-0">
-                        <Tablet size={28} />
+        <div className="min-h-screen bg-background text-foreground p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
+            
+            {/* Top Navigation Bar & Mode Switcher */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-border">
+                <div className="flex items-center gap-3">
+                    <div className="p-2.5 rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-sm">
+                        {viewMode === 'GLOBAL' ? <Database className="w-6 h-6" /> : <User className="w-6 h-6" />}
                     </div>
                     <div>
-                        <div className="flex items-center gap-2.5 flex-wrap">
-                            <h1 className="text-2xl font-black tracking-tight text-foreground">
-                                Governed Knowledge Administration
-                            </h1>
-                            <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-xs font-bold rounded-full px-3">
-                                Direct Parikshak Sync
+                        <h1 className="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-2">
+                            {viewMode === 'GLOBAL' ? 'Global Knowledge & Context Hub' : 'My Dedicated Knowledge & Task Hub'}
+                            <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/30 text-[10px] font-mono">
+                                REALTIME SYNC
                             </Badge>
-                        </div>
-                        <p className="text-muted-foreground text-xs sm:text-sm mt-1 flex items-center gap-2 flex-wrap">
-                            <span>Ingestion portal for ChatGPT transcripts, product specs & architectural context</span>
-                            <span className="hidden sm:inline">•</span>
-                            <span className="text-cyan-600 dark:text-cyan-400 font-semibold flex items-center gap-1">
-                                <User size={13} /> Logged in as: {user?.name || getInitialUserName()}
-                            </span>
+                        </h1>
+                        <p className="text-xs sm:text-sm text-muted-foreground">
+                            {viewMode === 'GLOBAL'
+                                ? 'Admin oversight: Injected contexts across all employees, departments, and Parikshak DAG nodes.'
+                                : `Personalized context grounding and canonical syllabus for ${currentMember?.name || 'Employee'}.`}
                         </p>
                     </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                    <Button
-                        onClick={fetchDatasets}
-                        variant="outline"
-                        size="sm"
-                        className="text-xs font-bold flex items-center gap-2 border-border shadow-sm hover:bg-muted"
-                    >
-                        <RefreshCw size={14} className={loadingDatasets ? "animate-spin" : ""} />
-                        Refresh Datasets
-                    </Button>
-                </div>
+
+                {/* Admin Mode Switcher Actions */}
+                {isAdmin && (
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                        {viewMode === 'DEDICATED' ? (
+                            <Button 
+                                variant="outline" 
+                                size="sm" 
+                                onClick={returnToGlobalHub}
+                                className="gap-2 border-primary/40 text-primary hover:bg-primary/10"
+                            >
+                                <ArrowLeft className="w-4 h-4" />
+                                Back to Global Overview
+                            </Button>
+                        ) : (
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs text-muted-foreground hidden md:inline">Inspect Member:</span>
+                                <Select 
+                                    onValueChange={(empId) => {
+                                        const m = complianceData.users?.find(u => u.employeeId === empId || u.id === empId);
+                                        if (m) inspectMemberDedicated(m);
+                                    }}
+                                >
+                                    <SelectTrigger className="w-[180px] h-9 text-xs bg-card">
+                                        <SelectValue placeholder="Jump to User..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {(complianceData.users || []).slice(0, 15).map(u => (
+                                            <SelectItem key={u.id || u.employeeId} value={u.employeeId || u.id}>
+                                                {u.name} ({u.department || 'N/A'})
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        )}
+                        <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            onClick={() => { fetchCompliance(); fetchSyllabus(); }}
+                            title="Refresh Data"
+                            className="h-9 w-9 text-muted-foreground hover:text-foreground"
+                        >
+                            <RefreshCw className={`w-4 h-4 ${loadingCompliance ? 'animate-spin text-primary' : ''}`} />
+                        </Button>
+                    </div>
+                )}
             </div>
 
-            {/* AI Autonomous Intake & 8-Point Query Room */}
-            <Card className="border-cyan-500/30 shadow-xl overflow-hidden relative bg-card">
-                <div className="absolute top-0 right-0 w-80 h-80 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none"></div>
-
-                <CardHeader className="bg-gradient-to-r from-cyan-500/10 via-primary/5 to-transparent border-b border-border/80 pb-4">
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                        <div className="flex items-center gap-3">
-                            <div className="p-2.5 bg-cyan-500/10 border border-cyan-500/30 rounded-xl text-cyan-500 shrink-0">
-                                <Bot size={22} />
-                            </div>
-                            <div>
-                                <CardTitle className="text-base font-black flex items-center gap-2 text-foreground">
-                                    Autonomous AI Intake & DB Agent Room
-                                    <Badge variant="outline" className="bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-500/30 text-[10px] font-mono font-bold">
-                                        8-POINT GOVERNANCE
-                                    </Badge>
-                                </CardTitle>
-                                <CardDescription className="text-xs mt-0.5 text-muted-foreground">
-                                    Queries Parikshak Governed DB (Top 4) and extracts GitHub repository evidence (Bottom 4).
-                                </CardDescription>
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={handleQueryDb}
-                                disabled={queryingDb}
-                                className="text-xs font-bold text-cyan-600 dark:text-cyan-400 border-cyan-500/30 hover:bg-cyan-500/10 flex items-center gap-2"
-                            >
-                                <Search size={14} className={queryingDb ? "animate-spin" : ""} />
-                                {queryingDb ? 'Querying DB...' : 'Query Governed DB (Top 4)'}
-                            </Button>
-                            <Button
-                                type="button"
-                                size="sm"
-                                onClick={handleRunAutoIntake}
-                                disabled={runningIntake}
-                                className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white text-xs font-bold flex items-center gap-2 shadow-md"
-                            >
-                                <Play size={14} className={runningIntake ? "animate-spin" : ""} />
-                                {runningIntake ? 'Executing Auto-Intake...' : 'Run 8-Point Auto-Intake'}
-                            </Button>
-                        </div>
-                    </div>
-                </CardHeader>
-
-                <CardContent className="p-5 space-y-5">
-                    {/* Input Fields for Auto-Intake */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <div>
-                            <Label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">
-                                Target Product / Build
-                            </Label>
-                            <Select value={productId} onValueChange={(val) => setProductId(val)}>
-                                <SelectTrigger className="font-bold text-xs bg-background border-input">
-                                    <SelectValue placeholder="Select product" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="BHIV">BHIV</SelectItem>
-                                    <SelectItem value="PARIKSHAK">PARIKSHAK</SelectItem>
-                                    <SelectItem value="NIYANTRAN">NIYANTRAN</SelectItem>
-                                    <SelectItem value="TANTRA">TANTRA</SelectItem>
-                                    <SelectItem value="MDU">MDU</SelectItem>
-                                    <SelectItem value="SETU">SETU</SelectItem>
-                                    <SelectItem value="SAARTHI">SAARTHI</SelectItem>
-                                    <SelectItem value="PRAVAH">PRAVAH</SelectItem>
-                                    <SelectItem value="VAANI">VAANI</SelectItem>
-                                    <SelectItem value="AIAIC">AIAIC</SelectItem>
-                                    <SelectItem value="CYBER">CYBER</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-
-                        <div>
-                            <Label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block truncate">
-                                Logged-in User Name
-                            </Label>
-                            <div className="relative">
-                                <Input
-                                    type="text"
-                                    value={individualId}
-                                    onChange={(e) => setIndividualId(e.target.value)}
-                                    placeholder="Logged-in User Name"
-                                    className="text-xs font-bold pl-8 bg-background border-cyan-500/40 focus:border-cyan-500"
-                                />
-                                <User size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-cyan-500" />
-                            </div>
-                        </div>
-
-                        <div>
-                            <Label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block truncate">
-                                GitHub Repo URL / Path
-                            </Label>
-                            <Input
-                                type="text"
-                                value={agentRepoUrl}
-                                onChange={(e) => setAgentRepoUrl(e.target.value)}
-                                placeholder="https://github.com/org/repo"
-                                className="text-xs font-mono bg-background border-input"
-                            />
-                        </div>
-
-                        <div>
-                            <Label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block truncate">
-                                Task ID or Title
-                            </Label>
-                            <Input
-                                type="text"
-                                value={agentTaskId}
-                                onChange={(e) => setAgentTaskId(e.target.value)}
-                                placeholder="e.g. T-GOV-001"
-                                className="text-xs font-mono bg-background border-input"
-                            />
-                        </div>
-                    </div>
-
-                    {/* 8-Point Status Grid */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {/* Top 4 from DB */}
-                        <div className="bg-muted/40 border border-yellow-500/20 rounded-xl p-4 space-y-3">
-                            <div className="flex items-center justify-between border-b border-border/60 pb-2">
-                                <span className="text-xs font-bold text-yellow-600 dark:text-yellow-400 uppercase tracking-wider flex items-center gap-1.5">
-                                    <Database size={14} />
-                                    1-4. Governed Knowledge (Parikshak DB)
+            {/* ========================================================================= */}
+            {/* VIEW MODE 1: DEDICATED INDIVIDUAL USER VIEW                                */}
+            {/* ========================================================================= */}
+            {viewMode === 'DEDICATED' && (
+                <div className="space-y-6 animate-in fade-in duration-300">
+                    
+                    {/* Admin Inspection Banner (If Admin is viewing someone else) */}
+                    {isAdmin && selectedMember && (
+                        <div className="bg-primary/10 border border-primary/30 rounded-xl p-3 sm:p-4 flex items-center justify-between gap-3 text-xs sm:text-sm">
+                            <div className="flex items-center gap-2 text-primary font-medium">
+                                <Eye className="w-4 h-4 shrink-0" />
+                                <span>
+                                    Admin Inspection Mode: Viewing dedicated track for <strong>{selectedMember.name}</strong> ({selectedMember.department || 'AI ML'})
                                 </span>
-                                <span className="text-[10px] text-muted-foreground font-mono">Canonical Store</span>
                             </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                                <div className="bg-background p-2.5 rounded-lg border border-border flex items-center justify-between">
-                                    <span className="text-foreground text-[11px]">1. Product Knowledge</span>
-                                    {dbQueryResult?.top_4_governed_db?.product_knowledge?.found ? (
-                                        <Badge className="bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold">FOUND</Badge>
-                                    ) : (
-                                        <Button size="xs" variant="outline" onClick={() => loadSampleForType('product_knowledge')} className="text-[10px] h-6 px-2 text-yellow-600 border-yellow-500/30">
-                                            + INGEST
-                                        </Button>
-                                    )}
-                                </div>
-                                <div className="bg-background p-2.5 rounded-lg border border-border flex items-center justify-between">
-                                    <span className="text-foreground text-[11px]">2. Architecture Decisions</span>
-                                    {dbQueryResult?.top_4_governed_db?.architecture_decisions?.found ? (
-                                        <Badge className="bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold">FOUND</Badge>
-                                    ) : (
-                                        <Button size="xs" variant="outline" onClick={() => loadSampleForType('architecture_decision')} className="text-[10px] h-6 px-2 text-yellow-600 border-yellow-500/30">
-                                            + INGEST
-                                        </Button>
-                                    )}
-                                </div>
-                                <div className="bg-background p-2.5 rounded-lg border border-border flex items-center justify-between">
-                                    <span className="text-foreground text-[11px]">3. Canonical Decisions</span>
-                                    {dbQueryResult?.top_4_governed_db?.canonical_decisions?.found ? (
-                                        <Badge className="bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold">FOUND</Badge>
-                                    ) : (
-                                        <Button size="xs" variant="outline" onClick={() => loadSampleForType('canonical_decision')} className="text-[10px] h-6 px-2 text-yellow-600 border-yellow-500/30">
-                                            + INGEST
-                                        </Button>
-                                    )}
-                                </div>
-                                <div className="bg-background p-2.5 rounded-lg border border-border flex items-center justify-between">
-                                    <span className="text-foreground text-[11px]">4. Individual Context</span>
-                                    {dbQueryResult?.top_4_governed_db?.individual_context?.found ? (
-                                        <Badge className="bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold">FOUND</Badge>
-                                    ) : (
-                                        <Button size="xs" variant="outline" onClick={() => loadSampleForType('individual_context')} className="text-[10px] h-6 px-2 text-yellow-600 border-yellow-500/30">
-                                            + INGEST
-                                        </Button>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Bottom 4 from Task & Repo */}
-                        <div className="bg-muted/40 border border-cyan-500/20 rounded-xl p-4 space-y-3">
-                            <div className="flex items-center justify-between border-b border-border/60 pb-2">
-                                <span className="text-xs font-bold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
-                                    <Code size={14} />
-                                    5-8. Task & Repo Evidence (GitHub)
-                                </span>
-                                <span className="text-[10px] text-muted-foreground font-mono">Automated AI Harvester</span>
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                                <div className="bg-background p-2.5 rounded-lg border border-border flex items-center justify-between">
-                                    <span className="text-foreground text-[11px]">5. REVIEW_PACKET</span>
-                                    <Badge variant="outline" className="bg-cyan-500/10 text-cyan-600 dark:text-cyan-300 border-cyan-500/20 text-[10px]">AUTO HARVEST</Badge>
-                                </div>
-                                <div className="bg-background p-2.5 rounded-lg border border-border flex items-center justify-between">
-                                    <span className="text-foreground text-[11px]">6. CODE_PACKET</span>
-                                    <Badge variant="outline" className="bg-cyan-500/10 text-cyan-600 dark:text-cyan-300 border-cyan-500/20 text-[10px]">AUTO HARVEST</Badge>
-                                </div>
-                                <div className="bg-background p-2.5 rounded-lg border border-border flex items-center justify-between">
-                                    <span className="text-foreground text-[11px]">7. Runtime Evidence</span>
-                                    <Badge variant="outline" className="bg-cyan-500/10 text-cyan-600 dark:text-cyan-300 border-cyan-500/20 text-[10px]">ASSERTIONS</Badge>
-                                </div>
-                                <div className="bg-background p-2.5 rounded-lg border border-border flex items-center justify-between">
-                                    <span className="text-foreground text-[11px]">8. Dependencies & Gaps</span>
-                                    <Badge variant="outline" className="bg-cyan-500/10 text-cyan-600 dark:text-cyan-300 border-cyan-500/20 text-[10px]">GAP ANALYZER</Badge>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Auto-Intake Execution Result Banner */}
-                    {intakeResult && (
-                        <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in">
-                            <div className="space-y-1">
-                                <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-bold text-sm">
-                                    <CheckCircle size={18} />
-                                    <span>Autonomous 8-Point Review Complete (Score: {intakeResult.evaluation?.score}/100 — {intakeResult.evaluation?.evaluation_result})</span>
-                                </div>
-                                <p className="text-muted-foreground text-xs font-mono">
-                                    Next Task: <span className="text-foreground font-bold">{intakeResult.next_task_packet?.task_id}: {intakeResult.next_task_packet?.title}</span>
-                                </p>
-                            </div>
+                            <Button 
+                                variant="outline" 
+                                size="sm" 
+                                onClick={returnToGlobalHub}
+                                className="h-8 text-xs bg-background/80 hover:bg-background"
+                            >
+                                ← Exit to Global Hub
+                            </Button>
                         </div>
                     )}
-                </CardContent>
-            </Card>
 
-            {/* Ingestion Form & History Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Form Card */}
-                <Card className="lg:col-span-2 shadow-xl border-l-4 border-l-emerald-500 bg-card">
-                    <CardHeader className="bg-muted/20 pb-4 border-b border-border">
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2.5">
-                                <div className="h-8 w-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-500">
-                                    <Database size={18} />
-                                </div>
-                                <div>
-                                    <CardTitle className="text-lg font-bold text-foreground">Ingest Knowledge Dataset to Parikshak</CardTitle>
-                                    <CardDescription className="text-xs">Direct Parikshak API ingestion gateway</CardDescription>
-                                </div>
-                            </div>
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() => loadSampleForType(datasetType)}
-                                className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1.5 border-emerald-500/30 hover:bg-emerald-500/10"
-                            >
-                                <Sparkles size={13} />
-                                Load Sample Text
-                            </Button>
-                        </div>
-                    </CardHeader>
-
-                    <CardContent className="pt-6 space-y-6">
-                        <form onSubmit={handleIngest} className="space-y-5">
-                            {/* Selectors Row */}
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                <div>
-                                    <Label className="text-xs font-bold uppercase tracking-wider mb-2 block text-foreground">
-                                        Product / Build ID
-                                    </Label>
-                                    <Select value={productId} onValueChange={(val) => setProductId(val)}>
-                                        <SelectTrigger className="font-bold text-sm bg-background border-input">
-                                            <SelectValue placeholder="Select product" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="BHIV">BHIV</SelectItem>
-                                            <SelectItem value="PARIKSHAK">PARIKSHAK</SelectItem>
-                                            <SelectItem value="NIYANTRAN">NIYANTRAN</SelectItem>
-                                            <SelectItem value="TANTRA">TANTRA</SelectItem>
-                                            <SelectItem value="MDU">MDU</SelectItem>
-                                            <SelectItem value="SETU">SETU</SelectItem>
-                                            <SelectItem value="SAARTHI">SAARTHI</SelectItem>
-                                            <SelectItem value="PRAVAH">PRAVAH</SelectItem>
-                                            <SelectItem value="VAANI">VAANI</SelectItem>
-                                            <SelectItem value="AIAIC">AIAIC</SelectItem>
-                                            <SelectItem value="CYBER">CYBER</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-
-                                <div>
-                                    <Label className="text-xs font-bold uppercase tracking-wider mb-2 block text-foreground truncate">
-                                        Logged-in Author
-                                    </Label>
-                                    <div className="relative">
-                                        <Input
-                                            type="text"
-                                            value={individualId}
-                                            onChange={(e) => setIndividualId(e.target.value)}
-                                            placeholder="Logged-in User Name"
-                                            className="font-bold text-sm pl-8 bg-background border-primary/30"
-                                            required
-                                        />
-                                        <User size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-primary" />
+                    {/* Member Profile Card */}
+                    <Card className="border-border bg-card shadow-sm">
+                        <CardContent className="p-5 sm:p-6">
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/30 flex items-center justify-center text-primary font-black text-xl shadow-inner">
+                                        {(currentMember.name || 'U').substring(0, 2).toUpperCase()}
+                                    </div>
+                                    <div>
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <h2 className="text-xl font-black text-foreground">{currentMember.name}</h2>
+                                            <Badge variant="secondary" className="font-mono text-xs">
+                                                {currentMember.employeeId || 'BHIV-USR'}
+                                            </Badge>
+                                            <Badge className="bg-primary/10 text-primary border-primary/20 text-xs">
+                                                {currentMember.department || 'AI ML'}
+                                            </Badge>
+                                        </div>
+                                        <p className="text-xs text-muted-foreground mt-0.5">
+                                            {currentMember.email || 'employee@blackhole.ai'} • Role: {currentMember.role || 'User'} • Mode: {currentMember.workMode || 'WFO'}
+                                        </p>
                                     </div>
                                 </div>
 
-                                <div>
-                                    <Label className="text-xs font-bold uppercase tracking-wider mb-2 block text-foreground">
-                                        Dataset Type (8 Points)
-                                    </Label>
-                                    <Select value={datasetType} onValueChange={(val) => setDatasetType(val)}>
-                                        <SelectTrigger className="font-bold text-sm bg-background border-input">
-                                            <SelectValue placeholder="Select dataset type" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="product_knowledge">1. Product Knowledge</SelectItem>
-                                            <SelectItem value="architecture_decision">2. Architecture Decision</SelectItem>
-                                            <SelectItem value="canonical_decision">3. Canonical Decision</SelectItem>
-                                            <SelectItem value="individual_context">4. Individual Context</SelectItem>
-                                            <SelectItem value="review_packet">5. Review Packet</SelectItem>
-                                            <SelectItem value="code_packet">6. Code Packet</SelectItem>
-                                            <SelectItem value="evidence">7. Runtime Evidence</SelectItem>
-                                            <SelectItem value="dependencies">8. Dependencies & Gaps</SelectItem>
-                                        </SelectContent>
-                                    </Select>
+                                <div className="flex items-center gap-2 self-stretch sm:self-auto justify-end">
+                                    {currentMember.hasContext ? (
+                                        <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/30 px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5">
+                                            <CheckCircle2 className="w-4 h-4" />
+                                            Parikshak Context Active
+                                        </Badge>
+                                    ) : (
+                                        <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/30 px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5">
+                                            <AlertCircle className="w-4 h-4" />
+                                            Context Injection Required
+                                        </Badge>
+                                    )}
                                 </div>
                             </div>
+                        </CardContent>
+                    </Card>
 
-                            {/* Provenance & Source */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* SECTION 1: INJECTED TECHNICAL CONTEXT */}
+                    <Card className="border-border shadow-md bg-card overflow-hidden">
+                        <CardHeader className="bg-muted/30 border-b border-border pb-4">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                                 <div>
-                                    <Label className="text-xs font-bold uppercase tracking-wider mb-2 block text-foreground">
-                                        Source Tag
-                                    </Label>
-                                    <Input
-                                        type="text"
-                                        value={source}
-                                        onChange={(e) => setSource(e.target.value)}
-                                        placeholder="e.g. Niyantran-User-Ingest"
-                                        className="font-mono text-xs bg-background border-input"
-                                    />
+                                    <CardTitle className="text-base font-bold flex items-center gap-2">
+                                        <FileText className="w-4 h-4 text-primary" />
+                                        Injected Technical Context & Briefing
+                                    </CardTitle>
+                                    <CardDescription className="text-xs">
+                                        Grounding data used by Parikshak to evaluate submissions and eliminate "out_of_syllabus" false flags.
+                                    </CardDescription>
                                 </div>
-                                <div>
-                                    <Label className="text-xs font-bold uppercase tracking-wider mb-2 block text-foreground">
-                                        Provenance Lineage Ref
-                                    </Label>
-                                    <Input
-                                        type="text"
-                                        value={provenance}
-                                        onChange={(e) => setProvenance(e.target.value)}
-                                        placeholder="e.g. niyantran-user-session-bhiv"
-                                        className="font-mono text-xs bg-background border-input"
-                                    />
-                                </div>
+                                {currentMember.hasContext && (
+                                    <Badge variant="outline" className="text-[11px] font-mono border-primary/30 text-primary self-start sm:self-auto">
+                                        Version: {currentMember.injectedContext?.version || 'v1.0'}
+                                    </Badge>
+                                )}
                             </div>
+                        </CardHeader>
+                        <CardContent className="p-5 sm:p-6 space-y-4">
+                            {currentMember.hasContext && currentMember.injectedContext ? (
+                                <div className="space-y-4">
+                                    <div className="p-4 rounded-xl bg-muted/40 border border-border space-y-3">
+                                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                                            <span className="font-semibold text-foreground flex items-center gap-1.5">
+                                                <ShieldCheck className="w-4 h-4 text-emerald-500" />
+                                                Ingested Knowledge Summary:
+                                            </span>
+                                            <span className="text-muted-foreground font-mono text-[11px]">
+                                                {currentMember.injectedContext.ingestion_timestamp ? new Date(currentMember.injectedContext.ingestion_timestamp).toLocaleString() : 'Active'}
+                                            </span>
+                                        </div>
+                                        <p className="text-sm text-foreground/90 leading-relaxed font-sans bg-background/60 p-3 rounded-lg border border-border/60">
+                                            {currentMember.injectedContext.summary || currentMember.injectedContext.content}
+                                        </p>
+                                        <div className="flex flex-wrap items-center gap-2 pt-1 text-xs text-muted-foreground">
+                                            <span className="bg-muted px-2 py-0.5 rounded font-mono">Product: {currentMember.injectedContext.product_id || 'BHIV'}</span>
+                                            <span className="bg-muted px-2 py-0.5 rounded font-mono">Source: {currentMember.injectedContext.source || 'Knowledge Admin'}</span>
+                                        </div>
+                                    </div>
 
-                            {/* Text Area for ChatGPT Copy-Paste */}
-                            <div>
-                                <div className="flex items-center justify-between mb-2">
-                                    <Label className="text-xs font-bold uppercase tracking-wider text-foreground">
-                                        Paste ChatGPT Transcript or Structured Content
-                                    </Label>
-                                    <span className="text-xs text-muted-foreground font-mono">
-                                        {wordCount} words | {charCount} chars
-                                    </span>
+                                    {/* Collapsible / Quick Update Section */}
+                                    <details className="group border border-border/80 rounded-xl p-4 bg-muted/20">
+                                        <summary className="text-xs font-semibold text-primary cursor-pointer hover:underline flex items-center justify-between">
+                                            <span>Update or Re-sync Technical Context for {currentMember.name}</span>
+                                            <ChevronRight className="w-4 h-4 transition-transform group-open:rotate-90" />
+                                        </summary>
+                                        <form onSubmit={handleSaveInlineContext} className="mt-4 space-y-3 pt-3 border-t border-border">
+                                            <Textarea 
+                                                rows={4}
+                                                value={inlineContextText}
+                                                onChange={(e) => setInlineContextText(e.target.value)}
+                                                placeholder="Paste updated task documentation, ChatGPT prompt context, repository specifics..."
+                                                className="text-xs font-mono bg-background"
+                                            />
+                                            <div className="flex items-center justify-between gap-2">
+                                                <Select value={inlineProductId} onValueChange={setInlineProductId}>
+                                                    <SelectTrigger className="w-[140px] h-8 text-xs bg-background">
+                                                        <SelectValue />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="BHIV">Product: BHIV</SelectItem>
+                                                        <SelectItem value="Niyantran">Product: Niyantran</SelectItem>
+                                                        <SelectItem value="AI ML">Product: AI ML</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                                <Button type="submit" size="sm" disabled={savingInlineContext || !inlineContextText.trim()} className="gap-1.5 h-8 text-xs">
+                                                    <Send className="w-3.5 h-3.5" />
+                                                    {savingInlineContext ? 'Saving...' : 'Update Context'}
+                                                </Button>
+                                            </div>
+                                        </form>
+                                    </details>
                                 </div>
-                                <Textarea
-                                    rows={9}
-                                    value={content}
-                                    onChange={(e) => setContent(e.target.value)}
-                                    placeholder="Paste raw markdown, ChatGPT transcript, or architectural specification text here..."
-                                    className="font-mono text-sm leading-relaxed p-4 bg-background border-input"
-                                />
-                            </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500 flex items-start gap-3">
+                                        <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                                        <div className="text-xs space-y-1">
+                                            <p className="font-semibold text-sm">No Technical Context Ingested Yet</p>
+                                            <p className="text-muted-foreground">
+                                                Without injected context, Parikshak cannot calibrate your submission against your actual department deliverables. Ingest your context below to enable accurate code review and atomic task scoping.
+                                            </p>
+                                        </div>
+                                    </div>
 
-                            {/* Error Banner */}
-                            {error && (
-                                <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-destructive text-sm flex items-center gap-3">
-                                    <AlertCircle size={18} className="shrink-0" />
-                                    <span>{error}</span>
+                                    {/* Direct Ingest Form */}
+                                    <form onSubmit={handleSaveInlineContext} className="space-y-3 bg-muted/20 p-4 rounded-xl border border-border">
+                                        <Label className="text-xs font-bold text-foreground">
+                                            Paste Your ChatGPT / Build Specification Context:
+                                        </Label>
+                                        <Textarea 
+                                            rows={5}
+                                            value={inlineContextText}
+                                            onChange={(e) => setInlineContextText(e.target.value)}
+                                            placeholder="Paste your task briefing, deliverables, section requirements (e.g., BHIV vNEXT Section 10 Threat Correlation, repo URLs, target API contracts)..."
+                                            className="text-xs font-mono bg-background"
+                                        />
+                                        <div className="flex items-center justify-between gap-3 pt-1">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xs text-muted-foreground">Target Product:</span>
+                                                <Select value={inlineProductId} onValueChange={setInlineProductId}>
+                                                    <SelectTrigger className="w-[140px] h-8 text-xs bg-background">
+                                                        <SelectValue />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="BHIV">BHIV Core</SelectItem>
+                                                        <SelectItem value="Niyantran">Niyantran</SelectItem>
+                                                        <SelectItem value="AI ML">AI ML</SelectItem>
+                                                        <SelectItem value="Blockchain">Blockchain</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+                                            <Button type="submit" size="sm" disabled={savingInlineContext || !inlineContextText.trim()} className="gap-1.5 text-xs">
+                                                <Send className="w-3.5 h-3.5" />
+                                                {savingInlineContext ? 'Ingesting Context...' : 'Save & Ingest Context'}
+                                            </Button>
+                                        </div>
+                                    </form>
                                 </div>
                             )}
 
-                            {/* Submit Action to Parikshak */}
-                            <div className="space-y-2">
-                                <Button
-                                    type="submit"
-                                    disabled={submitting || !content.trim()}
-                                    className="w-full h-12 text-sm font-bold bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-lg flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50"
-                                >
-                                    {submitting ? (
-                                        <>
-                                            <RefreshCw size={18} className="animate-spin" />
-                                            <span>Submitting to Parikshak Governance Engine...</span>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Send size={18} />
-                                            <span>Submit Knowledge to Parikshak API</span>
-                                        </>
-                                    )}
-                                </Button>
-                                {!content.trim() && (
-                                    <p className="text-[11px] text-center text-muted-foreground italic">
-                                        Paste transcript text above or click "Load Sample Text" to enable submission to Parikshak.
-                                    </p>
-                                )}
-                            </div>
-                        </form>
-                    </CardContent>
-                </Card>
-
-                {/* Status & Preview Card */}
-                <div className="space-y-6">
-                    {/* Live Validation Result */}
-                    {response ? (
-                        <Card className="border-emerald-500/40 bg-emerald-500/5 shadow-xl">
-                            <CardHeader className="pb-3 border-b border-emerald-500/20">
-                                <CardTitle className="text-sm font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-2">
-                                    <CheckCircle2 size={18} />
-                                    <span>Ingested to Parikshak</span>
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent className="pt-4 space-y-2 text-xs font-mono text-muted-foreground">
-                                <div><span className="text-foreground font-semibold">Dataset ID:</span> <span className="text-emerald-600 dark:text-emerald-400 font-bold">{response.dataset_id}</span></div>
-                                <div><span className="text-foreground font-semibold">Product ID:</span> <span className="text-foreground font-bold">{response.product_id}</span></div>
-                                <div><span className="text-foreground font-semibold">Author:</span> <span className="text-cyan-600 dark:text-cyan-400 font-bold">{response.individual_id || 'Niyantran User'}</span></div>
-                                <div><span className="text-foreground font-semibold">Type:</span> <span className="text-purple-600 dark:text-purple-300">{response.dataset_type}</span></div>
-                                <div><span className="text-foreground font-semibold">Version:</span> {response.version}</div>
-                                <div><span className="text-foreground font-semibold">Provenance:</span> {response.provenance}</div>
-                                <div><span className="text-foreground font-semibold">Trace ID:</span> {response.trace_id}</div>
-                                <div><span className="text-foreground font-semibold">Status:</span> <Badge className="bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-bold ml-1">{response.validation_status}</Badge></div>
-                            </CardContent>
-                        </Card>
-                    ) : (
-                        <Card className="shadow-xl bg-card border-border">
-                            <CardHeader className="pb-3 border-b border-border">
-                                <CardTitle className="text-sm font-bold flex items-center gap-2 text-foreground">
-                                    <ShieldCheck size={16} className="text-emerald-500" />
-                                    Direct Parikshak Integration
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent className="pt-4 space-y-2 text-xs text-muted-foreground">
-                                <p>Submitting this form proxies payload directly to Parikshak's ingestion engine (`/api/v1/knowledge/ingest`).</p>
-                                <ul className="list-disc pl-4 space-y-1">
-                                    <li>Zero local database storage in Niyantran.</li>
-                                    <li>Parikshak Product Knowledge Base updates dynamically upon submission.</li>
-                                    <li>Stores trace ID, version tag, and ingestion provenance.</li>
-                                </ul>
-                            </CardContent>
-                        </Card>
-                    )}
-
-                    {/* Summary Info */}
-                    <Card className="shadow-xl bg-card border-border">
-                        <CardHeader className="pb-3 border-b border-border">
-                            <CardTitle className="text-sm font-bold flex items-center gap-2 text-foreground">
-                                <BookOpen size={16} className="text-purple-500" />
-                                Ingested Datasets in Parikshak ({datasets.length})
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent className="pt-4">
-                            {datasets.length === 0 ? (
-                                <p className="text-muted-foreground text-xs italic">No datasets ingested yet.</p>
-                            ) : (
-                                <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
-                                    {datasets.slice(0, 8).map((ds, idx) => (
-                                        <div key={idx} className="bg-muted/40 border border-border p-3 rounded-xl text-xs space-y-1">
-                                            <div className="flex items-center justify-between font-bold text-foreground">
-                                                <span className="text-primary">{ds.product_id}</span>
-                                                <span className="text-muted-foreground font-mono text-[10px]">{ds.version}</span>
-                                            </div>
-                                            <div className="text-purple-600 dark:text-purple-300 text-[11px] capitalize">{ds.dataset_type}</div>
-                                            {ds.individual_id && (
-                                                <div className="text-muted-foreground text-[11px] flex items-center gap-1 font-medium">
-                                                    <UserCheck size={12} className="text-primary shrink-0" />
-                                                    <span>{ds.individual_id}</span>
-                                                </div>
-                                            )}
-                                            <div className="text-muted-foreground text-[11px] truncate">{ds.extracted_summary}</div>
-                                        </div>
-                                    ))}
+                            {inlineFeedback && (
+                                <div className={`p-3 rounded-lg text-xs font-medium flex items-center gap-2 ${
+                                    inlineFeedback.type === 'success' ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/30' : 'bg-destructive/10 text-destructive border border-destructive/30'
+                                }`}>
+                                    {inlineFeedback.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+                                    <span>{inlineFeedback.message}</span>
                                 </div>
                             )}
                         </CardContent>
                     </Card>
+
+                    {/* SECTION 2: DEDICATED DEPARTMENT CURRICULUM & ACTIVE TASK TRACK */}
+                    <Card className="border-border shadow-md bg-card overflow-hidden">
+                        <CardHeader className="bg-muted/30 border-b border-border pb-4">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                <div>
+                                    <CardTitle className="text-base font-bold flex items-center gap-2">
+                                        <BookOpen className="w-4 h-4 text-primary" />
+                                        {currentMember.department || 'AI ML'} Department Curriculum Track
+                                    </CardTitle>
+                                    <CardDescription className="text-xs">
+                                        Strictly calibrated to atomic work units of <strong>180–360 minutes (3 to 6 hours)</strong> with zero multi-day epics.
+                                    </CardDescription>
+                                </div>
+                                <Badge variant="outline" className="bg-cyan-500/10 text-cyan-400 border-cyan-500/30 text-xs font-mono self-start sm:self-auto flex items-center gap-1">
+                                    <Clock className="w-3.5 h-3.5" />
+                                    180-360 mins / task
+                                </Badge>
+                            </div>
+                        </CardHeader>
+                        <CardContent className="p-5 sm:p-6 space-y-6">
+                            
+                            {/* Featured Active / Next Task Card */}
+                            {currentDeptTasks.length > 0 ? (
+                                <div className="space-y-4">
+                                    <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                                        <Sparkles className="w-3.5 h-3.5 text-primary" />
+                                        Current Actionable Task Node:
+                                    </div>
+
+                                    {/* Task Card 0 (Active Task) */}
+                                    <div className="p-5 rounded-xl border-2 border-primary/30 bg-primary/5 shadow-sm space-y-4">
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <span className="font-mono text-xs font-black bg-primary text-primary-foreground px-2.5 py-1 rounded-md">
+                                                    {currentDeptTasks[0].task_id}
+                                                </span>
+                                                <h3 className="font-bold text-foreground text-sm sm:text-base">
+                                                    {currentDeptTasks[0].task_id === 'T-AIML-001' ? 'Multi-Signal Threat Correlation Engine' :
+                                                     currentDeptTasks[0].task_id === 'T-WEB-001' ? 'Niyantran Real-time UI & WebSocket Sync' :
+                                                     currentDeptTasks[0].task_id === 'T-BLC-001' ? 'VAJRA Ledger Proof & Provenance Bridge' :
+                                                     'Canonical Task Implementation'}
+                                                </h3>
+                                            </div>
+                                            <Badge variant="outline" className="bg-background text-cyan-400 border-cyan-500/40 text-xs font-mono font-bold flex items-center gap-1">
+                                                <Clock className="w-3.5 h-3.5" />
+                                                [180-360 mins]
+                                            </Badge>
+                                        </div>
+
+                                        <p className="text-xs sm:text-sm text-foreground/90 italic bg-background/50 p-3 rounded-lg border border-border/50">
+                                            "{currentDeptTasks[0].dharma || 'Execute assigned engineering deliverables deterministically.'}"
+                                        </p>
+
+                                        {/* Completion Signals Parikshak Checks */}
+                                        <div className="space-y-2">
+                                            <span className="text-[11px] font-bold uppercase text-muted-foreground">
+                                                Parikshak Verification Signals:
+                                            </span>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-mono">
+                                                {(currentDeptTasks[0].completion_signals || [
+                                                    'unit_test_coverage_pass',
+                                                    'runtime_proof_evidence_logged',
+                                                    'schema_validation_200'
+                                                ]).map((sig, idx) => (
+                                                    <div key={idx} className="flex items-center gap-2 p-2 rounded-md bg-background/80 border border-border/70 text-foreground/90">
+                                                        <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
+                                                        <span className="truncate">{sig}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {/* Pass / Fail DAG Transition paths */}
+                                        <div className="pt-2 flex flex-wrap items-center gap-4 text-xs text-muted-foreground border-t border-border/60">
+                                            <span className="flex items-center gap-1.5 text-emerald-500 font-medium">
+                                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                                On Pass: {currentDeptTasks[0].next_tasks?.join(', ') || 'Next DAG Node'}
+                                            </span>
+                                            <span className="flex items-center gap-1.5 text-amber-500 font-medium">
+                                                <AlertCircle className="w-3.5 h-3.5" />
+                                                On Remediation: {currentDeptTasks[0].failure_tasks?.incorrect_logic?.[0] || 'Remediation Shift'}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    {/* Department Curriculum Roadmap */}
+                                    <div className="pt-4 space-y-3">
+                                        <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                                            <Layers className="w-3.5 h-3.5 text-muted-foreground" />
+                                            Remaining {currentMember.department || 'AI ML'} Curriculum Nodes:
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            {currentDeptTasks.slice(1).map((t, idx) => (
+                                                <div key={idx} className="p-3.5 rounded-lg border border-border bg-muted/20 space-y-2 hover:border-primary/40 transition-colors">
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <span className="font-mono text-xs font-bold text-primary">{t.task_id}</span>
+                                                        <Badge variant="outline" className="text-[10px] font-mono text-cyan-400 border-cyan-500/30">
+                                                            180-360 mins
+                                                        </Badge>
+                                                    </div>
+                                                    <p className="text-xs text-muted-foreground line-clamp-2">
+                                                        {t.dharma || 'Core curriculum requirement for department qualification.'}
+                                                    </p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="text-center py-8 text-xs text-muted-foreground">
+                                    Loading department syllabus tasks...
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+
                 </div>
-            </div>
+            )}
+
+            {/* ========================================================================= */}
+            {/* VIEW MODE 2: ADMIN GLOBAL INGESTED CONTEXT HUB                            */}
+            {/* ========================================================================= */}
+            {viewMode === 'GLOBAL' && isAdmin && (
+                <div className="space-y-6 animate-in fade-in duration-300">
+                    
+                    {/* Top Telemetry Cards */}
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                        <Card className="border-border bg-card shadow-sm">
+                            <CardHeader className="pb-2">
+                                <CardDescription className="text-xs font-medium text-muted-foreground flex items-center justify-between">
+                                    <span>Active Members</span>
+                                    <Users className="w-4 h-4 text-primary" />
+                                </CardDescription>
+                                <CardTitle className="text-2xl font-black text-foreground">
+                                    {complianceData.totalActive || 151}
+                                    <span className="text-xs text-muted-foreground font-normal ml-1.5">Total</span>
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent className="pt-0 text-[11px] text-muted-foreground">
+                                Across 16 Registered Departments
+                            </CardContent>
+                        </Card>
+
+                        <Card className="border-border bg-card shadow-sm">
+                            <CardHeader className="pb-2">
+                                <CardDescription className="text-xs font-medium text-muted-foreground flex items-center justify-between">
+                                    <span>Context Ingested</span>
+                                    <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                                </CardDescription>
+                                <CardTitle className="text-2xl font-black text-emerald-500">
+                                    {complianceData.totalFilled || 6}
+                                    <span className="text-xs text-muted-foreground font-normal ml-1.5">
+                                        ({complianceData.compliancePercentage || 25}%)
+                                    </span>
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent className="pt-0 text-[11px] text-muted-foreground">
+                                Verified & Grounded in Parikshak
+                            </CardContent>
+                        </Card>
+
+                        <Card className="border-border bg-card shadow-sm">
+                            <CardHeader className="pb-2">
+                                <CardDescription className="text-xs font-medium text-muted-foreground flex items-center justify-between">
+                                    <span>Missing Context</span>
+                                    <AlertCircle className="w-4 h-4 text-amber-500" />
+                                </CardDescription>
+                                <CardTitle className="text-2xl font-black text-amber-500">
+                                    {complianceData.totalPending || 18}
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent className="pt-0 text-[11px] text-muted-foreground">
+                                Action required before review
+                            </CardContent>
+                        </Card>
+
+                        <Card className="border-border bg-card shadow-sm">
+                            <CardHeader className="pb-2">
+                                <CardDescription className="text-xs font-medium text-muted-foreground flex items-center justify-between">
+                                    <span>Syllabus Tasks</span>
+                                    <Clock className="w-4 h-4 text-cyan-400" />
+                                </CardDescription>
+                                <CardTitle className="text-2xl font-black text-foreground">
+                                    {syllabusData.total_tasks || 37}
+                                    <span className="text-xs text-cyan-400 font-mono font-normal ml-1.5">DAG Nodes</span>
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent className="pt-0 text-[11px] text-cyan-400 font-mono">
+                                ⏱️ Strictly 180-360 mins / task
+                            </CardContent>
+                        </Card>
+                    </div>
+
+                    {/* GLOBAL INJECTED CONTEXT DIRECTORY */}
+                    <Card className="border-border shadow-md bg-card overflow-hidden">
+                        <CardHeader className="bg-muted/30 border-b border-border pb-4">
+                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                <div>
+                                    <CardTitle className="text-base font-bold flex items-center gap-2">
+                                        <Database className="w-4 h-4 text-primary" />
+                                        Global Injected Context & Member Directory
+                                    </CardTitle>
+                                    <CardDescription className="text-xs">
+                                        Search and inspect the injected knowledge contexts and dedicated tracks for every employee.
+                                    </CardDescription>
+                                </div>
+
+                                {/* Filter Controls */}
+                                <div className="flex flex-wrap items-center gap-2">
+                                    {/* Search */}
+                                    <div className="relative w-full sm:w-56">
+                                        <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                                        <Input 
+                                            placeholder="Search name, ID, dept..."
+                                            value={searchQuery}
+                                            onChange={(e) => setSearchQuery(e.target.value)}
+                                            className="h-8 pl-8 text-xs bg-background"
+                                        />
+                                    </div>
+
+                                    {/* Department Filter */}
+                                    <Select value={selectedDeptFilter} onValueChange={setSelectedDeptFilter}>
+                                        <SelectTrigger className="w-[140px] h-8 text-xs bg-background">
+                                            <SelectValue placeholder="Department" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="ALL">All Departments</SelectItem>
+                                            <SelectItem value="AI ML">AI ML</SelectItem>
+                                            <SelectItem value="Web Development">Web Development</SelectItem>
+                                            <SelectItem value="Testing">Testing</SelectItem>
+                                            <SelectItem value="Robotics">Robotics</SelectItem>
+                                            <SelectItem value="Blockchain">Blockchain</SelectItem>
+                                            <SelectItem value="ISRO Drone">ISRO Drone</SelectItem>
+                                            <SelectItem value="Law">Law</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+
+                                    {/* Status Filter */}
+                                    <Select value={statusFilter} onValueChange={setStatusFilter}>
+                                        <SelectTrigger className="w-[130px] h-8 text-xs bg-background">
+                                            <SelectValue placeholder="Status" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="ALL">All Statuses</SelectItem>
+                                            <SelectItem value="INGESTED">Ingested (6)</SelectItem>
+                                            <SelectItem value="MISSING">Missing Context</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            </div>
+                        </CardHeader>
+                        
+                        <CardContent className="p-0">
+                            <div className="divide-y divide-border">
+                                {filteredUsers.length > 0 ? (
+                                    filteredUsers.map((m) => {
+                                        const isExpanded = Boolean(expandedContextIds[m.id]);
+                                        return (
+                                            <div key={m.id} className="p-4 sm:p-5 hover:bg-muted/10 transition-colors space-y-3">
+                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                                    
+                                                    {/* User Details */}
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-10 h-10 rounded-xl bg-muted border border-border flex items-center justify-center font-bold text-xs text-foreground">
+                                                            {(m.name || 'U').substring(0, 2).toUpperCase()}
+                                                        </div>
+                                                        <div>
+                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                <span className="font-bold text-foreground text-sm">{m.name}</span>
+                                                                <Badge variant="outline" className="text-[10px] font-mono">
+                                                                    {m.employeeId || 'N/A'}
+                                                                </Badge>
+                                                                <span className="text-xs text-muted-foreground">• {m.department || 'AI ML'}</span>
+                                                            </div>
+                                                            <p className="text-xs text-muted-foreground">{m.email}</p>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Context Badge & Actions */}
+                                                    <div className="flex items-center gap-2 self-end sm:self-auto">
+                                                        {m.hasContext ? (
+                                                            <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/30 text-xs flex items-center gap-1 font-medium">
+                                                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                                                Context Ingested
+                                                            </Badge>
+                                                        ) : (
+                                                            <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/30 text-xs flex items-center gap-1 font-medium">
+                                                                <AlertCircle className="w-3.5 h-3.5" />
+                                                                Missing Context
+                                                            </Badge>
+                                                        )}
+
+                                                        {/* Action 1: Inspect Dedicated Track */}
+                                                        <Button 
+                                                            variant="default" 
+                                                            size="sm" 
+                                                            onClick={() => inspectMemberDedicated(m)}
+                                                            className="h-8 text-xs gap-1.5"
+                                                        >
+                                                            <Eye className="w-3.5 h-3.5" />
+                                                            Inspect Dedicated Track
+                                                        </Button>
+
+                                                        {/* Action 2: Quick Ingest Modal */}
+                                                        <Button 
+                                                            variant="outline" 
+                                                            size="sm" 
+                                                            onClick={() => openQuickModalForUser(m)}
+                                                            className="h-8 text-xs"
+                                                        >
+                                                            {m.hasContext ? 'Edit Context' : '+ Ingest'}
+                                                        </Button>
+                                                    </div>
+                                                </div>
+
+                                                {/* Injected Context Preview (Directly visible for Admin!) */}
+                                                {m.hasContext && m.injectedContext && (
+                                                    <div className="bg-muted/30 border border-border/80 rounded-lg p-3 text-xs space-y-1.5">
+                                                        <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                                                            <span className="font-semibold text-foreground flex items-center gap-1">
+                                                                <FileText className="w-3 h-3 text-primary" />
+                                                                Injected Context: {m.injectedContext.product_id || 'BHIV'}
+                                                            </span>
+                                                            <span>
+                                                                {m.injectedContext.ingestion_timestamp ? new Date(m.injectedContext.ingestion_timestamp).toLocaleDateString() : 'Active'}
+                                                            </span>
+                                                        </div>
+                                                        <p className="text-foreground/90 font-mono text-[11px] leading-relaxed">
+                                                            {isExpanded 
+                                                                ? (m.injectedContext.content || m.injectedContext.summary) 
+                                                                : (m.injectedContext.summary || m.injectedContext.content?.substring(0, 160) + '...')}
+                                                        </p>
+                                                        <button 
+                                                            onClick={() => setExpandedContextIds(prev => ({ ...prev, [m.id]: !prev[m.id] }))}
+                                                            className="text-[11px] text-primary hover:underline font-semibold"
+                                                        >
+                                                            {isExpanded ? 'Show less' : 'Show full context snippet'}
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })
+                                ) : (
+                                    <div className="p-8 text-center text-xs text-muted-foreground">
+                                        No members found matching filter.
+                                    </div>
+                                )}
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+            )}
+
+            {/* Quick Context Ingestion Modal */}
+            <Dialog open={quickModalOpen} onOpenChange={setQuickModalOpen}>
+                <DialogContent className="max-w-md bg-card border-border">
+                    <DialogHeader>
+                        <DialogTitle className="text-base font-bold flex items-center gap-2">
+                            <Sparkles className="w-4 h-4 text-primary" />
+                            Ingest Context for {modalCandidate?.name}
+                        </DialogTitle>
+                        <DialogDescription className="text-xs">
+                            Inject technical context to ground Parikshak for this employee.
+                        </DialogDescription>
+                    </DialogHeader>
+                    
+                    <form onSubmit={handleModalSubmit} className="space-y-4 pt-2">
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div>
+                                <Label className="text-[11px] text-muted-foreground">Department:</Label>
+                                <Input disabled value={modalCandidate?.department || 'AI ML'} className="h-8 text-xs bg-muted/40" />
+                            </div>
+                            <div>
+                                <Label className="text-[11px] text-muted-foreground">Target Product:</Label>
+                                <Select value={modalProductId} onValueChange={setModalProductId}>
+                                    <SelectTrigger className="h-8 text-xs bg-background">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="BHIV">BHIV Core</SelectItem>
+                                        <SelectItem value="Niyantran">Niyantran</SelectItem>
+                                        <SelectItem value="AI ML">AI ML</SelectItem>
+                                        <SelectItem value="Blockchain">Blockchain</SelectItem>
+                                        <SelectItem value="Testing">Testing</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        </div>
+
+                        <div>
+                            <Label className="text-xs font-semibold">Technical Context / ChatGPT Deliverables:</Label>
+                            <Textarea 
+                                rows={5}
+                                value={modalContextText}
+                                onChange={(e) => setModalContextText(e.target.value)}
+                                placeholder="Paste candidate's section specifications, threat correlation details, repository scope..."
+                                className="text-xs font-mono bg-background mt-1"
+                            />
+                        </div>
+
+                        {modalFeedback && (
+                            <div className={`p-2.5 rounded-lg text-xs font-medium flex items-center gap-2 ${
+                                modalFeedback.type === 'success' ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/30' : 'bg-destructive/10 text-destructive border border-destructive/30'
+                            }`}>
+                                {modalFeedback.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+                                <span>{modalFeedback.message}</span>
+                            </div>
+                        )}
+
+                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
+                            <Button type="button" variant="outline" size="sm" onClick={() => setQuickModalOpen(false)}>
+                                Cancel
+                            </Button>
+                            <Button type="submit" size="sm" disabled={submittingModal || !modalContextText.trim()} className="gap-1.5">
+                                <Send className="w-3.5 h-3.5" />
+                                {submittingModal ? 'Saving...' : 'Save & Activate Context'}
+                            </Button>
+                        </div>
+                    </form>
+                </DialogContent>
+            </Dialog>
+
         </div>
     );
 };
