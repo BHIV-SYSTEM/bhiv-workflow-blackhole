@@ -7,6 +7,7 @@ const auth = require('../middleware/auth');
 const adminAuth = require('../middleware/adminAuth');
 const geolib = require('geolib');
 const enhancedSalaryCalculator = require('../services/enhancedSalaryCalculator');
+const { findDailyProgressStatus } = require('../utils/progressValidation');
 
 // Office coordinates from environment variables - Blackhole Infiverse LLP Mumbai
 const OFFICE_COORDINATES = {
@@ -261,21 +262,11 @@ router.post('/end-day', auth, async (req, res) => {
 
     const isAimCompleted = todayAim && (todayAim.completionStatus === 'Completed' || todayAim.completionStatus === 'MVP Achieved');
 
-    // Check for daily progress (lenient validation - record status without blocking)
-    const todayProgress = await Progress.findOne({
-      user: userId,
-      date: {
-        $gte: sessionDate,
-        $lt: sessionDateEnd
-      }
-    });
-
-    const hasProgressContent = todayProgress && (
-      (todayProgress.notes && todayProgress.notes.trim() !== '') ||
-      (todayProgress.achievements && todayProgress.achievements.trim() !== '') ||
-      (todayProgress.blockers && todayProgress.blockers.trim() !== '') ||
-      (todayProgress.tasksCompleted && todayProgress.tasksCompleted.length > 0) ||
-      todayProgress.percentageCompleted !== undefined
+    // Check for daily progress (lenient validation - checks all updates today)
+    const { hasProgressContent, todayProgress } = await findDailyProgressStatus(
+      Progress,
+      userId,
+      [attendanceRecord.date, attendanceRecord.startDayTime]
     );
 
     if (!todayAim || !isAimCompleted || !hasProgressContent) {

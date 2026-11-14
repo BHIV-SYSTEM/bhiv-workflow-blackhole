@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
-import { getTaskStatusBadgeClass } from "../../lib/taskStatus"
+import { getTaskStatusBadgeClass, getTaskStatusLabel } from "../../lib/taskStatus"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table"
 import { Badge } from "../ui/badge"
@@ -475,7 +475,7 @@ export function TasksList({ filters, newTask }) {
                             <span className="text-muted-foreground italic">Unassigned</span>
                           )}
                         </TableCell>
-                        <TableCell className="py-4"><Badge className={`${getStatusColor(task.status)} font-semibold`}>{task.status}</Badge></TableCell>
+                        <TableCell className="py-4"><Badge className={`${getStatusColor(task.status)} font-semibold`}>{getTaskStatusLabel(task.status)}</Badge></TableCell>
                         <TableCell className="py-4"><Badge className={`${getPriorityColor(task.priority)} font-semibold`}>{task.priority}</Badge></TableCell>
                         <TableCell className="py-4 font-medium">
                           {task.dueDate ? formatDate(task.dueDate) : <span className="text-muted-foreground italic">No date</span>}

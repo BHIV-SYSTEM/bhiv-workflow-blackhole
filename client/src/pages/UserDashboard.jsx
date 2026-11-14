@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card"
 import { Button } from "../components/ui/button"
-import { getTaskStatusBadgeClass } from "../lib/taskStatus"
+import { getTaskStatusBadgeClass, getTaskStatusLabel } from "../lib/taskStatus"
 import {
   Loader2,
   CheckCircle,
@@ -653,7 +653,7 @@ function UserDashboard() {
                                 >
                                   <TableCell className="font-medium">{task.title}</TableCell>
                                   <TableCell>
-                                    <Badge className={getStatusColor(task.status)}>{task.status}</Badge>
+                                    <Badge className={getStatusColor(task.status)}>{getTaskStatusLabel(task.status)}</Badge>
                                   </TableCell>
                                   <TableCell>
                                     <Badge className={getPriorityColor(task.priority)}>{task.priority}</Badge>

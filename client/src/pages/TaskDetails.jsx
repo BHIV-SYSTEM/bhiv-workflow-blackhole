@@ -283,7 +283,7 @@
 //           <h1 className="text-2xl font-bold tracking-tight">{task.title}</h1>
 //         </div>
 //         <div className="flex items-center gap-2">
-//           <Badge className={getStatusColor(task.status)}>{task.status}</Badge>
+//           <Badge className={getStatusColor(task.status)}>{getTaskStatusLabel(task.status)}</Badge>
 //           <Badge className={getPriorityColor(task.priority)}>{task.priority}</Badge>
 //           {task.department && (
 //             <Badge variant="outline" className="border-[1px] border-muted-foreground/20">
@@ -602,6 +602,7 @@ import { Skeleton } from "../components/ui/skeleton"
 import { Textarea } from "../components/ui/textarea"
 import { API_URL } from "@/lib/api"
 import { formatDate } from "@/lib/dateFormat"
+import { getTaskStatusLabel } from "../lib/taskStatus"
 
 function TaskDetails() {
   const { id } = useParams()
@@ -939,7 +940,7 @@ function TaskDetails() {
               {task.task_id}
             </Badge>
           )}
-          <Badge className={getStatusColor(task.status)}>{task.status}</Badge>
+          <Badge className={getStatusColor(task.status)}>{getTaskStatusLabel(task.status)}</Badge>
           <Badge className={getPriorityColor(task.priority)}>{task.priority}</Badge>
           {task.department && (
             <Badge variant="outline" className="border-border/70">
@@ -1058,17 +1059,17 @@ function TaskDetails() {
         </Card>
       )}
 
-      {task.status === "Closed" && (
+      {(task.status === "Closed" || (task.status === "Completed" && submission?.status === "Approved")) && (
         <Card className="border border-emerald-500/35 bg-emerald-500/10">
           <CardContent className="p-4 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 text-xs text-emerald-700 dark:text-emerald-200">
               <CheckCircle className="h-5 w-5 text-emerald-500 shrink-0" />
               <span>
-                <strong>Parikshak Review Passed:</strong> Task deliverables verified and task closed in Niyantran.
+                <strong>Parikshak Review Passed:</strong> Task deliverables verified and task completed in Niyantran.
               </span>
             </div>
             <Badge className="bg-emerald-600 text-white text-xs">
-              Closed & Verified
+              Completed & Verified
             </Badge>
           </CardContent>
         </Card>

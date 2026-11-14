@@ -19,6 +19,11 @@ const ocrAnalysisService = require('../services/ocrAnalysisService');
 const { KeystrokeAnalyticsService } = require('../services/keystrokeAnalytics');
 const reportGenerator = require('../services/reportGenerator');
 const { formatEmployeeId } = require('../utils/employeeId');
+const {
+  getDailyProgressWindow,
+  findDailyProgressStatus,
+  syncAttendanceCloseFromWorkSession
+} = require('../utils/progressValidation');
 const fs = require('fs').promises;
 const { getViolationScreenshots, generateOptimizedScreenshotUrl } = require('../utils/cloudinary');
 const {
@@ -1307,9 +1312,7 @@ router.get('/ocr/status', async (req, res) => {
 router.get('/work-session/:employeeId', async (req, res) => {
   try {
     const { employeeId } = req.params;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+    const { start: today, end: tomorrow } = getDailyProgressWindow();
 
     const WorkSession = require('../models/WorkSession');
     const Attendance = require('../models/Attendance');
@@ -1320,7 +1323,7 @@ router.get('/work-session/:employeeId', async (req, res) => {
         $gte: today,
         $lt: tomorrow
       }
-    }).populate('employee', 'name email');
+    }).sort({ startTime: -1, date: -1 }).populate('employee', 'name email');
 
     // Guard against split-brain when Attendance was restarted/started directly without touching WorkSession
     const openAttendance = await Attendance.findOne({
@@ -1529,20 +1532,28 @@ router.post('/work-session/end', async (req, res) => {
     const { employeeId } = req.body;
     console.log(`🚀 WORK SESSION END REQUEST - Employee ID: ${employeeId}`);
     
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    const { start: today, end: tomorrow } = getDailyProgressWindow();
     console.log(`📅 Date range for validation - Today: ${today.toISOString()}, Tomorrow: ${tomorrow.toISOString()}`);
 
     const WorkSession = require('../models/WorkSession');
-    const session = await WorkSession.findOne({
+    let session = await WorkSession.findOne({
       employee: employeeId,
+      status: { $in: ['active', 'paused'] },
       date: {
         $gte: today,
-        $lt: new Date(today.getTime() + 24 * 60 * 60 * 1000)
+        $lt: tomorrow
       }
-    });
+    }).sort({ startTime: -1, date: -1 });
+
+    if (!session) {
+      session = await WorkSession.findOne({
+        employee: employeeId,
+        date: {
+          $gte: today,
+          $lt: tomorrow
+        }
+      }).sort({ startTime: -1, date: -1 });
+    }
 
     if (!session) {
       return res.status(400).json({ 
@@ -1564,43 +1575,25 @@ router.post('/work-session/end', async (req, res) => {
     // MANDATORY VALIDATIONS BEFORE END SESSION
     // =====================================
     
-    // 1. Check for daily progress completion
-    const Progress = require('../models/Progress');
-    console.log(`🔍 Searching for progress - User: ${employeeId}, Date range: ${today.toISOString()} to ${tomorrow.toISOString()}`);
-    
-    const todayProgress = await Progress.findOne({
-      user: employeeId,
-      date: {
-        $gte: today,
-        $lt: tomorrow
-      }
-    });
-    
+    // 1. Check for daily progress completion (checks all of today's updates, newest first)
+    const {
+      hasProgressContent,
+      todayProgress,
+      count: progressCount,
+      windowStart,
+      windowEnd
+    } = await findDailyProgressStatus(Progress, employeeId, [session.date, session.startTime]);
+
+    console.log(`🔍 Searched ${progressCount} progress record(s) for user ${employeeId} in ${windowStart.toISOString()}..${windowEnd.toISOString()}`);
     console.log(`📊 Progress found:`, todayProgress ? {
       id: todayProgress._id,
       user: todayProgress.user,
       date: todayProgress.date,
+      progressPercentage: todayProgress.progressPercentage,
       notes: todayProgress.notes ? `"${todayProgress.notes.substring(0, 50)}..."` : 'null',
       achievements: todayProgress.achievements ? `"${todayProgress.achievements.substring(0, 50)}..."` : 'null',
       blockers: todayProgress.blockers ? `"${todayProgress.blockers.substring(0, 50)}..."` : 'null'
     } : 'NO PROGRESS FOUND');
-    
-    // Check if progress exists (lenient validation)
-    const hasProgressContent = todayProgress && (
-      (todayProgress.notes && todayProgress.notes.trim() !== '') ||
-      (todayProgress.achievements && todayProgress.achievements.trim() !== '') ||
-      (todayProgress.blockers && todayProgress.blockers.trim() !== '') ||
-      (todayProgress.tasksCompleted && todayProgress.tasksCompleted.length > 0) ||
-      todayProgress.percentageCompleted !== undefined
-    );
-    
-    console.log(`📝 Progress validation result:`, {
-      hasProgress: !!todayProgress,
-      hasNotes: !!(todayProgress?.notes && todayProgress.notes.trim() !== ''),
-      hasAchievements: !!(todayProgress?.achievements && todayProgress.achievements.trim() !== ''),
-      hasBlockers: !!(todayProgress?.blockers && todayProgress.blockers.trim() !== ''),
-      hasProgressContent
-    });
     
     // MANDATORY VALIDATION: Block end session if user has not updated daily progress
     if (!hasProgressContent) {
@@ -1618,9 +1611,33 @@ router.post('/work-session/end', async (req, res) => {
     // PROCEED WITH ENDING WORK SESSION
     // ====================================
 
+    const endTime = new Date();
+    if (session.status === 'paused' && session.pausedAt) {
+      const pauseStart = new Date(session.pausedAt);
+      const sessionStart = session.startTime ? new Date(session.startTime) : null;
+      if (!sessionStart || pauseStart >= sessionStart) {
+        const ongoingPauseMinutes = Math.max(0, Math.floor((endTime.getTime() - pauseStart.getTime()) / (1000 * 60)));
+        session.totalBreakTime = (session.totalBreakTime || 0) + ongoingPauseMinutes;
+      }
+    }
+
     session.status = 'completed';
-    session.endTime = new Date();
+    session.endTime = endTime;
+    session.endDayTime = endTime;
+    session.pausedAt = null;
     await session.save();
+
+    // Sync matching Attendance / DailyAttendance records so reload doesn't resurrect the session
+    try {
+      await syncAttendanceCloseFromWorkSession({
+        employeeId,
+        session,
+        endTime,
+        io: req.io || null
+      });
+    } catch (syncErr) {
+      console.warn(`⚠️ Non-fatal: Failed to sync attendance close for ${employeeId}:`, syncErr.message);
+    }
     
     console.log(`🏁 Work session ended for employee ${employeeId}`);
 

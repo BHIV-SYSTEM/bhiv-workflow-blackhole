@@ -13,6 +13,7 @@ const auth = require('../middleware/auth');
 const adminAuth = require('../middleware/adminAuth');
 const DailyAttendance = require('../models/DailyAttendance');
 const { reverseGeocode } = require('../utils/reverseGeocode');
+const { findDailyProgressStatus } = require('../utils/progressValidation');
 const {
   signalNormalActivity,
   signalLateCheckin,
@@ -550,21 +551,10 @@ router.post('/end-day/:userId', auth, async (req, res) => {
     sessionDateEnd.setDate(sessionDateEnd.getDate() + 1);
 
     const Progress = require('../models/Progress');
-    const todayProgress = await Progress.findOne({
-      user: userId,
-      date: {
-        $gte: sessionDate,
-        $lt: sessionDateEnd
-      }
-    });
-    
-    // Check if progress exists (lenient validation - just needs to exist)
-    const hasProgressContent = todayProgress && (
-      (todayProgress.notes && todayProgress.notes.trim() !== '') ||
-      (todayProgress.achievements && todayProgress.achievements.trim() !== '') ||
-      (todayProgress.blockers && todayProgress.blockers.trim() !== '') ||
-      (todayProgress.tasksCompleted && todayProgress.tasksCompleted.length > 0) ||
-      todayProgress.percentageCompleted !== undefined
+    const { hasProgressContent, todayProgress } = await findDailyProgressStatus(
+      Progress,
+      userId,
+      [attendanceRecord.date, attendanceRecord.startDayTime]
     );
     
     // MANDATORY VALIDATION: Block end day if user has not updated daily progress

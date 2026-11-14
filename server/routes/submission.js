@@ -45,9 +45,7 @@ const MAX_UNPAGINATED_LIMIT = 100
 // Mark a task as Completed once the assignee submits or resubmits work for review.
 async function markTaskSubmittedCompleted(taskDoc, io) {
   if (!taskDoc) return
-  if (taskDoc.status !== "Closed") {
-    taskDoc.status = "Completed"
-  }
+  taskDoc.status = "Completed"
   taskDoc.progress = 100
   taskDoc.submittedForReviewAt = new Date()
   taskDoc.closedAt = taskDoc.closedAt || new Date()
@@ -600,9 +598,9 @@ router.post("/:id/approve-and-assign-next", auth, async (req, res) => {
     if (currentTask) {
       if (status === "Rejected") {
         await reopenRejectedTask(currentTask, req.io);
-      } else if (currentTask.status !== "Closed") {
-        currentTask.status = "Closed";
-        currentTask.closedAt = new Date();
+      } else if (currentTask.status !== "Completed") {
+        currentTask.status = "Completed";
+        currentTask.closedAt = currentTask.closedAt || new Date();
         currentTask.progress = 100;
         await currentTask.save();
         if (req.io) {

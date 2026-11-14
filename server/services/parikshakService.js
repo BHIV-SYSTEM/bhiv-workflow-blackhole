@@ -283,9 +283,9 @@ const invokeParikshak = async (submissionId, traceId, io) => {
                     console.warn(`[KARMA] Failed to emit signalTaskCompleted:`, karmaErr.message);
                 }
 
-                if (task.status !== "Closed") {
-                    task.status = "Closed";
-                    task.closedAt = new Date();
+                if (task.status !== "Completed") {
+                    task.status = "Completed";
+                    task.closedAt = task.closedAt || new Date();
                     task.progress = 100;
                     await task.save();
                 }

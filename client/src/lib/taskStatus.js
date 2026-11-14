@@ -61,3 +61,11 @@ export function getTaskStatusBadgeClass(status) {
   }
 }
 
+/**
+ * Normalize legacy "Closed" status to user-facing "Completed" label across UI badges.
+ */
+export function getTaskStatusLabel(status) {
+  if (status === "Closed") return "Completed";
+  return status || "Pending";
+}
+

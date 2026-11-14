@@ -8,7 +8,7 @@ import { Badge } from "../components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs"
 import { Progress } from "../components/ui/progress"
 import { Input } from "../components/ui/input"
-import { getTaskStatusBadgeClass, isTaskClosedOrCompleted } from "../lib/taskStatus"
+import { getTaskStatusBadgeClass, getTaskStatusLabel, isTaskClosedOrCompleted } from "../lib/taskStatus"
 import {
   Loader2,
   CheckCircle,
@@ -536,7 +536,7 @@ function MyTasks() {
                               </p>
                             </div>
                             <div className="flex flex-wrap gap-1.5 flex-shrink-0">
-                              <Badge className={getStatusColor(task.status)}>{task.status}</Badge>
+                              <Badge className={getStatusColor(task.status)}>{getTaskStatusLabel(task.status)}</Badge>
                               <Badge className={getPriorityColor(task.priority)}>{task.priority}</Badge>
                             </div>
                           </div>
@@ -757,7 +757,7 @@ function MyTasks() {
                             <>
                               <Badge className="h-9 px-3 flex items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold text-xs gap-1">
                                 <CheckCircle className="h-3.5 w-3.5" />
-                                {task.status === "Closed" || submission?.status === "Approved" ? "Closed & Verified" : "Completed"}
+                                {task.status === "Closed" || submission?.status === "Approved" ? "Completed & Verified" : "Completed"}
                               </Badge>
                               {submission && submission.status === "Pending" && (
                                 <Button
