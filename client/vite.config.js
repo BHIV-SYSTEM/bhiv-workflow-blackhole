@@ -10,23 +10,28 @@ import path from 'path'
 export default defineConfig({
   plugins: [react(), tailwindcss(), VitePWA({
     registerType: 'autoUpdate',
-    includeAssets: ['vite.svg'],
+    includeAssets: ['favicon.ico', 'favicon-16x16.png', 'favicon-32x32.png', 'apple-touch-icon.png', 'icon-192x192.png', 'icon-512x512.png'],
     workbox: {
       maximumFileSizeToCacheInBytes: 10 * 1024 * 1024 // 10 MB
     },
     manifest: {
-      name: 'WorkflowAI Management App',
-      short_name: 'WorkflowAI',
-      description: 'Installable Fullstack App with React & Node.js',
-      theme_color: '#ffffff',
-      background_color: '#ffffff',
+      name: 'Infiverse - AI Workflow Management',
+      short_name: 'Infiverse',
+      description: 'Blackhole Infiverse AI-powered workflow management platform',
+      theme_color: '#10b981',
+      background_color: '#070b14',
       display: 'standalone',
       start_url: '/',
       icons: [
         {
-          src: 'vite.svg',
+          src: 'icon-192x192.png',
           sizes: '192x192',
-          type: 'image/svg+xml'
+          type: 'image/png'
+        },
+        {
+          src: 'icon-512x512.png',
+          sizes: '512x512',
+          type: 'image/png'
         }
       ]
     }

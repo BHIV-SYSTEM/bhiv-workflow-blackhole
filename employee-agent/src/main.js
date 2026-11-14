@@ -103,12 +103,17 @@ function createWindow() {
 }
 
 function createTray() {
-  const iconPath = path.join(__dirname, '../assets/tray-icon.png');
+  const icoPath = path.join(__dirname, '../assets/icon.ico');
+  const pngPath = path.join(__dirname, '../assets/tray-icon.png');
   let icon;
-  
-  if (fs.existsSync(iconPath)) {
-    icon = nativeImage.createFromPath(iconPath);
-    icon = icon.resize({ width: 16, height: 16 });
+
+  if (process.platform === 'win32' && fs.existsSync(icoPath)) {
+    icon = nativeImage.createFromPath(icoPath);
+  } else if (fs.existsSync(pngPath)) {
+    icon = nativeImage.createFromPath(pngPath);
+    if (process.platform === 'darwin') {
+      icon = icon.resize({ width: 22, height: 22 });
+    }
   } else {
     icon = nativeImage.createFromDataURL('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAAAdgAAAHYBTnsmCAAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ5vuPBoAAABHSURBVDiN7dMxDgAgCAPA1v//5o6NJk0aF3EgJCRwAwAA/1YZY1lr7d57cc49hqiqqqoqMzPGmKp67NZ1XVVVVd/rAwD8sQNJMwstxTIWbQAAAABJRU5ErkJggg==');
   }
