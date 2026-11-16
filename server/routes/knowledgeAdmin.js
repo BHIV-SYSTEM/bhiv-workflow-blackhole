@@ -125,7 +125,10 @@ function loadStoredDatasets() {
             fs.mkdirSync(STORAGE_DIR, { recursive: true });
         }
         let stored = [];
+        let fileExists = false;
+        let changed = false;
         if (fs.existsSync(CONTEXT_STORE_FILE)) {
+            fileExists = true;
             const raw = fs.readFileSync(CONTEXT_STORE_FILE, 'utf-8');
             const parsed = JSON.parse(raw);
             if (Array.isArray(parsed) && parsed.length > 0) {
@@ -148,13 +151,18 @@ function loadStoredDatasets() {
             });
             if (!hasIt) {
                 stored.push(def);
+                changed = true;
             }
         });
         if (stored.length > 0) {
-            fs.writeFileSync(CONTEXT_STORE_FILE, JSON.stringify(stored, null, 2), 'utf-8');
+            if (!fileExists || changed) {
+                fs.writeFileSync(CONTEXT_STORE_FILE, JSON.stringify(stored, null, 2), 'utf-8');
+            }
             return stored;
         }
-        fs.writeFileSync(CONTEXT_STORE_FILE, JSON.stringify(defaultSeededContexts, null, 2), 'utf-8');
+        if (!fileExists) {
+            fs.writeFileSync(CONTEXT_STORE_FILE, JSON.stringify(defaultSeededContexts, null, 2), 'utf-8');
+        }
         return [...defaultSeededContexts];
     } catch (e) {
         console.warn("Could not load stored datasets:", e.message);

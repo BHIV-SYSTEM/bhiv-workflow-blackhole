@@ -1,0 +1,12 @@
+{
+  "ignore": [
+    "storage/*",
+    "uploads/*",
+    "logs/*",
+    "*.log",
+    "temp.json",
+    "test_output.json",
+    "disallowed_sites.json"
+  ]
+}
+
