@@ -44,7 +44,8 @@ export function ReportsGenerator({
   onSelectEmployee,
   searchQuery: parentSearchQuery = '',
   onSearchChange,
-  departments = []
+  departments = [],
+  hideEmployeeSelector = false
 }) {
   // Mode Selection: 'individual' vs 'team'
   const [reportMode, setReportMode] = useState('individual');
@@ -778,8 +779,8 @@ export function ReportsGenerator({
                 </div>
               </div>
 
-              {/* Searchable Employee Switcher */}
-              <div className="w-full md:w-96 flex flex-col gap-1.5 flex-shrink-0">
+              {!hideEmployeeSelector && (
+                <div className="w-full md:w-96 flex flex-col gap-1.5 flex-shrink-0">
                 <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
                   <span>Search & Switch Employee</span>
                   {employeeSearch && (
@@ -840,6 +841,7 @@ export function ReportsGenerator({
                   </SelectContent>
                 </Select>
               </div>
+              )}
             </div>
           ) : (
             /* =====================================================

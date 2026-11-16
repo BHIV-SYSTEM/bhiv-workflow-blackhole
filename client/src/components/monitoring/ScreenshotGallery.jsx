@@ -27,7 +27,47 @@ import { format } from 'date-fns';
 import axios from 'axios';
 import { API_URL } from '@/lib/api';
 
-export function ScreenshotGallery({ employee }) {
+function AuthedCaptureImg({ src, alt, className, fallback }) {
+  const [blobUrl, setBlobUrl] = useState(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let objUrl = null;
+    setBlobUrl(null);
+    setFailed(false);
+
+    const token = localStorage.getItem('WorkflowToken') || localStorage.getItem('token');
+    axios
+      .get(src, {
+        headers: {
+          'x-auth-token': token,
+          Authorization: `Bearer ${token}`
+        },
+        responseType: 'blob',
+        timeout: 20000
+      })
+      .then((res) => {
+        if (cancelled) return;
+        objUrl = URL.createObjectURL(res.data);
+        setBlobUrl(objUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+
+    return () => {
+      cancelled = true;
+      if (objUrl) URL.revokeObjectURL(objUrl);
+    };
+  }, [src]);
+
+  if (failed) return fallback;
+  if (!blobUrl) return <div className="w-full h-full animate-pulse bg-muted/60" />;
+  return <img src={blobUrl} alt={alt} className={className} />;
+}
+
+export function ScreenshotGallery({ employee, employees = [], onSelectEmployee, hideEmployeeSelector = false }) {
   const [screenshots, setScreenshots] = useState([]);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [filterType, setFilterType] = useState('all');
@@ -46,25 +86,34 @@ export function ScreenshotGallery({ employee }) {
     setLoading(true);
     try {
       const dateStr = format(selectedDate, 'yyyy-MM-dd');
-      // Always fetch only violation screenshots (the backend now filters automatically)
-      let url = `${API_URL}/monitoring/employees/${employee._id}/screenshots?date=${dateStr}`;
+      const token = localStorage.getItem('WorkflowToken') || localStorage.getItem('token');
+      const headers = {
+        'x-auth-token': token,
+        Authorization: `Bearer ${token}`
+      };
 
-      console.log(`🔍 Fetching screenshots for employee ${employee._id} on date ${dateStr}`);
-      console.log(`📡 API URL: ${url}`);
-
-      const response = await axios.get(url, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-      });
-
-      // The backend now only returns violation screenshots
-      const violationScreenshots = response.data.screenshots || [];
-      console.log(`📸 Received ${violationScreenshots.length} violation screenshots`);
-      console.log('📋 Response data:', response.data);
-
-      setScreenshots(violationScreenshots);
+      if (filterType === 'violation') {
+        const url = `${API_URL}/monitoring/employees/${employee._id}/screenshots?date=${dateStr}`;
+        const response = await axios.get(url, { headers });
+        setScreenshots(response.data.screenshots || []);
+      } else {
+        const typeParam = filterType === 'periodic' ? 'periodic' : 'all';
+        const url = `${API_URL}/trinetra/screenshots?employeeId=${employee._id}&date=${dateStr}&type=${typeParam}&limit=60`;
+        const response = await axios.get(url, { headers });
+        const list = (response.data.screenshots || []).map((s) => ({
+          _id: s.id,
+          timestamp: s.timestamp,
+          capture_trigger: s.trigger || 'scheduled',
+          is_flagged: !!s.flagged,
+          flag_reason: s.flag_reason,
+          file_size: s.file_size || 0,
+          active_application: { name: s.app, title: s.title },
+          _trinetraUrl: `${API_URL}/trinetra/screenshots/${s.id}`
+        }));
+        setScreenshots(list);
+      }
     } catch (error) {
       console.error('❌ Error fetching screenshots:', error);
-      console.error('📡 Error details:', error.response?.data || error.message);
       setScreenshots([]);
     } finally {
       setLoading(false);
@@ -110,18 +159,16 @@ export function ScreenshotGallery({ employee }) {
     >
       <CardContent className="p-4">
         <div className="aspect-video bg-muted rounded-lg mb-3 flex items-center justify-center relative overflow-hidden">
-          <img
-            src={`${API_URL}/monitoring/screenshots/${screenshot._id}`}
+          <AuthedCaptureImg
+            src={screenshot._trinetraUrl || `${API_URL}/monitoring/screenshots/${screenshot._id}`}
             alt="Screenshot"
             className="w-full h-full object-cover"
-            onError={(e) => {
-              e.target.style.display = 'none';
-              e.target.nextSibling.style.display = 'flex';
-            }}
+            fallback={
+              <div className="w-full h-full flex items-center justify-center bg-muted">
+                <ImageIcon className="h-8 w-8 text-muted-foreground" />
+              </div>
+            }
           />
-          <div className="hidden w-full h-full items-center justify-center bg-muted">
-            <ImageIcon className="h-8 w-8 text-muted-foreground" />
-          </div>
           
           {screenshot.is_flagged && (
             <div className="absolute top-2 right-2">
@@ -174,18 +221,16 @@ export function ScreenshotGallery({ employee }) {
       <CardContent className="p-4">
         <div className="flex items-center gap-4">
           <div className="w-20 h-14 bg-muted rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden">
-            <img
-              src={`${API_URL}/monitoring/screenshots/${screenshot._id}`}
+            <AuthedCaptureImg
+              src={screenshot._trinetraUrl || `${API_URL}/monitoring/screenshots/${screenshot._id}`}
               alt="Screenshot"
               className="w-full h-full object-cover"
-              onError={(e) => {
-                e.target.style.display = 'none';
-                e.target.nextSibling.style.display = 'flex';
-              }}
+              fallback={
+                <div className="w-full h-full flex items-center justify-center bg-muted">
+                  <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                </div>
+              }
             />
-            <div className="hidden w-full h-full items-center justify-center bg-muted">
-              <ImageIcon className="h-4 w-4 text-muted-foreground" />
-            </div>
           </div>
           
           <div className="flex-1 min-w-0">
@@ -249,10 +294,38 @@ export function ScreenshotGallery({ employee }) {
           </PopoverContent>
         </Popover>
 
-        <div className="flex items-center gap-2 px-3 py-2 bg-red-500/10 border border-red-500/20 rounded-lg">
-          <AlertTriangle className="h-4 w-4 text-red-500" />
-          <span className="text-sm font-medium text-red-500">Violation Screenshots Only</span>
-        </div>
+        {!hideEmployeeSelector && employees.length > 0 && onSelectEmployee && (
+          <Select
+            value={employee?._id || ''}
+            onValueChange={(id) => {
+              const found = employees.find((emp) => emp._id === id);
+              if (found) onSelectEmployee(found);
+            }}
+          >
+            <SelectTrigger className="w-56">
+              <SelectValue placeholder="Select Employee" />
+            </SelectTrigger>
+            <SelectContent>
+              {employees.map((emp) => (
+                <SelectItem key={emp._id} value={emp._id}>
+                  {emp.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        <Select value={filterType} onValueChange={setFilterType}>
+          <SelectTrigger className="w-44">
+            <Filter className="h-3.5 w-3.5 mr-2" />
+            <SelectValue placeholder="Capture Type" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Snapshots</SelectItem>
+            <SelectItem value="periodic">Periodic (TRINETRA)</SelectItem>
+            <SelectItem value="violation">Violations Only</SelectItem>
+          </SelectContent>
+        </Select>
 
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -362,9 +435,13 @@ export function ScreenshotGallery({ employee }) {
           ) : (
             <div className="text-center py-12">
               <Shield className="h-12 w-12 text-green-500 mx-auto mb-4" />
-              <p className="text-green-500 font-medium mb-2">No Policy Violations Detected</p>
+              <p className="text-green-500 font-medium mb-2">
+                {filterType === 'violation' ? 'No Policy Violations Detected' : 'No Screenshots Captured for This Date'}
+              </p>
               <p className="text-muted-foreground text-sm">
-                The intelligent monitoring system found no non-work-related activities for this date.
+                {filterType === 'violation'
+                  ? 'The intelligent monitoring system found no non-work-related activities for this date.'
+                  : 'Periodic desktop agent captures and violation captures for the selected employee will appear here.'}
               </p>
             </div>
           )}
@@ -390,10 +467,15 @@ export function ScreenshotGallery({ employee }) {
             
             <div className="space-y-4">
               <div className="aspect-video bg-muted rounded-lg overflow-hidden">
-                <img
-                  src={`${API_URL}/monitoring/screenshots/${selectedScreenshot._id}`}
+                <AuthedCaptureImg
+                  src={selectedScreenshot._trinetraUrl || `${API_URL}/monitoring/screenshots/${selectedScreenshot._id}`}
                   alt="Screenshot"
                   className="w-full h-full object-contain"
+                  fallback={
+                    <div className="w-full h-full flex items-center justify-center bg-muted text-xs text-muted-foreground">
+                      Screenshot unavailable
+                    </div>
+                  }
                 />
               </div>
               

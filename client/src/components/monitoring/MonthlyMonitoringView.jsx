@@ -62,7 +62,8 @@ export function MonthlyMonitoringView({
   statusTab = 'active',
   searchQuery: externalSearch = '',
   selectedEmployee: initialSelectedEmployee = null,
-  employees: propEmployees = []
+  employees: propEmployees = [],
+  hideLocalEmployeePicker = false
 }) {
   // Current month state in YYYY-MM format
   const [selectedMonth, setSelectedMonth] = useState(() => {
@@ -557,15 +558,15 @@ export function MonthlyMonitoringView({
                 </div>
               </div>
 
-              {/* Unified Searchable Employee Combobox & Refresh Button */}
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
-                <Popover
-                  open={employeePickerOpen}
-                  onOpenChange={(open) => {
-                    setEmployeePickerOpen(open);
-                    if (open) setDropdownSearch('');
-                  }}
-                >
+                {!hideLocalEmployeePicker && (
+                  <Popover
+                    open={employeePickerOpen}
+                    onOpenChange={(open) => {
+                      setEmployeePickerOpen(open);
+                      if (open) setDropdownSearch('');
+                    }}
+                  >
                   <PopoverTrigger asChild>
                     <Button
                       variant="outline"
@@ -695,6 +696,7 @@ export function MonthlyMonitoringView({
                     </div>
                   </PopoverContent>
                 </Popover>
+                )}
 
                 <Button
                   variant="outline"

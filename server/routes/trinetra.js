@@ -23,7 +23,9 @@ const path = require('path');
 const fs = require('fs').promises;
 const crypto = require('crypto');
 const sharp = require('sharp');
+const axios = require('axios');
 const mongoose = require('mongoose');
+const { uploadRegularScreenshot, generateOptimizedScreenshotUrl } = require('../utils/cloudinary');
 
 const auth = require('../middleware/auth');
 const User = require('../models/User');
@@ -602,6 +604,18 @@ router.post('/agent/screenshot', auth, async (req, res) => {
 
     const fileHash = crypto.createHash('sha256').update(processed.data).digest('hex');
 
+    // Upload to Cloudinary as persistent storage so ephemeral cloud containers never lose snapshots
+    let cloudUpload = null;
+    if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
+      try {
+        cloudUpload = await uploadRegularScreenshot(processed.data, String(employeeId), {
+          application: activeApp || 'Unknown'
+        });
+      } catch (cloudErr) {
+        console.warn('[trinetra] Cloudinary upload skipped (using local disk):', cloudErr.message);
+      }
+    }
+
     const capture = await ScreenCapture.create({
       employee: employeeId,
       timestamp: capturedAt ? new Date(capturedAt) : stamp,
@@ -630,7 +644,9 @@ router.post('/agent/screenshot', auth, async (req, res) => {
           settings.app_rules
         ).category,
         client_signature: signature || null,
-        requested_trigger: trigger || 'scheduled'
+        requested_trigger: trigger || 'scheduled',
+        cloudinary_url: cloudUpload ? cloudUpload.cloudinary_url : null,
+        cloudinary_public_id: cloudUpload ? cloudUpload.cloudinary_public_id : null
       }
     });
 
@@ -1175,13 +1191,34 @@ router.get('/screenshots/:screenshotId', auth, async (req, res) => {
 
     await writeAudit(req.user.id, 'trinetra_screenshot_view', 'trinetra/screenshot', capture._id);
 
-    if (capture.metadata && capture.metadata.cloudinary_url) {
-      return res.redirect(capture.metadata.cloudinary_url);
+    let imageBuffer = null;
+
+    if (capture.file_path) {
+      try {
+        imageBuffer = await fs.readFile(capture.file_path);
+      } catch (diskErr) {
+        // Disk file missing (e.g. ephemeral container restart); fall back to Cloudinary below
+      }
     }
 
-    try {
-      await fs.access(capture.file_path);
-    } catch (error) {
+    if (!imageBuffer && capture.metadata && (capture.metadata.cloudinary_public_id || capture.metadata.cloudinary_url)) {
+      try {
+        const cloudUrl = capture.metadata.cloudinary_public_id
+          ? generateOptimizedScreenshotUrl(capture.metadata.cloudinary_public_id, {
+              width: 1600,
+              height: 1000,
+              quality: 'auto:good',
+              format: 'jpg'
+            })
+          : capture.metadata.cloudinary_url;
+        const imgResp = await axios.get(cloudUrl, { responseType: 'arraybuffer', timeout: 15000 });
+        imageBuffer = Buffer.from(imgResp.data);
+      } catch (cloudErr) {
+        console.warn('[trinetra] Cloudinary proxy failed:', cloudErr.message);
+      }
+    }
+
+    if (!imageBuffer) {
       return res.status(404).json({
         success: false,
         error: 'Screenshot file is no longer on disk',
@@ -1189,11 +1226,10 @@ router.get('/screenshots/:screenshotId', auth, async (req, res) => {
       });
     }
 
-    const buffer = await fs.readFile(capture.file_path);
     res.setHeader('Content-Type', 'image/jpeg');
     res.setHeader('Cache-Control', 'private, max-age=60');
     res.setHeader('Content-Disposition', `inline; filename="trinetra_${capture._id}.jpg"`);
-    return res.send(buffer);
+    return res.send(imageBuffer);
   } catch (error) {
     console.error('[trinetra] screenshot fetch failed:', error);
     res.status(500).json({ success: false, error: 'Failed to serve screenshot' });

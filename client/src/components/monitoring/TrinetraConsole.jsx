@@ -199,7 +199,12 @@ function AuthedImage({ screenshotId, alt, onClick }) {
 /* Console                                                             */
 /* ------------------------------------------------------------------ */
 
-export function TrinetraConsole() {
+export function TrinetraConsole({
+  selectedEmployeeId: propSelectedEmployeeId,
+  onSelectEmployeeId,
+  searchQuery = '',
+  hideEmployeeSelector = false
+} = {}) {
   const { toast } = useToast();
   const { user: currentUser } = useAuth();
   // Policy edits, rule runs, alert triage and exports are Admin-only;
@@ -208,7 +213,16 @@ export function TrinetraConsole() {
 
   const [range, setRange] = useState('daily');
   const [date, setDate] = useState(todayString);
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
+  const [internalSelectedEmployeeId, setInternalSelectedEmployeeId] = useState('');
+  const isEmployeeControlled = propSelectedEmployeeId !== undefined;
+  const selectedEmployeeId = isEmployeeControlled ? propSelectedEmployeeId : internalSelectedEmployeeId;
+  const setSelectedEmployeeId = useCallback(
+    (val) => {
+      if (onSelectEmployeeId) onSelectEmployeeId(val);
+      if (!isEmployeeControlled) setInternalSelectedEmployeeId(val);
+    },
+    [onSelectEmployeeId, isEmployeeControlled]
+  );
   const [activeTab, setActiveTab] = useState('live');
 
   const [status, setStatus] = useState(null);
@@ -304,15 +318,28 @@ export function TrinetraConsole() {
     }
   }, [date, notifyError]);
 
+  const visualEmployeeId = useMemo(() => {
+    if (selectedEmployeeId) return selectedEmployeeId;
+    const q = searchQuery.trim().toLowerCase();
+    const list = productivity.employees.length > 0 ? productivity.employees : live.employees;
+    if (q) {
+      const match = list.find(
+        (e) => (e.name || '').toLowerCase().includes(q) || (e.email || '').toLowerCase().includes(q)
+      );
+      if (match) return match.employee_id;
+    }
+    return list[0]?.employee_id || '';
+  }, [selectedEmployeeId, searchQuery, productivity.employees, live.employees]);
+
   const fetchVisual = useCallback(async () => {
-    if (!selectedEmployeeId) return;
+    if (!visualEmployeeId) return;
     try {
       const [shots, tl] = await Promise.all([
         axios.get(`${API_URL}/trinetra/screenshots`, {
           headers: authHeaders(),
-          params: { employeeId: selectedEmployeeId, date, type: 'periodic', limit: 60 }
+          params: { employeeId: visualEmployeeId, date, type: 'periodic', limit: 60 }
         }),
-        axios.get(`${API_URL}/trinetra/timeline/${selectedEmployeeId}`, {
+        axios.get(`${API_URL}/trinetra/timeline/${visualEmployeeId}`, {
           headers: authHeaders(),
           params: { date }
         })
@@ -326,7 +353,7 @@ export function TrinetraConsole() {
     } catch (error) {
       notifyError(error.response?.data?.error || 'Failed to load visual timeline');
     }
-  }, [date, notifyError, selectedEmployeeId]);
+  }, [date, notifyError, visualEmployeeId]);
 
   const fetchConfig = useCallback(async () => {
     try {
@@ -380,7 +407,7 @@ export function TrinetraConsole() {
       fetchVisual();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedEmployeeId, date, activeTab]);
+  }, [visualEmployeeId, date, activeTab]);
 
   /* ------------------------------ actions ------------------------------ */
 
@@ -475,6 +502,27 @@ export function TrinetraConsole() {
     }
     return options;
   }, [live.employees, productivity.employees, currentUser]);
+
+  const filteredLiveEmployees = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q || selectedEmployeeId) return live.employees;
+    return live.employees.filter(
+      (e) => (e.name || '').toLowerCase().includes(q) || (e.email || '').toLowerCase().includes(q)
+    );
+  }, [live.employees, searchQuery, selectedEmployeeId]);
+
+  const filteredVerificationEmployees = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q || selectedEmployeeId) return verification.employees;
+    return verification.employees.filter(
+      (e) => (e.name || '').toLowerCase().includes(q) || (e.email || '').toLowerCase().includes(q)
+    );
+  }, [verification.employees, searchQuery, selectedEmployeeId]);
+
+  const visualEmployeeName = useMemo(() => {
+    const match = employeeOptions.find((e) => e.id === visualEmployeeId);
+    return match ? match.name : '';
+  }, [employeeOptions, visualEmployeeId]);
 
   const team = productivity.team;
 
@@ -612,32 +660,34 @@ export function TrinetraConsole() {
 
         {/* ---------------------------- EYE 1 ---------------------------- */}
         <TabsContent value="live" className="mt-5 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-end gap-3">
-            <div className="w-full sm:w-72">
-              <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Candidate</Label>
-              <Select
-                value={selectedEmployeeId || 'all'}
-                onValueChange={(value) => setSelectedEmployeeId(value === 'all' ? '' : value)}
-              >
-                <SelectTrigger className="h-9 text-xs">
-                  <SelectValue placeholder="All candidates" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All candidates</SelectItem>
-                  {employeeOptions.map((employee) => (
-                    <SelectItem key={employee.id} value={employee.id}>
-                      {employee.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          {!hideEmployeeSelector && (
+            <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+              <div className="w-full sm:w-72">
+                <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Candidate</Label>
+                <Select
+                  value={selectedEmployeeId || 'all'}
+                  onValueChange={(value) => setSelectedEmployeeId(value === 'all' ? '' : value)}
+                >
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue placeholder="All candidates" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All candidates</SelectItem>
+                    {employeeOptions.map((employee) => (
+                      <SelectItem key={employee.id} value={employee.id}>
+                        {employee.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                {selectedEmployeeId
+                  ? 'Filtering live telemetry for the selected candidate.'
+                  : 'Showing everyone with telemetry today.'}
+              </p>
             </div>
-            <p className="text-[11px] text-muted-foreground">
-              {selectedEmployeeId
-                ? 'Filtering live telemetry for the selected candidate.'
-                : 'Showing everyone with telemetry today.'}
-            </p>
-          </div>
+          )}
 
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             {[
@@ -660,13 +710,13 @@ export function TrinetraConsole() {
                 <Skeleton key={key} className="h-28 rounded-xl" />
               ))}
             </div>
-          ) : live.employees.length === 0 ? (
+          ) : filteredLiveEmployees.length === 0 ? (
             <Card className="p-10 text-center text-sm text-muted-foreground">
               No employees reporting yet. Agent telemetry appears here as soon as a workday starts.
             </Card>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-              {live.employees.map((employee) => (
+              {filteredLiveEmployees.map((employee) => (
                 <Card key={employee.employee_id} className="p-4 space-y-2.5 hover:border-primary/40 transition-colors">
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-2.5 min-w-0">
@@ -772,27 +822,37 @@ export function TrinetraConsole() {
 
         {/* ---------------------------- EYE 2 ---------------------------- */}
         <TabsContent value="visual" className="mt-5 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-end gap-3">
-            <div className="w-full sm:w-72">
-              <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Employee</Label>
-              <Select value={selectedEmployeeId} onValueChange={setSelectedEmployeeId}>
-                <SelectTrigger className="h-9 text-xs">
-                  <SelectValue placeholder="Select employee" />
-                </SelectTrigger>
-                <SelectContent>
-                  {employeeOptions.map((employee) => (
-                    <SelectItem key={employee.id} value={employee.id}>
-                      {employee.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          {!hideEmployeeSelector ? (
+            <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+              <div className="w-full sm:w-72">
+                <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Employee</Label>
+                <Select value={visualEmployeeId} onValueChange={setSelectedEmployeeId}>
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue placeholder="Select employee" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {employeeOptions.map((employee) => (
+                      <SelectItem key={employee.id} value={employee.id}>
+                        {employee.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-          </div>
+          ) : (
+            visualEmployeeName && (
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>
+                  Visual timeline &amp; snapshots for <strong className="text-foreground">{visualEmployeeName}</strong>
+                </span>
+              </div>
+            )
+          )}
 
-          {!selectedEmployeeId ? (
+          {!visualEmployeeId ? (
             <Card className="p-10 text-center text-sm text-muted-foreground">
-              Select an employee to inspect their workday timeline and periodic snapshots.
+              Select an employee from the top bar to inspect their workday timeline and periodic snapshots.
             </Card>
           ) : (
             <>
@@ -911,11 +971,11 @@ export function TrinetraConsole() {
 
           {loading.verification ? (
             <Skeleton className="h-40 rounded-xl" />
-          ) : verification.employees.length === 0 ? (
+          ) : filteredVerificationEmployees.length === 0 ? (
             <Card className="p-10 text-center text-sm text-muted-foreground">No task activity in this window.</Card>
           ) : (
             <div className="space-y-3">
-              {verification.employees.map((employee) => (
+              {filteredVerificationEmployees.map((employee) => (
                 <Card key={employee.employee_id}>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-bold flex items-center justify-between gap-3">

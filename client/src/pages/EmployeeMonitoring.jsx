@@ -85,11 +85,22 @@ export function EmployeeMonitoring() {
   // Employee Selection for 1-Click Detail View Modal
   const [detailEmployee, setDetailEmployee] = useState(null);
 
-  // Legacy Selected Employee & Status
+  // Unified Selected Employee & Monitoring Control States
+  const [selectedEmployeeFilter, setSelectedEmployeeFilter] = useState('all'); // 'all' | employeeId
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [monitoringStatus, setMonitoringStatus] = useState({});
   const [intelligentMode, setIntelligentMode] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+
+  const selectUnifiedEmployee = (emp) => {
+    if (!emp) {
+      setSelectedEmployeeFilter('all');
+      return;
+    }
+    const id = String(emp._id || emp.employeeId || '');
+    setSelectedEmployee(emp);
+    if (id) setSelectedEmployeeFilter(id);
+  };
 
   useEffect(() => {
     fetchDepartments();
@@ -140,14 +151,25 @@ export function EmployeeMonitoring() {
           employees: fetchedEmployees
         });
 
-        // Automatically update selected employee when search query is entered
+        // Keep unified selected employee synced with fetched list
         if (fetchedEmployees.length > 0) {
-          if (searchQuery.trim() !== '') {
+          if (selectedEmployeeFilter !== 'all') {
+            const matched = fetchedEmployees.find(
+              (e) => String(e._id || e.employeeId) === String(selectedEmployeeFilter)
+            );
+            if (matched) {
+              setSelectedEmployee(matched);
+            } else if (searchQuery.trim() !== '') {
+              setSelectedEmployee(fetchedEmployees[0]);
+            }
+          } else if (searchQuery.trim() !== '') {
             setSelectedEmployee(fetchedEmployees[0]);
           } else if (!selectedEmployee) {
             setSelectedEmployee(fetchedEmployees[0]);
           } else {
-            const exists = fetchedEmployees.find(e => (e._id || e.employeeId) === (selectedEmployee._id || selectedEmployee.employeeId));
+            const exists = fetchedEmployees.find(
+              (e) => (e._id || e.employeeId) === (selectedEmployee._id || selectedEmployee.employeeId)
+            );
             if (!exists) {
               setSelectedEmployee(fetchedEmployees[0]);
             }
@@ -237,12 +259,13 @@ export function EmployeeMonitoring() {
     }
   };
 
-  // Filter and sort employees client-side for live view search
-  const filteredTeamEmployees = useMemo(() => {
+  // Filter and sort employees client-side for unified search & selector
+  const filteredEmployeesList = useMemo(() => {
+    const q = searchQuery.toLowerCase();
     const list = teamSummaryData.employees.filter((emp) => {
       const matchesSearch =
-        emp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        emp.email.toLowerCase().includes(searchQuery.toLowerCase());
+        (emp.name || '').toLowerCase().includes(q) ||
+        (emp.email || '').toLowerCase().includes(q);
       return matchesSearch;
     });
 
@@ -260,6 +283,14 @@ export function EmployeeMonitoring() {
   }, [teamSummaryData.employees, searchQuery]);
 
   // Filter counts from global backend counts if available
+  const visibleTeamEmployees = useMemo(() => {
+    if (selectedEmployeeFilter === 'all') return filteredEmployeesList;
+    const match = filteredEmployeesList.filter(
+      (emp) => String(emp._id || emp.employeeId) === String(selectedEmployeeFilter)
+    );
+    return match.length > 0 ? match : filteredEmployeesList;
+  }, [filteredEmployeesList, selectedEmployeeFilter]);
+
   const hasLoadedCounts = teamSummaryData.counts && typeof teamSummaryData.counts.activeCount === 'number';
   const activeCount = teamSummaryData.counts?.activeCount ?? (teamSummaryData.employees.length > 0 ? teamSummaryData.employees.filter((e) => e.stillExist === 1).length : null);
   const exitedCount = teamSummaryData.counts?.exitedCount ?? (teamSummaryData.employees.length > 0 ? teamSummaryData.employees.filter((e) => e.stillExist === 0).length : null);
@@ -361,7 +392,7 @@ export function EmployeeMonitoring() {
 
           {/* Department Filter */}
           <Select value={filterDepartment} onValueChange={setFilterDepartment}>
-            <SelectTrigger className="w-full sm:w-48 h-10 text-xs sm:text-sm bg-background border-border rounded-xl">
+            <SelectTrigger className="w-full sm:w-44 h-10 text-xs sm:text-sm bg-background border-border rounded-xl">
               <SelectValue placeholder="All Departments" />
             </SelectTrigger>
             <SelectContent>
@@ -372,6 +403,35 @@ export function EmployeeMonitoring() {
                     {dept.name}
                   </SelectItem>
                 ))}
+            </SelectContent>
+          </Select>
+
+          {/* Single Unified Employee Selector (Synced Across All Monitoring Tabs) */}
+          <Select
+            value={selectedEmployeeFilter}
+            onValueChange={(val) => {
+              setSelectedEmployeeFilter(val);
+              if (val !== 'all') {
+                const found = filteredEmployeesList.find(
+                  (e) => String(e._id || e.employeeId) === String(val)
+                );
+                if (found) setSelectedEmployee(found);
+              }
+            }}
+          >
+            <SelectTrigger className="w-full sm:w-56 h-10 text-xs sm:text-sm bg-background border-border rounded-xl font-medium">
+              <SelectValue placeholder="All Employees" />
+            </SelectTrigger>
+            <SelectContent className="max-h-72">
+              <SelectItem value="all">All Employees ({filteredEmployeesList.length})</SelectItem>
+              {filteredEmployeesList.map((emp) => {
+                const id = String(emp._id || emp.employeeId);
+                return (
+                  <SelectItem key={id} value={id}>
+                    {emp.name}
+                  </SelectItem>
+                );
+              })}
             </SelectContent>
           </Select>
         </div>
@@ -482,7 +542,7 @@ export function EmployeeMonitoring() {
         {/* 1. LIVE TEAM OVERVIEW GRID (EVERY EMPLOYEE TOGETHER ON A SINGLE DASHBOARD) */}
         <TabsContent value="live" className="mt-6">
           <TeamOverviewGrid
-            employees={teamSummaryData.employees}
+            employees={visibleTeamEmployees}
             summary={teamSummaryData.summary}
             loading={loadingTeamSummary}
             onSelectEmployee={(emp) => setDetailEmployee(emp)}
@@ -501,70 +561,37 @@ export function EmployeeMonitoring() {
             departmentFilter={filterDepartment}
             statusTab={statusTab}
             searchQuery={searchQuery}
+            selectedEmployeeId={selectedEmployeeFilter === 'all' ? '' : selectedEmployeeFilter}
+            hideLocalSearch={true}
           />
         </TabsContent>
 
         {/* 3. MONTHLY VIEW */}
         <TabsContent value="monthly" className="mt-6">
           <MonthlyMonitoringView
-            onSelectEmployee={(emp) => setDetailEmployee(emp)}
+            onSelectEmployee={(emp) => {
+              selectUnifiedEmployee(emp);
+              setDetailEmployee(emp);
+            }}
             departmentFilter={filterDepartment}
             statusTab={statusTab}
             searchQuery={searchQuery}
-            selectedEmployee={selectedEmployee}
-            employees={teamSummaryData.employees}
+            selectedEmployee={selectedEmployee || filteredEmployeesList[0]}
+            employees={filteredEmployeesList}
+            hideLocalEmployeePicker={true}
           />
         </TabsContent>
 
         {/* 4. SINGLE DASHBOARD VIEW */}
         <TabsContent value="legacy" className="mt-6">
           <div className="flex flex-col lg:flex-row gap-6 items-start">
-            <div className="w-full lg:w-80 flex-shrink-0 space-y-4">
+            <div className="w-full lg:w-72 flex-shrink-0 space-y-4">
+              {/* Start/Stop Monitoring Controls for Selected Employee */}
               <Card>
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-base font-bold">Select Employee</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="space-y-2 max-h-[350px] overflow-y-auto pr-1">
-                    {teamSummaryData.employees
-                      .filter((emp) => {
-                        if (statusTab === 'active') return emp.stillExist === 1;
-                        if (statusTab === 'exited') return emp.stillExist === 0;
-                        return true;
-                      })
-                      .map((emp) => (
-                        <button
-                          key={emp._id}
-                          onClick={() => setSelectedEmployee(emp)}
-                          className={`w-full text-left p-3 rounded-xl transition-all ${
-                            selectedEmployee?._id === emp._id
-                              ? 'bg-primary/10 border border-primary font-bold'
-                              : 'bg-muted/40 hover:bg-muted border border-transparent'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-1">
-                            <p className="font-semibold text-sm truncate">{emp.name}</p>
-                            {emp.stillExist === 0 ? (
-                              <Badge variant="outline" className="text-[10px] text-rose-400 border-rose-500/30 bg-rose-500/10 px-1.5 py-0 flex-shrink-0">
-                                Exited
-                              </Badge>
-                            ) : (
-                              <Badge variant="outline" className="text-[10px] text-emerald-400 border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0 flex-shrink-0">
-                                Active
-                              </Badge>
-                            )}
-                          </div>
-                          <p className="text-xs text-muted-foreground truncate">{emp.email}</p>
-                        </button>
-                      ))}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Start/Stop Monitoring Controls */}
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base font-bold">Monitoring Control</CardTitle>
+                  <CardTitle className="text-base font-bold">
+                    {selectedEmployee ? `Monitoring · ${selectedEmployee.name}` : 'Monitoring Control'}
+                  </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="flex items-center justify-between p-2 rounded-lg bg-muted/50">
@@ -597,7 +624,7 @@ export function EmployeeMonitoring() {
                 <MonitoringDashboard employee={selectedEmployee} monitoringStatus={monitoringStatus} />
               ) : (
                 <Card className="p-12 text-center">
-                  <p className="text-muted-foreground">Select an employee from the sidebar</p>
+                  <p className="text-muted-foreground">Select an employee from the top bar above</p>
                 </Card>
               )}
             </div>
@@ -606,41 +633,60 @@ export function EmployeeMonitoring() {
 
         {/* OTHER SUB-TABS */}
         <TabsContent value="screenshots" className="mt-6">
-          <ScreenshotGallery employee={selectedEmployee || teamSummaryData.employees[0]} />
+          <ScreenshotGallery
+            employee={selectedEmployee || filteredEmployeesList[0]}
+            employees={filteredEmployeesList}
+            onSelectEmployee={selectUnifiedEmployee}
+            hideEmployeeSelector={true}
+          />
         </TabsContent>
 
         <TabsContent value="alerts" className="mt-6">
-          <AlertsPanel employee={selectedEmployee || teamSummaryData.employees[0]} />
+          <AlertsPanel employee={selectedEmployee || filteredEmployeesList[0]} />
         </TabsContent>
 
         <TabsContent value="activity" className="mt-6">
-          <ActivityChart employee={selectedEmployee || teamSummaryData.employees[0]} />
+          <ActivityChart employee={selectedEmployee || filteredEmployeesList[0]} />
         </TabsContent>
 
         <TabsContent value="ai-insights" className="mt-6">
           <AIInsightsPanel
-            employee={selectedEmployee || teamSummaryData.employees[0]}
-            allEmployees={teamSummaryData.employees}
-            onSelectEmployee={setSelectedEmployee}
+            employee={selectedEmployee || filteredEmployeesList[0]}
+            allEmployees={filteredEmployeesList}
+            onSelectEmployee={selectUnifiedEmployee}
           />
         </TabsContent>
 
         <TabsContent value="production" className="mt-6">
-          <ProductionDashboard employee={selectedEmployee || teamSummaryData.employees[0]} />
+          <ProductionDashboard employee={selectedEmployee || filteredEmployeesList[0]} />
         </TabsContent>
 
         <TabsContent value="trinetra" className="mt-6">
-          <TrinetraConsole />
+          <TrinetraConsole
+            selectedEmployeeId={selectedEmployeeFilter === 'all' ? '' : selectedEmployeeFilter}
+            onSelectEmployeeId={(id) => {
+              if (!id) {
+                setSelectedEmployeeFilter('all');
+              } else {
+                setSelectedEmployeeFilter(id);
+                const found = filteredEmployeesList.find((e) => String(e._id || e.employeeId) === String(id));
+                if (found) setSelectedEmployee(found);
+              }
+            }}
+            searchQuery={searchQuery}
+            hideEmployeeSelector={true}
+          />
         </TabsContent>
 
         <TabsContent value="reports" className="mt-6">
           <ReportsGenerator
-            employee={selectedEmployee || teamSummaryData.employees[0]}
-            employees={teamSummaryData.employees}
-            onSelectEmployee={setSelectedEmployee}
+            employee={selectedEmployee || filteredEmployeesList[0]}
+            employees={filteredEmployeesList}
+            onSelectEmployee={selectUnifiedEmployee}
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
             departments={departments}
+            hideEmployeeSelector={true}
           />
         </TabsContent>
 

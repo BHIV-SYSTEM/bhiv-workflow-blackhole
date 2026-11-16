@@ -22,7 +22,14 @@ import {
 import axios from 'axios';
 import { API_URL } from '@/lib/api';
 
-export function DailyMonitoringView({ onSelectEmployee, departmentFilter = 'all', statusTab = 'active', searchQuery: initialSearch = '' }) {
+export function DailyMonitoringView({
+  onSelectEmployee,
+  departmentFilter = 'all',
+  statusTab = 'active',
+  searchQuery: initialSearch = '',
+  selectedEmployeeId = '',
+  hideLocalSearch = false
+}) {
   const [selectedDate, setSelectedDate] = useState(() => {
     const today = new Date();
     const y = today.getFullYear();
@@ -80,6 +87,7 @@ export function DailyMonitoringView({ onSelectEmployee, departmentFilter = 'all'
     const list = dailyData.employees.filter((emp) => {
       if (statusTab === 'active' && emp.stillExist === 0) return false;
       if (statusTab === 'exited' && emp.stillExist === 1) return false;
+      if (selectedEmployeeId && String(emp._id || emp.employeeId) !== String(selectedEmployeeId)) return false;
       return (
         emp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         emp.email.toLowerCase().includes(searchQuery.toLowerCase())
@@ -97,7 +105,7 @@ export function DailyMonitoringView({ onSelectEmployee, departmentFilter = 'all'
 
       return (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
     });
-  }, [dailyData.employees, statusTab, searchQuery]);
+  }, [dailyData.employees, statusTab, searchQuery, selectedEmployeeId]);
 
   const getEfficiencyBadge = (efficiency, emp = null) => {
     if (emp && emp.stillExist === 0) {
@@ -161,16 +169,17 @@ export function DailyMonitoringView({ onSelectEmployee, departmentFilter = 'all'
               />
             </div>
 
-            {/* Search Input */}
-            <div className="relative flex-1 md:w-64">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search employee..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 h-9 text-xs"
-              />
-            </div>
+            {!hideLocalSearch && (
+              <div className="relative flex-1 md:w-64">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search employee..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9 h-9 text-xs"
+                />
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
