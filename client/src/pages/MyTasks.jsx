@@ -39,6 +39,7 @@ import { formatDate } from "@/lib/dateFormat"
 import axios from "axios"
 import { TaskSubmissionDialog } from "../components/tasks/task-submission-dialog"
 import { TaskIntakeDialog } from "../components/tasks/TaskIntakeDialog"
+import { TaskProgressDialog } from "../components/tasks/TaskProgressDialog"
 
 function MyTasks() {
   const navigate = useNavigate()
@@ -53,6 +54,13 @@ function MyTasks() {
   const [isSubmissionDialogOpen, setIsSubmissionDialogOpen] = useState(false)
   const [isIntakeOpen, setIsIntakeOpen] = useState(false)
   const [actionLoadingId, setActionLoadingId] = useState(null)
+  const [isProgressDialogOpen, setIsProgressDialogOpen] = useState(false)
+  const [progressTask, setProgressTask] = useState(null)
+
+  const openProgressDialog = (task) => {
+    setProgressTask(task)
+    setIsProgressDialogOpen(true)
+  }
 
   useEffect(() => {
     fetchMyTasks()
@@ -700,19 +708,30 @@ function MyTasks() {
                           )}
 
                           {(isApproved || isPending) && (
-                            <Button
-                              size="sm"
-                              disabled={actionLoadingId === task._id}
-                              className="flex-1 h-9 rounded-xl font-semibold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md text-xs gap-1.5"
-                              onClick={() => handleStartExecution(task)}
-                            >
-                              {actionLoadingId === task._id ? (
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              ) : (
-                                <PlayCircle className="h-3.5 w-3.5" />
-                              )}
-                              Start Execution
-                            </Button>
+                            <div className="flex flex-wrap lg:flex-col gap-2 w-full">
+                              <Button
+                                size="sm"
+                                disabled={actionLoadingId === task._id}
+                                className="flex-1 lg:w-full h-9 rounded-xl font-semibold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md text-xs gap-1.5"
+                                onClick={() => handleStartExecution(task)}
+                              >
+                                {actionLoadingId === task._id ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <PlayCircle className="h-3.5 w-3.5" />
+                                )}
+                                Start Execution
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="flex-1 lg:w-full h-9 rounded-xl font-semibold border-cyan-500/40 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-500/10 text-xs gap-1.5"
+                                onClick={() => openProgressDialog(task)}
+                              >
+                                <TrendingUp className="h-3.5 w-3.5" />
+                                Update Daily Progress
+                              </Button>
+                            </div>
                           )}
 
                           {isInProgress && (
@@ -729,7 +748,7 @@ function MyTasks() {
                                 size="sm"
                                 variant="outline"
                                 className="flex-1 lg:w-full h-9 rounded-xl font-semibold border-cyan-500/40 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-500/10 text-xs gap-1.5"
-                                onClick={() => navigate(`/progress?taskId=${task._id}`)}
+                                onClick={() => openProgressDialog(task)}
                               >
                                 <TrendingUp className="h-3.5 w-3.5" />
                                 Update Daily Progress
@@ -807,6 +826,19 @@ function MyTasks() {
           onOpenChange={setIsSubmissionDialogOpen}
           onSubmit={handleSubmitTask}
           existingSubmission={submissions[selectedTask._id]}
+        />
+      )}
+
+      {/* Daily Progress Update Dialog */}
+      {progressTask && (
+        <TaskProgressDialog
+          open={isProgressDialogOpen}
+          onOpenChange={setIsProgressDialogOpen}
+          task={progressTask}
+          onProgressSaved={(updated) => {
+            setTasks(prev => prev.map(t => t._id === updated._id ? { ...t, progress: updated.progress, status: updated.status } : t));
+            fetchMyTasks();
+          }}
         />
       )}
     </div>

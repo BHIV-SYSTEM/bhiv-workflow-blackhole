@@ -599,6 +599,7 @@ import { Progress } from "../components/ui/progress"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs"
 import { Avatar, AvatarFallback, AvatarImage } from "../components/ui/avatar"
 import { TaskSubmissionDialog } from "../components/tasks/task-submission-dialog"
+import { TaskProgressDialog } from "../components/tasks/TaskProgressDialog"
 import { Skeleton } from "../components/ui/skeleton"
 import { Textarea } from "../components/ui/textarea"
 import { API_URL } from "@/lib/api"
@@ -613,6 +614,7 @@ function TaskDetails() {
   const [task, setTask] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSubmissionDialogOpen, setIsSubmissionDialogOpen] = useState(false)
+  const [isProgressDialogOpen, setIsProgressDialogOpen] = useState(false)
   const [submission, setSubmission] = useState(null)
   const [authNotes, setAuthNotes] = useState("")
   const [isAuthorizing, setIsAuthorizing] = useState(false)
@@ -1502,7 +1504,7 @@ function TaskDetails() {
                 <Button 
                   size="sm" 
                   variant="outline" 
-                  onClick={() => navigate(`/progress?taskId=${task._id}`)}
+                  onClick={() => setIsProgressDialogOpen(true)}
                   className="w-full text-xs font-semibold gap-1.5 border-cyan-500/40 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-500/10"
                 >
                   <TrendingUp className="h-3.5 w-3.5" />
@@ -1586,6 +1588,21 @@ function TaskDetails() {
         onSubmit={handleSubmitTask}
         existingSubmission={submission}
       />
+
+      {task && (
+        <TaskProgressDialog
+          open={isProgressDialogOpen}
+          onOpenChange={setIsProgressDialogOpen}
+          task={task}
+          onProgressSaved={(updated) => {
+            setTask(prev => ({
+              ...prev,
+              progress: updated.progress,
+              status: updated.status
+            }));
+          }}
+        />
+      )}
     </div>
   )
 }
