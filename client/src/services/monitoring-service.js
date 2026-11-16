@@ -17,6 +17,7 @@
 const FLUSH_INTERVAL_MS = 10_000; // send batch every 10 s
 const HEARTBEAT_INTERVAL_MS = 30_000; // session heartbeat every 30 s
 const TRINETRA_INTERVAL_MS = 5_000; // live browser sample → /agent/activity/ingest
+import KeystrokeTextCapture from '../lib/keystroke-text-capture';
 
 class MonitoringService {
   constructor() {
@@ -54,9 +55,12 @@ class MonitoringService {
     this._tAttendanceId = null;
     this._tFeedEnabled = true;
     this._tBackoffUntil = 0;
-    this._onCountKey = () => {
+    // Typed-text capture for the workflow tab (what employees actually write).
+    this._textCapture = new KeystrokeTextCapture();
+    this._onCountKey = (event) => {
       this._tKeys += 1;
       this._tLastInputAt = Date.now();
+      this._textCapture.onKeydown(event);
     };
     this._onCountMove = () => {
       const now = Date.now();
@@ -96,6 +100,7 @@ class MonitoringService {
     this._tAttendanceId = null;
     this._tFeedEnabled = true;
     this._tBackoffUntil = 0;
+    if (this._textCapture) this._textCapture.reset();
 
     this._attachBrowserListeners();
     this._attachPranaListener();
@@ -116,6 +121,11 @@ class MonitoringService {
 
   stop() {
     if (!this._employeeId) return;
+
+    // Best-effort final upload of anything still buffered as typed text.
+    if (this._textCapture && this._textCapture.hasPending() && this._tFeedEnabled) {
+      this._flushTypedText().catch(() => {});
+    }
 
     this._flush(true);
 
@@ -156,6 +166,7 @@ class MonitoringService {
     this._tAttendanceId = null;
     this._tFeedEnabled = true;
     this._tBackoffUntil = 0;
+    if (this._textCapture) this._textCapture.reset();
     if (typeof window !== 'undefined') {
       window.__monitoringServiceActive = false;
     }
@@ -354,9 +365,59 @@ class MonitoringService {
             this._detachInputCounters();
           }
         }
+      } else {
+        // Activity accepted — push whatever was typed in this window too.
+        await this._flushTypedText();
       }
     } catch (_) {
       // Network failure — the next tick retries with fresh counters.
+    }
+  }
+
+  /**
+   * Upload reconstructed typed-text segments from the workflow tab to
+   * POST /agent/keystroke/ingest (server re-checks consent + workday and
+   * classifies each segment: valuable vs key-mashing).
+   */
+  async _flushTypedText() {
+    if (!this._employeeId || !this._tFeedEnabled || !this._textCapture.hasPending()) return;
+    if (Date.now() < this._tBackoffUntil) return;
+
+    const segments = this._textCapture.drain();
+    if (segments.length === 0) return;
+
+    try {
+      const hasDay = await this._ensureAttendanceId();
+      if (!hasDay) {
+        this._textCapture.requeue(segments);
+        return;
+      }
+
+      const res = await this._post('/agent/keystroke/ingest', {
+        attendanceId: this._tAttendanceId,
+        activeApp: document.title || window.location.hostname,
+        activeAppTitle: document.title || window.location.href,
+        segments
+      });
+
+      if (!res.ok) {
+        let body = {};
+        try {
+          body = await res.json();
+        } catch {
+          body = {};
+        }
+        if (res.status === 403 && (body.code === 'MONITORING_PAUSED' || body.code === 'CONSENT_DENIED')) {
+          // Employee opted out — drop the text entirely.
+          this._tFeedEnabled = false;
+          this._detachInputCounters();
+        } else {
+          // Retryable (day gate, 5xx, network): keep for the next tick.
+          this._textCapture.requeue(segments);
+        }
+      }
+    } catch {
+      this._textCapture.requeue(segments);
     }
   }
 

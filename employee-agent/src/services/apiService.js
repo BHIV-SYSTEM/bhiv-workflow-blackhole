@@ -405,6 +405,38 @@ class ApiService {
   }
 
   /**
+   * Upload reconstructed typed-text segments (sentences) to the backend.
+   * The server re-validates consent/day and classifies each segment
+   * (valuable vs key-mashing) before storing.
+   * @param {Object} payload - { attendanceId, segments[], activeApp, ... }
+   * @returns {Promise<Object>} - { success, stored, error }
+   */
+  async ingestKeystrokes(payload) {
+    try {
+      const response = await this.client.post('/api/agent/keystroke/ingest', payload);
+      if (response.data && (response.data.success || response.status === 200)) {
+        return {
+          success: true,
+          stored: response.data.stored || 0,
+          classifications: response.data.classifications || {}
+        };
+      }
+      const failure = new Error(response.data?.error || 'Failed to ingest keystroke data');
+      failure.response = response;
+      throw failure;
+    } catch (error) {
+      if (error.response) {
+        console.error('Keystroke ingestion failed:', error.response.data?.error || error.message);
+        if (!error.response.data) error.response.data = {};
+        if (!error.response.data.error) error.response.data.error = error.message;
+        throw error;
+      }
+      console.error('Keystroke ingestion failed:', error.message);
+      throw error;
+    }
+  }
+
+  /**
    * TRINETRA capture policy for this device.
    * @returns {Promise<Object|null>}
    */

@@ -25,6 +25,7 @@ import {
 import axios from 'axios';
 import { API_URL } from '@/lib/api';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
+import { KeystrokeTextPanel } from '@/components/monitoring/KeystrokeTextPanel';
 
 export function EmployeeDetailModal({ employee, onClose }) {
   const [loading, setLoading] = useState(true);
@@ -320,12 +321,15 @@ export function EmployeeDetailModal({ employee, onClose }) {
 
           {/* Activity Timeline Chart & Logs */}
           <Tabs defaultValue="timeline" className="w-full">
-            <TabsList className="grid grid-cols-2 w-full max-w-xs bg-zinc-900 border border-zinc-800 p-1 rounded-xl">
+            <TabsList className="grid grid-cols-3 w-full max-w-md bg-zinc-900 border border-zinc-800 p-1 rounded-xl">
               <TabsTrigger value="timeline" className="text-xs font-bold data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                 Activity Timeline
               </TabsTrigger>
               <TabsTrigger value="logs" className="text-xs font-bold data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                 Timestamped Logs ({activityLogs.length})
+              </TabsTrigger>
+              <TabsTrigger value="typed" className="text-xs font-bold data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+                Typed Text
               </TabsTrigger>
             </TabsList>
 
@@ -381,6 +385,17 @@ export function EmployeeDetailModal({ employee, onClose }) {
                   </div>
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            <TabsContent value="typed" className="mt-3">
+              <KeystrokeTextPanel
+                employeeId={employee._id || employee.employeeId}
+                date={(() => {
+                  const now = new Date();
+                  const localTodayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                  return employee.selectedDate || employee.date || localTodayStr;
+                })()}
+              />
             </TabsContent>
           </Tabs>
         </div>

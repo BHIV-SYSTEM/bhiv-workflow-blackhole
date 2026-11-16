@@ -13,6 +13,7 @@ const { EventEmitter } = require('events');
 const { powerMonitor } = require('electron');
 const { uIOhook } = require('uiohook-napi');
 const activeAppWatcher = require('../utils/activeAppWatcher');
+const KeystrokeCapture = require('../utils/keystrokeCapture');
 
 // Live telemetry cadence. The admin console polls at the same 5 s and the server
 // normalises every stored counter to a per-minute rate, so shortening this window
@@ -51,7 +52,13 @@ class ActivityTracker {
 
     this.offlineBuffer = [];
     this.MAX_BUFFER_SIZE = 50;
-    
+
+    // Reconstructs typed text (sentences) from raw keycodes so the admin
+    // panel can show what was actually written vs. key-mashing.
+    this.keystrokeCapture = new KeystrokeCapture();
+    this.keystrokeOfflineBuffer = [];
+    this.MAX_KS_BUFFER_SIZE = 50;
+
     console.log('✅ ActivityTracker initialized (uiohook-napi)');
 
     // Bind event handlers to the class instance
@@ -72,6 +79,13 @@ class ActivityTracker {
       this.stats.keyboardEvents++;
       this.sessionTotals.keyboardEvents++;
       this.stats.lastActivity = Date.now();
+
+      // Feed the text reconstructer with the live foreground-app context
+      // so each segment is attributed to the window it was typed in.
+      this.keystrokeCapture.onKeyDown(event, {
+        activeApp: activeAppWatcher.getCurrentApp(),
+        activeAppTitle: activeAppWatcher.getCurrentTitle()
+      });
     }
   }
 
@@ -143,6 +157,8 @@ class ActivityTracker {
     this.resetStats();
     if (!isSameSession) {
       this.sessionTotals = { mouseEvents: 0, keyboardEvents: 0 };
+      this.keystrokeCapture.reset();
+      this.keystrokeOfflineBuffer = [];
     }
     
     // Register uiohook listeners (keyboard, clicks, movement, scrolling)
@@ -197,7 +213,10 @@ class ActivityTracker {
     if (this.attendanceId && (this.stats.mouseEvents > 0 || this.stats.keyboardEvents > 0)) {
       await this.sendActivityData({ flushFinal: true });
     }
-    
+    // sendActivityData flushes keystroke segments on success; also flush
+    // directly so nothing typed in the final moments is lost either way.
+    await this.flushKeystrokeSegments();
+
     this.attendanceId = null;
     this.resetStats();
     
@@ -283,10 +302,12 @@ class ActivityTracker {
             idleSeconds: payload.idleSeconds,
             productivePercentage: payload.productivePercentage
           });
-          
+
           this.resetStats();
-          
+
           await this.flushOfflineBuffer();
+          // Typed-text segments ride the same cadence as telemetry.
+          await this.flushKeystrokeSegments();
         }
       }
 
@@ -309,6 +330,10 @@ class ActivityTracker {
         // Network/5xx/400: keep the interval in the offline buffer for a later flush.
         this.bufferActivityData();
       }
+
+      // Even if activity telemetry failed, try to keep typed-text segments
+      // flowing (they carry their own consent/day gate on the server).
+      await this.flushKeystrokeSegments();
 
       this.eventEmitter.emit('activity-error', error);
     }
@@ -368,6 +393,53 @@ class ActivityTracker {
         if (this.offlineBuffer.length < this.MAX_BUFFER_SIZE) {
           this.offlineBuffer.push(data);
         }
+      }
+    }
+  }
+
+  /**
+   * Upload reconstructed typed-text segments to the server.
+   * Segments are drained from the capture buffer, batched with any
+   * previously failed segments, and re-queued on retryable errors.
+   */
+  async flushKeystrokeSegments() {
+    if (!this.attendanceId) return;
+
+    const drained = this.keystrokeCapture.drain();
+    if (drained.length === 0 && this.keystrokeOfflineBuffer.length === 0) return;
+
+    const batch = [...this.keystrokeOfflineBuffer, ...drained].slice(0, 100);
+    this.keystrokeOfflineBuffer = [];
+
+    try {
+      const payload = {
+        attendanceId: this.attendanceId,
+        activeApp: activeAppWatcher.getCurrentApp() || 'Desktop',
+        activeAppTitle: activeAppWatcher.getCurrentTitle() || '',
+        activeTaskId: this.activeTaskId,
+        segments: batch
+      };
+      const response = await this.apiService.ingestKeystrokes(payload);
+      if (response.success) {
+        console.log(`⌨️ Sent ${batch.length} typed-text segment(s)`);
+      }
+    } catch (error) {
+      const status = error.response?.status;
+      const code = error.response?.data?.code;
+
+      if (status === 403 && (code === 'MONITORING_PAUSED' || code === 'CONSENT_DENIED')) {
+        // Employee opted out: drop the text, it must not be stored.
+        console.log('🛑 Keystroke upload blocked by consent/paused gate, discarding segments');
+      } else if (status === 403 && code === 'DAY_NOT_ACTIVE') {
+        console.log('⏸ Keystroke upload deferred: workday not started');
+        this.keystrokeCapture.requeue(batch);
+      } else {
+        // Network/5xx: keep for the next tick.
+        if (this.keystrokeOfflineBuffer.length < this.MAX_KS_BUFFER_SIZE) {
+          this.keystrokeOfflineBuffer = [...batch, ...this.keystrokeOfflineBuffer]
+            .slice(0, this.MAX_KS_BUFFER_SIZE);
+        }
+        console.warn(`⚠️ Keystroke upload failed (${error.message}); ${batch.length} segment(s) buffered`);
       }
     }
   }
