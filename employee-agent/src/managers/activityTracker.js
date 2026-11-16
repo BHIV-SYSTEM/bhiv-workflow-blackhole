@@ -40,6 +40,8 @@ class ActivityTracker {
       keyboardEvents: 0
     };
     this.lastAttendanceId = null;
+    this.lastStartTime = null;
+    this.sessionDateKey = null;
     
     this.sendInterval = null;
 
@@ -106,16 +108,36 @@ class ActivityTracker {
    * Start tracking activity - REAL IMPLEMENTATION
    * @param {string} attendanceId - The attendance record ID from backend
    */
-  start(attendanceId) {
+  start(attendanceId, startTime = null, forceReset = false) {
+    const todayKey = new Date().toLocaleDateString('en-CA');
+    const isSameSession =
+      !forceReset &&
+      this.lastAttendanceId &&
+      String(this.lastAttendanceId) === String(attendanceId) &&
+      this.sessionDateKey === todayKey &&
+      (!startTime || !this.lastStartTime || String(this.lastStartTime) === String(startTime));
+
     if (this.isTracking) {
-      console.log('⚠️  Tracking already started');
+      if (isSameSession) {
+        console.log('⚠️  Tracking already started for this session');
+        return;
+      }
+      // Session rolled over to a new day or restarted: reset counters for the new day
+      console.log('🔄 New workday/session detected — resetting keystroke & mouse counters');
+      this.attendanceId = attendanceId;
+      this.lastAttendanceId = attendanceId;
+      this.lastStartTime = startTime || this.lastStartTime;
+      this.sessionDateKey = todayKey;
+      this.resetStats();
+      this.sessionTotals = { mouseEvents: 0, keyboardEvents: 0 };
       return;
     }
 
     console.log('🟢 Starting REAL activity tracking for attendance:', attendanceId);
-    const isSameSession = this.lastAttendanceId && String(this.lastAttendanceId) === String(attendanceId);
     this.attendanceId = attendanceId;
     this.lastAttendanceId = attendanceId;
+    this.lastStartTime = startTime || null;
+    this.sessionDateKey = todayKey;
     this.isTracking = true;
     
     this.resetStats();
@@ -142,12 +164,18 @@ class ActivityTracker {
    * Stop tracking activity
    */
   async stop() {
-    if (!this.isTracking) {
+    if (!this.isTracking && !this.sendInterval) {
       return;
     }
 
     console.log('🔴 Stopping activity tracking...');
     this.isTracking = false;
+
+    // Clear timer synchronously BEFORE flushing final stats so no further intervals fire
+    if (this.sendInterval) {
+      clearInterval(this.sendInterval);
+      this.sendInterval = null;
+    }
     
     // Stop active window watcher
     activeAppWatcher.stop();
@@ -165,12 +193,9 @@ class ActivityTracker {
       // Ignore errors if already stopped
     }
     
-    // Send final data before stopping
-    await this.sendActivityData();
-    
-    if (this.sendInterval) {
-      clearInterval(this.sendInterval);
-      this.sendInterval = null;
+    // Send final buffered interval if any events accumulated while active
+    if (this.attendanceId && (this.stats.mouseEvents > 0 || this.stats.keyboardEvents > 0)) {
+      await this.sendActivityData({ flushFinal: true });
     }
     
     this.attendanceId = null;
@@ -206,8 +231,8 @@ class ActivityTracker {
   /**
    * Send activity data to backend with offline buffering
    */
-  async sendActivityData() {
-    if (!this.attendanceId) {
+  async sendActivityData({ flushFinal = false } = {}) {
+    if (!this.attendanceId || (!this.isTracking && !flushFinal)) {
       return;
     }
 
@@ -234,6 +259,7 @@ class ActivityTracker {
         activeTaskId: this.activeTaskId,
         productivePercentage: Math.round(productivePercentage),
         trackingMode: 'UIOHOOK_NAPI', // Using uiohook-napi
+        source: 'desktop_agent',
         intervalDuration: SEND_INTERVAL_MS / 1000
       };
 

@@ -22,8 +22,10 @@ class AttendanceStatusPoller extends EventEmitter {
     this.pollInterval = null;
     this.currentStatus = {
       dayStarted: false,
+      dayEndedToday: false,
       attendanceId: null,
-      startTime: null
+      startTime: null,
+      endTime: null
     };
     this.POLL_INTERVAL_MS = 5 * 1000; // 5 seconds - fast detection when employee starts day from web dashboard
   }
@@ -74,13 +76,18 @@ class AttendanceStatusPoller extends EventEmitter {
       
       // Detect state changes
       const previouslyStarted = this.currentStatus.dayStarted;
+      const prevAttendanceId = this.currentStatus.attendanceId;
+      const prevStartTime = this.currentStatus.startTime;
+      const prevDayEndedToday = this.currentStatus.dayEndedToday;
       const nowStarted = status.dayStarted;
 
       // Update current status
       this.currentStatus = {
         dayStarted: nowStarted,
+        dayEndedToday: !!status.dayEndedToday,
         attendanceId: status.attendanceId,
         startTime: status.startTime,
+        endTime: status.endTime || null,
         workLocation: status.workLocation,
         userName: status.userName,
         userEmail: status.userEmail
@@ -96,12 +103,37 @@ class AttendanceStatusPoller extends EventEmitter {
           userName: status.userName,
           userEmail: status.userEmail
         });
+      } else if (
+        previouslyStarted &&
+        nowStarted &&
+        (String(prevAttendanceId || '') !== String(status.attendanceId || '') ||
+          String(prevStartTime || '') !== String(status.startTime || ''))
+      ) {
+        console.log('🔄 New workday session detected while polling — resetting counters...');
+        this.emit('day-restarted', {
+          attendanceId: status.attendanceId,
+          startTime: status.startTime,
+          workLocation: status.workLocation,
+          userName: status.userName,
+          userEmail: status.userEmail
+        });
       }
 
       // Day just ended (transition from true → false)
       if (previouslyStarted && !nowStarted) {
         console.log('🔴 Day ended detected! Stopping activity tracking...');
-        this.emit('day-ended');
+        this.emit('day-ended', {
+          dayEndedToday: !!status.dayEndedToday,
+          startTime: status.startTime || null,
+          endTime: status.endTime || null
+        });
+      } else if (prevDayEndedToday !== !!status.dayEndedToday && !nowStarted) {
+        this.emit('status-refreshed', {
+          dayStarted: false,
+          dayEndedToday: !!status.dayEndedToday,
+          startTime: status.startTime || null,
+          endTime: status.endTime || null
+        });
       }
 
       // Status unchanged

@@ -20,8 +20,12 @@ router.post('/activity/ingest', auth, async (req, res) => {
       activeAppTitle,
       activeTaskId,
       appCategory,
-      intervalDuration
+      intervalDuration,
+      source,
+      trackingMode
     } = req.body;
+
+    const resolvedSource = source || (trackingMode === 'UIOHOOK_NAPI' ? 'desktop_agent' : 'browser');
 
     console.log('📥 Incoming activity data:', { attendanceId, mouseEvents, keyboardEvents, idleSeconds, intervalDuration, activeApp });
 
@@ -106,6 +110,23 @@ router.post('/activity/ingest', auth, async (req, res) => {
       });
     }
 
+    // Avoid double-counting & idle-0 overwrites when both desktop agent and browser tab run concurrently
+    if (resolvedSource === 'browser') {
+      const recentDesktopCutoff = new Date(Date.now() - 15000);
+      const desktopActive = await EmployeeActivity.exists({
+        employee: req.user.id,
+        'metadata.source': 'desktop_agent',
+        timestamp: { $gte: recentDesktopCutoff }
+      });
+      if (desktopActive) {
+        return res.json({
+          success: true,
+          deduplicated: true,
+          message: 'Desktop agent active; skipped redundant browser sample'
+        });
+      }
+    }
+
     // Calculate mouse activity score normalized by interval length.
     // Previous formula (events/20*100) saturated to 100 after just 20 events,
     // so cursor movement was effectively binary. Scale events-per-minute
@@ -135,6 +156,9 @@ router.post('/activity/ingest', auth, async (req, res) => {
       work_hours: {
         start: activeDay.startDayTime,
         end: null
+      },
+      metadata: {
+        source: resolvedSource
       }
     });
 

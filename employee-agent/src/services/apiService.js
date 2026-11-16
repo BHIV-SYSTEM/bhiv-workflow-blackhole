@@ -161,9 +161,27 @@ class ApiService {
       const response = await this.client.post(`/api/attendance/start-day/${userId}`, locationData);
       
       if (response.data && (response.data.success !== false)) {
+        const startTime =
+          response.data.startTime ||
+          response.data.attendance?.startDayTime ||
+          new Date().toISOString();
+        const attendanceId =
+          response.data.attendanceId || response.data.attendance?._id || response.data._id;
+
+        // Keep web WorkHoursManager WorkSession synced cleanly (best-effort)
+        try {
+          await this.client.post('/api/monitoring/work-session/start', {
+            employeeId: userId,
+            startTime
+          });
+        } catch (syncErr) {
+          // Non-fatal if WorkSession already started
+        }
+
         return {
           success: true,
-          attendanceId: response.data.attendanceId || response.data.attendance?._id || response.data._id
+          attendanceId,
+          startTime
         };
       }
 
@@ -257,8 +275,8 @@ class ApiService {
         };
       }
 
-      // If attendance day wasn't created via attendance route, try monitoring work-session fallback
-      if (errData.code === 'DAY_NOT_STARTED') {
+      // If attendance day wasn't created via attendance route or already ended, sync monitoring work-session fallback
+      if (errData.code === 'DAY_NOT_STARTED' || errData.code === 'DAY_ALREADY_ENDED') {
         try {
           const userId = this.getUserIdFromToken();
           const wsRes = await this.client.post('/api/monitoring/work-session/end', { employeeId: userId });
@@ -271,6 +289,12 @@ class ApiService {
           }
         } catch (wsErr) {
           const wsData = wsErr.response?.data || {};
+          if (errData.code === 'DAY_ALREADY_ENDED' && wsData.code === 'SESSION_ALREADY_ENDED') {
+            return {
+              success: true,
+              message: 'Work day already ended.'
+            };
+          }
           const wsMsg = wsData.error || wsData.message || errMsg;
           return {
             success: false,
@@ -318,8 +342,10 @@ class ApiService {
       
       return {
         dayStarted: response.data.dayStarted || false,
+        dayEndedToday: response.data.dayEndedToday || false,
         attendanceId: response.data.attendanceId || null,
         startTime: response.data.startTime || null,
+        endTime: response.data.endTime || null,
         workLocation: response.data.workLocation || null,
         userName: response.data.userName || tokenUser?.name || null,
         userEmail: response.data.userEmail || tokenUser?.email || null

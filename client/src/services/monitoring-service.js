@@ -336,6 +336,7 @@ class MonitoringService {
         idleSeconds,
         activeApp: document.title || window.location.hostname,
         activeAppTitle: document.title || window.location.href,
+        source: 'browser',
         intervalDuration: TRINETRA_INTERVAL_MS / 1000
       });
 

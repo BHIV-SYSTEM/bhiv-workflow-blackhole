@@ -17,7 +17,8 @@ let dailySummaryState = {
   baseActiveSeconds: null,
   syncedAtMs: null,
   productivityScore: 0,
-  startTimeIso: null
+  startTimeIso: null,
+  latestSummary: null
 };
 
 let cachedTasks = [];
@@ -167,11 +168,60 @@ async function refreshDailySummary() {
       dailySummaryState.baseActiveSeconds = Number(m.activeSeconds || 0);
       dailySummaryState.syncedAtMs = Date.now();
       dailySummaryState.productivityScore = Number(m.productivityScore || 0);
+      dailySummaryState.latestSummary = res.summary;
       updateActiveTimeUI();
+      renderDayEndSummaryCard(res.summary);
     }
   } catch (error) {
     console.warn('Could not refresh daily summary:', error.message);
   }
+}
+
+function renderDayEndSummaryCard(summary = dailySummaryState.latestSummary) {
+  const card = document.getElementById('dayEndSummaryCard');
+  if (!card) return;
+
+  const isStarted = Boolean(currentAppState.isDayStarted);
+  if (isStarted) {
+    card.classList.remove('visible');
+    return;
+  }
+
+  const m = (summary && summary.metrics) || {};
+  const tc = (summary && summary.taskCounts) || {};
+  const ws = (summary && summary.workSummary) || {};
+  const hasSummaryData =
+    Boolean(currentAppState.dayEndedToday) ||
+    Number(m.activeSeconds || 0) > 0 ||
+    Number(m.keystrokes || 0) > 0 ||
+    Number(ws.updatesCount || 0) > 0;
+
+  if (!hasSummaryData) {
+    card.classList.remove('visible');
+    return;
+  }
+
+  const hoursEl = document.getElementById('summaryHours');
+  const prodEl = document.getElementById('summaryProd');
+  const keysEl = document.getElementById('summaryKeys');
+  const mouseEl = document.getElementById('summaryMouse');
+  const effBadge = document.getElementById('summaryEffBadge');
+  const tasksLine = document.getElementById('summaryTasksLine');
+  const noteLine = document.getElementById('summaryWorkNote');
+
+  if (hoursEl) hoursEl.textContent = m.activeHoursFormatted || formatDurationSeconds(m.activeSeconds || 0);
+  if (prodEl) prodEl.textContent = `${Number(m.productivityScore || 0)}%`;
+  if (keysEl) keysEl.textContent = Number(m.keystrokes || 0).toLocaleString();
+  if (mouseEl) mouseEl.textContent = Number(m.mouseEvents || 0).toLocaleString();
+  if (effBadge) effBadge.textContent = m.efficiencyLabel && m.efficiencyLabel !== 'No Activity' ? m.efficiencyLabel : 'Day Ended';
+  if (tasksLine) {
+    tasksLine.textContent = `Tasks Completed: ${tc.completed || 0} • Daily Progress: ${ws.progressPercentage || 0}% (${ws.updatesCount || 0} updates)`;
+  }
+  if (noteLine) {
+    noteLine.textContent = ws.aim && ws.aim !== 'No aim set for today' ? ws.aim : '';
+  }
+
+  card.classList.add('visible');
 }
 
 /**
@@ -346,6 +396,14 @@ function setupEventListeners() {
       const result = await window.electronAPI.startDay();
 
       if (result.success) {
+        dailySummaryState.baseActiveSeconds = 0;
+        dailySummaryState.syncedAtMs = Date.now();
+        dailySummaryState.latestSummary = null;
+        const mouseCountEl = document.getElementById('mouseCount');
+        const keyCountEl = document.getElementById('keyCount');
+        if (mouseCountEl) mouseCountEl.textContent = '0';
+        if (keyCountEl) keyCountEl.textContent = '0';
+
         const appState = await window.electronAPI.getAppState();
         currentAppState = appState || currentAppState;
         updateDashboard(appState);
@@ -408,8 +466,11 @@ function setupEventListeners() {
         baseActiveSeconds: null,
         syncedAtMs: null,
         productivityScore: 0,
-        startTimeIso: null
+        startTimeIso: null,
+        latestSummary: null
       };
+      const summaryCard = document.getElementById('dayEndSummaryCard');
+      if (summaryCard) summaryCard.classList.remove('visible');
       showScreen('login');
       document.getElementById('password').value = '';
     });
@@ -558,6 +619,7 @@ function getInitials(name) {
  */
 function updateDashboard(appState) {
   currentAppState = appState || currentAppState;
+  updateTodayDateBadge();
   if (currentAppState.startTime) {
     dailySummaryState.startTimeIso = currentAppState.startTime;
   }
@@ -590,7 +652,7 @@ function updateDashboard(appState) {
     startActiveTimerLoop();
   } else {
     trackingStatus.className = 'status-pill inactive';
-    if (trackingStatusText) trackingStatusText.textContent = 'Standby';
+    if (trackingStatusText) trackingStatusText.textContent = appState.dayEndedToday ? 'Day Ended' : 'Standby';
     startDayBtn.style.display = 'inline-flex';
     endDayBtn.style.display = 'none';
     statsContainer.style.display = 'none';
@@ -598,6 +660,8 @@ function updateDashboard(appState) {
     stopActiveTimerLoop();
     updateActiveTimeUI();
   }
+
+  renderDayEndSummaryCard();
 }
 
 /**
@@ -606,15 +670,15 @@ function updateDashboard(appState) {
 async function loadTasks() {
   if (!window.electronAPI.getTasks) return;
   try {
-    const tasks = await window.electronAPI.getTasks();
-    renderTasks(tasks);
+    const res = await window.electronAPI.getTasks();
+    renderTasks(Array.isArray(res) ? res : (res?.tasks || []));
   } catch (e) {
     console.warn('Could not load tasks:', e.message);
   }
 }
 
 function renderTasks(tasks) {
-  cachedTasks = Array.isArray(tasks) ? tasks : [];
+  cachedTasks = Array.isArray(tasks) ? tasks : (tasks?.tasks || []);
   const select = document.getElementById('activeTaskSelect');
   if (!select) return;
 
@@ -654,11 +718,17 @@ function updateCaptureStatus(status) {
     return;
   }
 
+  const uploadsCount = status.uploads ?? status.captureCount ?? 0;
   dot.className = 'capture-dot active';
-  text.textContent = `Capture active (${status.captureCount || 0} today)`;
+  text.textContent = `Capture active (${uploadsCount} today)`;
 
-  if (status.nextCaptureInMs != null) {
-    const mins = Math.max(0, Math.round(status.nextCaptureInMs / 60000));
+  let nextMs = status.nextCaptureInMs ?? null;
+  if (nextMs == null && status.next_capture_at) {
+    nextMs = Math.max(0, new Date(status.next_capture_at).getTime() - Date.now());
+  }
+
+  if (nextMs != null) {
+    const mins = Math.max(0, Math.round(nextMs / 60000));
     next.textContent = mins <= 1 ? 'next <1m' : `next ~${mins}m`;
   } else {
     next.textContent = '';
@@ -750,6 +820,8 @@ if (window.electronAPI.onShowDashboard) {
     startSummarySync();
     if (appState.isDayStarted) {
       startStatsUpdate();
+    } else {
+      stopStatsUpdate();
     }
   });
 }
@@ -761,6 +833,8 @@ window.addEventListener('focus', async () => {
     await refreshDailySummary();
     if (appState.isDayStarted) {
       startStatsUpdate();
+    } else {
+      stopStatsUpdate();
     }
   }
 });
@@ -778,6 +852,7 @@ window.electronAPI.onDayStatusChanged(async (data) => {
       await loadTasks();
     } else {
       stopStatsUpdate();
+      hideQuickProgressCard();
     }
   }
 });

@@ -844,6 +844,83 @@
       font-size: 12.5px;
     }
 
+    /* Day-End Summary Card */
+    .day-summary-card {
+      display: none;
+      background: linear-gradient(155deg, rgba(16, 185, 129, 0.10) 0%, rgba(15, 23, 42, 0.92) 70%);
+      border: 1px solid rgba(16, 185, 129, 0.28);
+      border-radius: 14px;
+      padding: 13px 14px;
+      margin-bottom: 14px;
+      animation: fadeSlideIn 0.22s ease-out;
+    }
+
+    .day-summary-card.visible {
+      display: block;
+    }
+
+    .summary-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .summary-title {
+      font-size: 12.5px;
+      font-weight: 700;
+      color: var(--emerald-bright);
+      letter-spacing: 0.01em;
+    }
+
+    .summary-badge {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: var(--emerald-dim);
+      color: var(--emerald-bright);
+      border: 1px solid rgba(16, 185, 129, 0.28);
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .summary-metric {
+      background: rgba(15, 23, 42, 0.65);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 8px 10px;
+    }
+
+    .summary-metric-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+      margin-bottom: 3px;
+    }
+
+    .summary-metric-value {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-primary);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .summary-footer {
+      font-size: 11px;
+      color: var(--text-secondary);
+      line-height: 1.45;
+      border-top: 1px solid var(--border-subtle);
+      padding-top: 8px;
+    }
+
     /* Action Footer */
     .actions-stack {
       display: flex;
@@ -1091,6 +1168,36 @@
         <div class="qp-actions">
           <button type="button" id="saveProgressEndBtn" class="btn btn-primary">Save Progress &amp; End Day</button>
           <button type="button" id="cancelProgressBtn" class="btn btn-secondary">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Day-End Summary Card (Shown after workday is ended) -->
+      <div id="dayEndSummaryCard" class="day-summary-card">
+        <div class="summary-header">
+          <span class="summary-title">Today's Day-End Summary</span>
+          <span class="summary-badge" id="summaryEffBadge">Completed</span>
+        </div>
+        <div class="summary-grid">
+          <div class="summary-metric">
+            <div class="summary-metric-label">Worked Time</div>
+            <div class="summary-metric-value" id="summaryHours">0h 0m</div>
+          </div>
+          <div class="summary-metric">
+            <div class="summary-metric-label">Productivity</div>
+            <div class="summary-metric-value" id="summaryProd">0%</div>
+          </div>
+          <div class="summary-metric">
+            <div class="summary-metric-label">Keystrokes</div>
+            <div class="summary-metric-value" id="summaryKeys">0</div>
+          </div>
+          <div class="summary-metric">
+            <div class="summary-metric-label">Mouse Events</div>
+            <div class="summary-metric-value" id="summaryMouse">0</div>
+          </div>
+        </div>
+        <div class="summary-footer">
+          <div id="summaryTasksLine">Tasks Completed: 0 • Progress: 0%</div>
+          <div id="summaryWorkNote" style="margin-top:3px; color:#94a3b8;"></div>
         </div>
       </div>
 

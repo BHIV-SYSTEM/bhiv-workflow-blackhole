@@ -121,15 +121,36 @@ class ScreenshotEngine extends EventEmitter {
         return;
       }
 
+      const prevPeriodic = !!this.policy.periodic_enabled;
+      const prevInterval = Number(this.policy.interval_minutes) || 15;
+      const prevJitter = Number(this.policy.jitter_minutes) || 0;
+
       if (config.capture) {
         this.policy = { ...DEFAULT_POLICY, ...config.capture };
       }
 
-      // Re-arm with the new cadence if the interval changed.
-      if (this.isRunning && this.timer) {
-        clearTimeout(this.timer);
-        this.timer = null;
-        this.scheduleNext({});
+      const nextPeriodic = !!this.policy.periodic_enabled;
+      const nextInterval = Number(this.policy.interval_minutes) || 15;
+      const nextJitter = Number(this.policy.jitter_minutes) || 0;
+
+      // Re-arm ONLY when capture enablement or cadence actually changed;
+      // otherwise the 5-min policy poll would continuously cancel the 10-15 min
+      // capture timeout before it could ever fire.
+      if (this.isRunning) {
+        if (!nextPeriodic && this.timer) {
+          clearTimeout(this.timer);
+          this.timer = null;
+          this.nextCaptureAt = null;
+        } else if (
+          nextPeriodic &&
+          (!this.timer || !prevPeriodic || prevInterval !== nextInterval || prevJitter !== nextJitter)
+        ) {
+          if (this.timer) {
+            clearTimeout(this.timer);
+            this.timer = null;
+          }
+          this.scheduleNext({ initial: !prevPeriodic });
+        }
       }
 
       this.emit('status', this.getStatus());
@@ -225,11 +246,22 @@ class ScreenshotEngine extends EventEmitter {
   compressToLimit(image, maxBytes) {
     const limit = Math.max(20 * 1024, Number(maxBytes) || DEFAULT_POLICY.max_upload_bytes);
     let quality = Math.min(Math.max(Number(this.policy.jpeg_quality) || 70, 30), 90);
-    let buffer = image.toJPEG(quality);
+    let working = image;
+    let buffer = working.toJPEG(quality);
 
     while (buffer.length > limit && quality > 30) {
       quality -= 10;
-      buffer = image.toJPEG(quality);
+      buffer = working.toJPEG(quality);
+    }
+
+    // Step down resolution on ultra-high-DPI / 4K screens so uploads stay under max_upload_bytes
+    for (const targetWidth of [1280, 960]) {
+      if (buffer.length <= limit) break;
+      const size = working.getSize();
+      if (size && size.width > targetWidth) {
+        working = working.resize({ width: targetWidth, quality: 'good' });
+        buffer = working.toJPEG(Math.max(30, quality));
+      }
     }
 
     return { buffer, quality };

@@ -690,21 +690,25 @@ router.get('/telemetry/live', auth, async (req, res) => {
 
     const employeeIds = users.map((user) => user._id);
 
-    const [latestActivities, openDays, latestCaptures] = await Promise.all([
+    const now = Date.now();
+    const rollingCutoff = new Date(now - 2 * 60 * 1000);
+
+    const [latestActivities, recentSamples, openDays, latestCaptures] = await Promise.all([
       EmployeeActivity.aggregate([
         { $match: { employee: { $in: employeeIds }, timestamp: { $gte: start, $lte: end } } },
-        // Prefer real ingest rows (session_id = 24-char attendanceId) over
-        // derived rows: legacy synthetic sessions ("sess_<ts>") and EMS-built
-        // rows ("ms_<uid>_<ts>") which carry zero counts and would otherwise
-        // become the "latest" row, zeroing the rates of an active member.
+        // Prefer real ingest rows (desktop_agent or session_id = 24-char attendanceId)
+        // over derived/browser rows when both exist.
         {
           $addFields: {
+            is_desktop_row: {
+              $eq: [{ $ifNull: ['$metadata.source', ''] }, 'desktop_agent']
+            },
             is_agent_row: {
               $eq: [{ $strLenCP: { $ifNull: ['$session_id', ''] } }, 24]
             }
           }
         },
-        { $sort: { is_agent_row: -1, timestamp: -1 } },
+        { $sort: { is_agent_row: -1, is_desktop_row: -1, timestamp: -1 } },
         {
           $group: {
             _id: '$employee',
@@ -716,11 +720,18 @@ router.get('/telemetry/live', auth, async (req, res) => {
           }
         }
       ]),
+      EmployeeActivity.find({
+        employee: { $in: employeeIds },
+        timestamp: { $gte: rollingCutoff, $lte: end }
+      })
+        .select('employee timestamp keystroke_count mouse_event_count mouse_activity_score interval_seconds session_id metadata.source')
+        .sort({ timestamp: -1 })
+        .lean(),
       Attendance.find({
         user: { $in: employeeIds },
         date: { $gte: start, $lte: end },
         startDayTime: { $exists: true },
-        endDayTime: { $exists: false }
+        $or: [{ endDayTime: { $exists: false } }, { endDayTime: null }]
       })
         .select('user startDayTime')
         .lean(),
@@ -733,10 +744,15 @@ router.get('/telemetry/live', auth, async (req, res) => {
     const activityByEmployee = new Map(latestActivities.map((row) => [String(row._id), row]));
     const openDayByEmployee = new Map(openDays.map((row) => [String(row.user), row]));
     const captureByEmployee = new Map(latestCaptures.map((row) => [String(row._id), row]));
+    const recentByEmployee = new Map();
+    for (const sample of recentSamples) {
+      const empKey = String(sample.employee);
+      if (!recentByEmployee.has(empKey)) recentByEmployee.set(empKey, []);
+      recentByEmployee.get(empKey).push(sample);
+    }
 
     const idleThreshold = settings.scoring.idle_threshold_seconds || 120;
     const awayMinutes = Math.max(5, Math.round(idleThreshold / 60));
-    const now = Date.now();
 
     const employees = users.map((user) => {
       const key = String(user._id);
@@ -745,29 +761,54 @@ router.get('/telemetry/live', auth, async (req, res) => {
       const capture = captureByEmployee.get(key);
       const latest = activity ? activity.latest : null;
 
-      // Derived per-minute rates from the freshest sample. Prefer the stored
-      // cadence fields; fall back to raw counts over the sample interval for
-      // rows written before those fields existed.
+      // Compute smoothed 60-second rolling rates instead of extrapolating a single 5s slice
+      // (*12), which caused spiky jumps (e.g., 276/min, 1488/min) or instant drops to 0/min.
       let keystrokesPerMin = null;
       let mousePerMin = null;
       let lastActivityAgeSeconds = null;
       if (latest) {
-        const intervalSeconds = latest.interval_seconds || 30;
-        keystrokesPerMin =
-          typeof latest.keystroke_cadence === 'number'
-            ? latest.keystroke_cadence
-            : Math.round(((latest.keystroke_count || 0) / intervalSeconds) * 60);
-        mousePerMin =
-          typeof latest.mouse_cadence === 'number'
-            ? latest.mouse_cadence
-            : (latest.mouse_event_count || 0) > 0
-              ? Math.round(((latest.mouse_event_count) / intervalSeconds) * 60)
-              : // Legacy rows that stored only the 0-100 score (EMS flush before
-                // mouse_event_count existed): score 100 ≈ 20 events / 30 s ≈ 40/min.
-                latest.mouse_activity_score > 0
+        const latestTs = new Date(latest.timestamp).getTime();
+        lastActivityAgeSeconds = Math.max(0, Math.round((now - latestTs) / 1000));
+
+        if (lastActivityAgeSeconds > 120) {
+          keystrokesPerMin = 0;
+          mousePerMin = 0;
+        } else {
+          const allRecent = (recentByEmployee.get(key) || []).filter((s) => {
+            const ts = new Date(s.timestamp).getTime();
+            return ts >= latestTs - 60 * 1000 && ts <= latestTs + 5 * 1000 && String(s.session_id || '').length === 24;
+          });
+          const desktopRecent = allRecent.filter((s) => s.metadata?.source === 'desktop_agent');
+          const windowRows = desktopRecent.length > 0 ? desktopRecent : allRecent;
+
+          if (windowRows.length > 0) {
+            let sumKeys = 0;
+            let sumMouse = 0;
+            let sumSeconds = 0;
+            for (const row of windowRows) {
+              const sec = Math.max(1, Number(row.interval_seconds) || 5);
+              sumSeconds += sec;
+              sumKeys += Number(row.keystroke_count) || 0;
+              if ((row.mouse_event_count || 0) > 0) {
+                sumMouse += Number(row.mouse_event_count) || 0;
+              } else if ((row.mouse_activity_score || 0) > 0) {
+                sumMouse += Math.round(((row.mouse_activity_score * 0.4) / 60) * sec);
+              }
+            }
+            const denominator = Math.max(30, Math.min(60, sumSeconds));
+            keystrokesPerMin = Math.round((sumKeys / denominator) * 60);
+            mousePerMin = Math.round((sumMouse / denominator) * 60);
+          } else {
+            const intervalSeconds = Math.max(30, Number(latest.interval_seconds) || 30);
+            keystrokesPerMin = Math.round(((latest.keystroke_count || 0) / intervalSeconds) * 60);
+            mousePerMin =
+              (latest.mouse_event_count || 0) > 0
+                ? Math.round(((latest.mouse_event_count) / intervalSeconds) * 60)
+                : latest.mouse_activity_score > 0
                   ? Math.round(latest.mouse_activity_score * 0.4)
                   : 0;
-        lastActivityAgeSeconds = Math.max(0, Math.round((now - new Date(latest.timestamp).getTime()) / 1000));
+          }
+        }
       }
       const isStale = lastActivityAgeSeconds !== null && lastActivityAgeSeconds > 120;
 

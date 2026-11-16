@@ -119,8 +119,12 @@ function initialsOf(name) {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-function intensityPercent(rate) {
-  return Math.min(100, Math.round((Number(rate) || 0) / 6));
+function keystrokeIntensityPercent(rate) {
+  return Math.min(100, Math.round(Number(rate) || 0));
+}
+
+function mouseIntensityPercent(rate) {
+  return Math.min(100, Math.round(((Number(rate) || 0) / 240) * 100));
 }
 
 const VERIFICATION_STYLES = {
@@ -709,7 +713,7 @@ export function TrinetraConsole() {
                           {employee.keystrokes_per_min ?? 0}/min
                         </span>
                       </p>
-                      <Progress value={intensityPercent(employee.keystrokes_per_min)} className="h-1 mt-1" />
+                      <Progress value={keystrokeIntensityPercent(employee.keystrokes_per_min)} className="h-1 mt-1" />
                     </div>
                     <div className="rounded-lg border border-border bg-muted/40 px-2 py-1.5">
                       <p className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide text-muted-foreground">
@@ -721,7 +725,7 @@ export function TrinetraConsole() {
                           {employee.mouse_per_min ?? 0}/min
                         </span>
                       </p>
-                      <Progress value={intensityPercent(employee.mouse_per_min)} className="h-1 mt-1" />
+                      <Progress value={mouseIntensityPercent(employee.mouse_per_min)} className="h-1 mt-1" />
                     </div>
                   </div>
 

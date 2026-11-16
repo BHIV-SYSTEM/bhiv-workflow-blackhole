@@ -164,15 +164,15 @@ router.get("/:id/daily-summary", auth, async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
+    const { getIstDayBounds } = require("../utils/progressValidation");
     const now = new Date();
-    const localYear = now.getFullYear();
-    const localMonth = String(now.getMonth() + 1).padStart(2, '0');
-    const localDay = String(now.getDate()).padStart(2, '0');
+    const istNow = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
+    const localYear = istNow.getUTCFullYear();
+    const localMonth = String(istNow.getUTCMonth() + 1).padStart(2, '0');
+    const localDay = String(istNow.getUTCDate()).padStart(2, '0');
     const localDateStr = `${localYear}-${localMonth}-${localDay}`;
 
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    const { start: today, end: tomorrow } = getIstDayBounds(now);
 
     const Aim = require("../models/Aim");
     const Progress = require("../models/Progress");

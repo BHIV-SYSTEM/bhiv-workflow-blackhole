@@ -43,8 +43,10 @@ let assignedAims = [];
 let appState = {
   isLoggedIn: false,
   isDayStarted: false,
+  dayEndedToday: false,
   user: null,
   startTime: null,
+  endTime: null,
   consentGiven: true
 };
 
@@ -178,11 +180,11 @@ function sendToRenderer(channel, payload) {
  * Start both collectors for an open workday. Kept in one place so attendance,
  * activity and screenshot capture can never drift out of sync.
  */
-async function beginTracking(attendanceId) {
+async function beginTracking(attendanceId, startTime = null, forceReset = false) {
   if (!attendanceId) return;
 
   if (activityTracker) {
-    activityTracker.start(attendanceId);
+    activityTracker.start(attendanceId, startTime, forceReset);
   }
 
   // Restore the task the employee had selected before the app restarted.
@@ -203,9 +205,9 @@ async function beginTracking(attendanceId) {
   refreshTasks().catch(() => {});
 }
 
-function endTracking() {
+async function endTracking() {
   if (activityTracker) {
-    activityTracker.stop();
+    await activityTracker.stop();
   }
   if (screenshotEngine) {
     screenshotEngine.stop();
@@ -298,14 +300,24 @@ ipcMain.handle('start-day', async () => {
     const result = await apiService.startDay();
     if (result.success) {
       appState.isDayStarted = true;
+      appState.dayEndedToday = false;
       appState.startTime = result.startTime || new Date().toISOString();
-      await beginTracking(result.attendanceId);
+      appState.endTime = null;
+      await beginTracking(result.attendanceId, appState.startTime, true);
       if (attendancePoller) {
         attendancePoller.currentStatus.dayStarted = true;
+        attendancePoller.currentStatus.dayEndedToday = false;
         attendancePoller.currentStatus.attendanceId = result.attendanceId || null;
         attendancePoller.currentStatus.startTime = appState.startTime;
+        attendancePoller.currentStatus.endTime = null;
       }
       updateTrayMenu();
+      sendToRenderer('day-status-changed', {
+        dayStarted: true,
+        dayEndedToday: false,
+        attendanceId: result.attendanceId || null,
+        startTime: appState.startTime
+      });
     }
     return result;
   } catch (error) {
@@ -317,18 +329,24 @@ ipcMain.handle('end-day', async () => {
   try {
     const result = await apiService.endDay();
     if (result.success) {
+      const endTimeIso = (result.data && result.data.endTime) || new Date().toISOString();
       appState.isDayStarted = false;
-      appState.startTime = null;
-      await Promise.resolve(endTracking());
+      appState.dayEndedToday = true;
+      appState.endTime = endTimeIso;
+      await endTracking();
       if (attendancePoller) {
         attendancePoller.currentStatus.dayStarted = false;
+        attendancePoller.currentStatus.dayEndedToday = true;
         attendancePoller.currentStatus.attendanceId = null;
-        attendancePoller.currentStatus.startTime = null;
+        attendancePoller.currentStatus.endTime = endTimeIso;
       }
       updateTrayMenu();
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('day-status-changed', { dayStarted: false });
-      }
+      sendToRenderer('day-status-changed', {
+        dayStarted: false,
+        dayEndedToday: true,
+        startTime: appState.startTime,
+        endTime: endTimeIso
+      });
     }
     return result;
   } catch (error) {
@@ -369,9 +387,9 @@ ipcMain.handle('get-app-state', async () => {
     try {
       const currentStatus = await attendancePoller.forceCheck();
       appState.isDayStarted = currentStatus.dayStarted;
-      if (currentStatus.startTime) {
-        appState.startTime = currentStatus.startTime;
-      }
+      appState.dayEndedToday = !!currentStatus.dayEndedToday;
+      appState.startTime = currentStatus.startTime || null;
+      appState.endTime = currentStatus.endTime || null;
       const tokenUser = apiService ? apiService.getUserFromToken() : null;
       const realName = currentStatus.userName || tokenUser?.name || appState.user?.name;
       const realEmail = currentStatus.userEmail || tokenUser?.email || appState.user?.email;
@@ -390,8 +408,10 @@ ipcMain.handle('get-app-state', async () => {
   return {
     isLoggedIn: appState.isLoggedIn,
     isDayStarted: appState.isDayStarted,
+    dayEndedToday: appState.dayEndedToday,
     user: appState.user,
     startTime: appState.startTime,
+    endTime: appState.endTime,
     consentGiven: appState.consentGiven
   };
 });
@@ -477,6 +497,8 @@ app.whenReady().then(async () => {
       const tokenUser = apiService.getUserFromToken();
       appState.isLoggedIn = true;
       appState.startTime = status.startTime || null;
+      appState.endTime = status.endTime || null;
+      appState.dayEndedToday = !!status.dayEndedToday;
       appState.user = {
         name: status.userName || tokenUser?.name || savedUser?.name || savedCredentials?.email?.split('@')[0] || 'Employee',
         email: status.userEmail || tokenUser?.email || savedUser?.email || savedCredentials?.email || ''
@@ -485,11 +507,23 @@ app.whenReady().then(async () => {
       console.log(`✓ Automatically restored session for: ${appState.user.name} (${appState.user.email})`);
 
       startAttendancePoller();
+      if (attendancePoller) {
+        attendancePoller.currentStatus = {
+          dayStarted: !!status.dayStarted,
+          dayEndedToday: !!status.dayEndedToday,
+          attendanceId: status.attendanceId || null,
+          startTime: status.startTime || null,
+          endTime: status.endTime || null,
+          workLocation: status.workLocation || null,
+          userName: appState.user.name,
+          userEmail: appState.user.email
+        };
+      }
 
       if (status.dayStarted) {
         console.log('🟢 Workday is active! Starting tracking automatically...');
         appState.isDayStarted = true;
-        await beginTracking(status.attendanceId);
+        await beginTracking(status.attendanceId, status.startTime, true);
       }
     } catch (err) {
       console.log('⚠️ Saved token expired, attempting automatic re-login...');
@@ -548,42 +582,61 @@ app.on('before-quit', () => {
 function startAttendancePoller() {
   if (!attendancePoller) {
     attendancePoller = new AttendanceStatusPoller(apiService);
-    
-    attendancePoller.on('day-started', (data) => {
+
+    const handleStartOrRestart = (data, forceReset) => {
       console.log('🟢 Workday started! Attendance ID:', data.attendanceId);
       appState.isDayStarted = true;
+      appState.dayEndedToday = false;
       appState.startTime = data.startTime || new Date().toISOString();
+      appState.endTime = null;
       if (data.userName) {
         appState.user = { ...(appState.user || {}), name: data.userName, email: data.userEmail || appState.user?.email };
       }
-      
-      beginTracking(data.attendanceId).catch((error) =>
+
+      beginTracking(data.attendanceId, appState.startTime, forceReset).catch((error) =>
         console.warn('Failed to start tracking:', error.message)
       );
-      
+
       updateTrayMenu();
-      
-      if (mainWindow) {
-        mainWindow.webContents.send('day-status-changed', { 
-          dayStarted: true,
-          startTime: appState.startTime,
-          user: appState.user
-        });
-      }
-    });
-    
-    attendancePoller.on('day-ended', () => {
+      sendToRenderer('day-status-changed', {
+        dayStarted: true,
+        dayEndedToday: false,
+        startTime: appState.startTime,
+        user: appState.user
+      });
+    };
+
+    attendancePoller.on('day-started', (data) => handleStartOrRestart(data, true));
+    attendancePoller.on('day-restarted', (data) => handleStartOrRestart(data, true));
+
+    attendancePoller.on('day-ended', async (data = {}) => {
       console.log('🔴 Workday ended! Stopping tracking...');
       appState.isDayStarted = false;
-      appState.startTime = null;
-      
-      endTracking();
-      
+      appState.dayEndedToday = Boolean(data.dayEndedToday ?? true);
+      appState.startTime = data.startTime || appState.startTime;
+      appState.endTime = data.endTime || new Date().toISOString();
+
+      await endTracking();
+
       updateTrayMenu();
-      
-      if (mainWindow) {
-        mainWindow.webContents.send('day-status-changed', { dayStarted: false });
-      }
+      sendToRenderer('day-status-changed', {
+        dayStarted: false,
+        dayEndedToday: appState.dayEndedToday,
+        startTime: appState.startTime,
+        endTime: appState.endTime
+      });
+    });
+
+    attendancePoller.on('status-refreshed', (data = {}) => {
+      appState.dayEndedToday = !!data.dayEndedToday;
+      appState.startTime = data.startTime || null;
+      appState.endTime = data.endTime || null;
+      sendToRenderer('day-status-changed', {
+        dayStarted: false,
+        dayEndedToday: appState.dayEndedToday,
+        startTime: appState.startTime,
+        endTime: appState.endTime
+      });
     });
   }
   

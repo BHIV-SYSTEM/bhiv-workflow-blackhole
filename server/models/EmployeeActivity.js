@@ -81,7 +81,8 @@ const employeeActivitySchema = new mongoose.Schema({
   metadata: {
     screen_resolution: String,
     os_info: String,
-    browser_info: String
+    browser_info: String,
+    source: String
   }
 }, {
   timestamps: true,
