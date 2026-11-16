@@ -244,6 +244,9 @@ jobs:
             set -euo pipefail
             cd ~/NIYANTRAN
             
+            echo "=== RECENT BACKEND CONTAINER LOGS ON DEPLOY FAILURE ==="
+            docker compose -f docker-compose.production.yml logs --tail=60 backend || true
+            
             # Robust parsing of Release History to extract the 7-character hexadecimal SHA column
             if [ -f docs/RELEASE_HISTORY.md ] && grep -qE "SUCCESS|ROLLBACK_SUCCESS" docs/RELEASE_HISTORY.md; then
               LAST_HEALTHY_TAG=$(grep -E "SUCCESS|ROLLBACK_SUCCESS" docs/RELEASE_HISTORY.md | tail -n 1 | awk -F '|' '{
