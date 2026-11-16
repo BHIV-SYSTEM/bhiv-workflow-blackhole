@@ -101,19 +101,21 @@ const defaultSeededContexts = [
         provenance: "bhiv-cybersecurity-main-sec09"
     },
     {
-        dataset_id: "ds-ctx-ishan",
+        dataset_id: "ds-ctx-ishan-shirode",
         product_id: "BHIV",
-        individual_id: "Ishan (Team Member)",
-        candidate_name: "Ishan (Team Member)",
-        employee_id: "BHIV-WEB-01",
-        department: "Web Development",
+        project_name: "bhiv-workflow-blackhole",
+        individual_id: "Ishan Shirode",
+        candidate_name: "Ishan Shirode",
+        employee_id: "BHIV78",
+        email: "blackholeinfiverse78@gmail.com",
+        department: "AI ML",
         dataset_type: "individual_context",
         source: "Department_Intelligence_Hub",
-        content: "Niyantran Full-Stack Integration. Real-time WebSocket compliance monitoring, atomic task scoping (180-360m), and department DAG synchronization.",
-        summary: "Niyantran full-stack architecture, real-time WebSocket state, and atomic task scoping (180-360 mins).",
-        ingestion_timestamp: "2026-11-14T09:00:00.000Z",
-        version: "v1.2",
-        provenance: "niyantran-web-dev-ishan"
+        content: "BHIV Core Engineering & System Integration. Lead architectural integration across Niyantran workflow governance, Parikshak autonomous review engine, and TRINETRA employee activity monitoring.\n1. Niyantran Workflow & Knowledge Hub: Real-time WebSocket compliance synchronization, role-aware administrative views, persistent context injection, and strict atomic task scoping (180–360 minutes / 1-day SLA).\n2. Parikshak Task Synthesis & Review Engine: Multi-department syllabus DAG validation, deterministic evaluation scoring, clear out-of-syllabus failure explanations, and RS256 cryptographic token security.\n3. TRINETRA & Employee Activity Agent: Desktop Electron monitoring resilience, zero-data-loss session tracking across polling glitches, screenshot capture pipelines, and live attendance synchronization.\nTarget deliverables: Zero-drift API contracts, automated CI/CD build integrity, and clean cross-pillar governance.",
+        summary: "BHIV Core Engineering & System Integration: Niyantran workflow governance, Parikshak autonomous review engine (180-360m atomic scoping), and TRINETRA monitoring.",
+        ingestion_timestamp: "2026-11-16T10:00:00.000Z",
+        version: "v1.3",
+        provenance: "niyantran-core-ishan-shirode"
     }
 ];
 
@@ -122,10 +124,35 @@ function loadStoredDatasets() {
         if (!fs.existsSync(STORAGE_DIR)) {
             fs.mkdirSync(STORAGE_DIR, { recursive: true });
         }
+        let stored = [];
         if (fs.existsSync(CONTEXT_STORE_FILE)) {
             const raw = fs.readFileSync(CONTEXT_STORE_FILE, 'utf-8');
             const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+            if (Array.isArray(parsed) && parsed.length > 0) {
+                stored = parsed;
+            }
+        }
+        // Ensure default seeded contexts are merged in if missing
+        defaultSeededContexts.forEach(def => {
+            const defEmail = (def.email || '').toLowerCase().trim();
+            const defEmp = (def.employee_id || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+            const defName = (def.candidate_name || def.individual_id || '').toLowerCase().trim();
+            const hasIt = stored.some(s => {
+                const sEmail = (s.email || '').toLowerCase().trim();
+                const sEmp = (s.employee_id || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+                const sName = (s.candidate_name || s.individual_id || '').toLowerCase().trim();
+                return (s.dataset_id && s.dataset_id === def.dataset_id) ||
+                       (defEmail && sEmail && defEmail === sEmail) ||
+                       (defEmp && sEmp && defEmp === sEmp) ||
+                       (defName && sName && defName === sName);
+            });
+            if (!hasIt) {
+                stored.push(def);
+            }
+        });
+        if (stored.length > 0) {
+            fs.writeFileSync(CONTEXT_STORE_FILE, JSON.stringify(stored, null, 2), 'utf-8');
+            return stored;
         }
         fs.writeFileSync(CONTEXT_STORE_FILE, JSON.stringify(defaultSeededContexts, null, 2), 'utf-8');
         return [...defaultSeededContexts];
@@ -453,6 +480,7 @@ router.get('/compliance', auth, async (req, res) => {
             { employeeId: "BHIV-LAW-01", name: "Advocate Sharma", email: "legal@blackhole.ai", role: "User", department: "Law", workMode: "WFO" },
             { employeeId: "BHIV-DRN-01", name: "Pooja Drone Tech", email: "drone@blackhole.ai", role: "User", department: "ISRO Drone", workMode: "WFO" },
             { employeeId: "BHIV-BLC-01", name: "Vajra Architect", email: "blockchain@blackhole.ai", role: "User", department: "Blockchain", workMode: "WFO" },
+            { employeeId: "BHIV78", name: "Ishan Shirode", email: "blackholeinfiverse78@gmail.com", role: "User", department: "AI ML", workMode: "WFO" },
             { employeeId: "BHIV20135", name: "i20135", email: "bhivi20135admin@gmail.com", role: "Admin", department: "Management", workMode: "WFO" }
         ];
 
@@ -482,17 +510,54 @@ router.get('/compliance', auth, async (req, res) => {
             }
         });
 
+        // Merge Parikshak datasets and local fallbackDatasets (local takes precedence or supplements)
+        const combinedDatasets = [...fallbackDatasets];
+        if (Array.isArray(datasets)) {
+            datasets.forEach(pds => {
+                const pEmail = (pds.email || '').toLowerCase().trim();
+                const pName = (pds.candidate_name || pds.individual_id || '').toLowerCase().trim();
+                const pEmp = (pds.employee_id || '').toUpperCase().trim();
+                const alreadyExists = combinedDatasets.some(fb => {
+                    const fbEmail = (fb.email || '').toLowerCase().trim();
+                    const fbName = (fb.candidate_name || fb.individual_id || '').toLowerCase().trim();
+                    const fbEmp = (fb.employee_id || '').toUpperCase().trim();
+                    return (pEmail && fbEmail && pEmail === fbEmail) ||
+                           (pEmp && fbEmp && pEmp === fbEmp) ||
+                           (pName && fbName && pName === fbName);
+                });
+                if (!alreadyExists) {
+                    combinedDatasets.push(pds);
+                }
+            });
+        }
+
         const userAudit = allUserCandidates.map(u => {
             const empId = u.employeeId || 'N/A';
             const nameLower = (u.name || '').toLowerCase().trim();
             const emailLower = (u.email || '').toLowerCase().trim();
-            const empIdUpper = empId.toUpperCase().trim();
+            const cleanEmpId = empId.toUpperCase().replace(/[^A-Z0-9]/g, '');
             
-            const matchedDataset = datasets.find(d => {
+            const matchedDataset = combinedDatasets.find(d => {
                 const dName = (d.candidate_name || d.individual_id || '').toLowerCase().trim();
                 const dEmail = (d.email || '').toLowerCase().trim();
-                const dEmp = (d.employee_id || '').toUpperCase().trim();
-                return (nameLower && dName === nameLower) || (emailLower && dEmail === emailLower) || (empIdUpper !== 'N/A' && dEmp === empIdUpper);
+                const cleanDEmp = (d.employee_id || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+                // 1. Exact Email Match
+                if (emailLower && dEmail && emailLower === dEmail) return true;
+
+                // 2. Alphanumeric Employee ID Match (e.g. BHIV78)
+                if (cleanEmpId && cleanEmpId !== 'NA' && cleanDEmp && cleanEmpId === cleanDEmp) return true;
+
+                // 3. Name Match (Exact, Substring, or First Name match)
+                if (nameLower && dName) {
+                    if (nameLower === dName) return true;
+                    if (nameLower.includes(dName) || dName.includes(nameLower)) return true;
+                    const f1 = nameLower.split(' ')[0];
+                    const f2 = dName.split(' ')[0];
+                    if (f1 && f1.length >= 3 && f1 === f2) return true;
+                }
+
+                return false;
             });
 
             return {
@@ -507,12 +572,13 @@ router.get('/compliance', auth, async (req, res) => {
                 workMode: u.workMode || 'WFO',
                 injectedContext: matchedDataset ? {
                     dataset_id: matchedDataset.dataset_id,
-                    summary: matchedDataset.summary || matchedDataset.extracted_summary || (typeof matchedDataset.content === 'string' ? matchedDataset.content.substring(0, 300) : ''),
-                    content: matchedDataset.content,
+                    summary: matchedDataset.summary || (typeof matchedDataset.content === 'string' ? matchedDataset.content.substring(0, 300) : ''),
+                    content: matchedDataset.content || matchedDataset.summary || '', // Full untruncated content
                     version: matchedDataset.version || 'v1.0',
                     source: matchedDataset.source || 'Knowledge Ingest',
                     ingestion_timestamp: matchedDataset.ingestion_timestamp,
-                    product_id: matchedDataset.product_id || u.department || 'BHIV'
+                    product_id: matchedDataset.product_id || matchedDataset.project_name || u.department || 'BHIV',
+                    project_name: matchedDataset.project_name || matchedDataset.product_id || u.department || 'BHIV'
                 } : null
             };
         });
@@ -554,66 +620,99 @@ router.get('/compliance', auth, async (req, res) => {
  */
 router.post('/quick-ingest', auth, async (req, res) => {
     try {
-        const { candidateName, employeeId, department, contextText, productId } = req.body;
-        if (!candidateName || !contextText) {
-            return res.status(400).json({ detail: "candidateName and contextText are required." });
+        const { candidateName, employeeId, email, department, contextText, productId, projectName } = req.body;
+        if (!contextText || !contextText.trim()) {
+            return res.status(400).json({ detail: "contextText is required." });
         }
 
-        const payload = {
-            candidate_name: candidateName,
-            employee_id: employeeId || '',
-            department: department || 'AI ML',
-            context_text: contextText,
-            product_id: productId || department || 'BHIV',
-            source: 'Department_Intelligence_Hub'
+        const resolvedName = (candidateName || req.user?.name || 'Current Employee').trim();
+        const resolvedEmail = (email || req.user?.email || '').toLowerCase().trim();
+        const resolvedEmpId = (employeeId || req.user?.employeeId || '').toUpperCase().trim();
+        const resolvedDept = department || req.user?.department?.name || req.user?.department || 'AI ML';
+        const resolvedProject = (projectName || productId || resolvedDept || 'BHIV').trim();
+        const nowIso = new Date().toISOString();
+
+        const record = {
+            dataset_id: `ds-ctx-${Date.now()}`,
+            product_id: resolvedProject.toUpperCase(),
+            project_name: resolvedProject,
+            individual_id: resolvedName,
+            candidate_name: resolvedName,
+            employee_id: resolvedEmpId,
+            email: resolvedEmail,
+            department: resolvedDept,
+            dataset_type: 'individual_context',
+            source: 'Department_Intelligence_Hub',
+            content: contextText.trim(), // Full untruncated content
+            summary: contextText.trim().length > 300 ? contextText.trim().substring(0, 300) + '...' : contextText.trim(),
+            ingestion_timestamp: nowIso,
+            version: 'v1.0'
         };
 
+        // Always update or insert in local persistent store
+        const cleanEmp = resolvedEmpId.replace(/[^A-Z0-9]/g, '');
+        const existingIdx = fallbackDatasets.findIndex(d => {
+            const dEmail = (d.email || '').toLowerCase().trim();
+            const dEmp = (d.employee_id || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+            const dName = (d.candidate_name || d.individual_id || '').toLowerCase().trim();
+            return (resolvedEmail && dEmail && resolvedEmail === dEmail) ||
+                   (cleanEmp && cleanEmp !== 'NA' && dEmp && cleanEmp === dEmp) ||
+                   (dName && dName === resolvedName.toLowerCase());
+        });
+
+        if (existingIdx >= 0) {
+            fallbackDatasets[existingIdx] = { ...fallbackDatasets[existingIdx], ...record };
+        } else {
+            fallbackDatasets.unshift(record);
+        }
+        persistStoredDatasets(fallbackDatasets);
+
+        // Forward to Parikshak if available
         let responseData = null;
         try {
-            const resp = await axios.post(`${PARIKSHAK_URL}/api/v1/knowledge/quick-ingest`, payload, getAxiosConfig());
+            const parikshakPayload = {
+                candidate_name: resolvedName,
+                employee_id: resolvedEmpId,
+                email: resolvedEmail,
+                department: resolvedDept,
+                context_text: contextText.trim(),
+                product_id: resolvedProject.toUpperCase(),
+                project_name: resolvedProject,
+                source: 'Department_Intelligence_Hub'
+            };
+            const resp = await axios.post(`${PARIKSHAK_URL}/api/v1/knowledge/quick-ingest`, parikshakPayload, getAxiosConfig());
             if (resp.status < 400) {
                 responseData = resp.data;
             }
         } catch (apiErr) {
-            console.warn("[QUICK_INGEST] Parikshak API unavailable, saving to fallback store:", apiErr.message);
+            console.warn("[QUICK_INGEST] Parikshak API notice:", apiErr.message);
         }
 
-        if (!responseData) {
-            const nowIso = new Date().toISOString();
-            const record = {
-                dataset_id: `ds-ctx-${Date.now()}`,
-                product_id: (payload.product_id).toUpperCase(),
-                individual_id: candidateName,
-                candidate_name: candidateName,
-                employee_id: employeeId,
-                department: department,
-                dataset_type: 'individual_context',
-                source: 'Department_Intelligence_Hub',
-                content: contextText,
-                summary: contextText.substring(0, 300),
-                ingestion_timestamp: nowIso
-            };
-            fallbackDatasets.unshift(record);
-            persistStoredDatasets(fallbackDatasets);
-            responseData = {
-                status: "SUCCESS",
-                message: "Context saved in fallback mode.",
-                candidate_name: candidateName,
-                ingestion_timestamp: nowIso
-            };
-        }
+        const finalResponse = {
+            status: "SUCCESS",
+            message: "Context successfully injected and synced in real-time.",
+            candidate_name: resolvedName,
+            employee_id: resolvedEmpId,
+            email: resolvedEmail,
+            project_name: resolvedProject,
+            ingestion_timestamp: nowIso,
+            injectedContext: record
+        };
 
         // Live Real-Time WebSockets Broadcast!
         if (req.io) {
             req.io.emit('knowledge:sync', {
-                candidateName,
-                employeeId,
-                department,
-                timestamp: new Date().toISOString()
+                candidateName: resolvedName,
+                employeeId: resolvedEmpId,
+                email: resolvedEmail,
+                department: resolvedDept,
+                projectName: resolvedProject,
+                injectedContext: record,
+                timestamp: nowIso
             });
         }
 
-        return res.json(responseData);
+        return res.json(finalResponse);
     } catch (err) {
         console.error("Error in /api/knowledge/quick-ingest:", err);
         return res.status(500).json({ detail: err.message });
