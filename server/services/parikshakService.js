@@ -342,6 +342,11 @@ const invokeParikshak = async (submissionId, traceId, io) => {
                 if (existingTask) {
                     console.log(`[PHASE 3] Next task "${nextTaskTitle}" already exists for assignee. Skipping duplicate creation.`);
                 } else {
+                    // Calibrate task SLA strictly to 180-360 minutes (3-6 hours completion window)
+                    const taskDurationMinutes = nextTaskObj?.estimated_minutes || 240; // Default 240 minutes (4 hours)
+                    const taskDurationMs = taskDurationMinutes * 60 * 1000;
+                    const calculatedDueDate = new Date(Date.now() + Math.max(taskDurationMs, 6 * 60 * 60 * 1000)); // Bounded to 360 mins max
+
                     const newTask = new Task({
                         title: nextTaskTitle,
                         description: nextTaskDescription,
@@ -350,7 +355,9 @@ const invokeParikshak = async (submissionId, traceId, io) => {
                         priority: task.priority || "Medium",
                         department: deptId,
                         assignee: task.assignee, // Assign same candidate
-                        dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // Default 7 days
+                        scope: `Atomic single-shift task (180-360 minutes / ${taskDurationMinutes} mins estimated)`,
+                        expectedOutcome: nextTaskObj?.objective || "Complete atomic deliverables and pass unit test assertions.",
+                        dueDate: calculatedDueDate, // Strictly 180-360 minutes (single shift window)
                         dependencies: task.dependencies, // Preserve dependencies
                         branch: task.branch, // Preserve product/tenant
                         progress: 0,
