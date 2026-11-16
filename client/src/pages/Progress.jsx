@@ -413,8 +413,12 @@ function Progress() {
         setTasks(filteredTasks);
   
         if (filteredTasks.length > 0) {
-          const prevId = selectedTaskIdRef.current;
-          const taskToSelect = (prevId && filteredTasks.find(t => t._id === prevId)) || filteredTasks[0];
+          const urlParams = new URLSearchParams(window.location.search);
+          const queryTaskId = urlParams.get("taskId");
+          const prevId = selectedTaskIdRef.current || queryTaskId;
+          const taskToSelect = (queryTaskId && filteredTasks.find(t => t._id === queryTaskId || t.task_id === queryTaskId))
+            || (prevId && filteredTasks.find(t => t._id === prevId))
+            || filteredTasks[0];
           selectedTaskIdRef.current = taskToSelect._id;
           setSelectedTask(taskToSelect);
           setProgressValue(taskToSelect.progress || 0);
@@ -583,28 +587,45 @@ function Progress() {
         selectedTaskIdRef.current = targetTaskId;
       }
 
-      // Create FormData for multipart/form-data submission
-      const formData = new FormData();
-      formData.append('user', userId);
-      formData.append('task', targetTaskId);
-      formData.append('progressPercentage', progressValue);
-      formData.append('notes', notes || (selectedTask._id === "whatsapp_task" ? whatsappTitle : ""));
-      formData.append('blockers', blockers);
-      formData.append('achievements', achievements);
-      formData.append('date', new Date().toISOString());
+      if (selectedImages && selectedImages.length > 0) {
+        // Create FormData for multipart/form-data submission with images
+        const formData = new FormData();
+        formData.append('user', userId);
+        formData.append('task', targetTaskId);
+        formData.append('progressPercentage', progressValue);
+        formData.append('notes', notes || (selectedTask._id === "whatsapp_task" ? whatsappTitle : ""));
+        formData.append('blockers', blockers || "");
+        formData.append('achievements', achievements || "");
+        formData.append('date', new Date().toISOString());
 
-      // Append images
-      selectedImages.forEach((image) => {
-        formData.append('progressImages', image);
-      });
+        // Append images
+        selectedImages.forEach((image) => {
+          formData.append('progressImages', image);
+        });
 
-      // Send with axios to handle FormData properly
-      await axios.post(`${API_URL}/progress`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-          'x-auth-token': token
-        }
-      });
+        // Send with axios WITHOUT manually setting Content-Type so boundary is preserved!
+        await axios.post(`${API_URL}/progress`, formData, {
+          headers: {
+            'x-auth-token': token
+          }
+        });
+      } else {
+        // Clean JSON payload when no images are attached
+        await axios.post(`${API_URL}/progress`, {
+          user: userId,
+          task: targetTaskId,
+          progressPercentage: progressValue,
+          notes: notes || (selectedTask._id === "whatsapp_task" ? whatsappTitle : ""),
+          blockers: blockers || "",
+          achievements: achievements || "",
+          date: new Date().toISOString()
+        }, {
+          headers: {
+            'Content-Type': 'application/json',
+            'x-auth-token': token
+          }
+        });
+      }
       
       // Update the task in the local state
       setTasks(prevTasks => prevTasks.map(task => 
@@ -638,7 +659,10 @@ function Progress() {
       toast.success(`Progress updated successfully${selectedImages.length > 0 ? ` with ${selectedImages.length} image(s)` : ''}`);
     } catch (error) {
       console.error("Error updating progress:", error);
-      const msg = error.response?.data?.error || error.response?.data?.message || "Failed to update progress";
+      const msg = error.response?.data?.error 
+        || (error.response?.data?.errors && error.response.data.errors[0]?.msg)
+        || error.response?.data?.message 
+        || "Failed to update progress";
       toast.error(msg);
     } finally {
       setIsSubmitting(false);

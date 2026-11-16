@@ -201,7 +201,14 @@ router.get("/all", auth, async (req, res) => {
 router.post(
   "/",
   auth,
-  upload.array('progressImages', 10), // Accept up to 10 images
+  (req, res, next) => {
+    upload.array('progressImages', 10)(req, res, (err) => {
+      if (err) {
+        console.warn("Multer warning on progress upload:", err.message);
+      }
+      next();
+    });
+  },
   [
     check("task", "Task ID is required").not().isEmpty(),
     check("progressPercentage", "Progress percentage is required").isNumeric(),
@@ -209,14 +216,15 @@ router.post(
   async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: errors.array(), error: errors.array()[0]?.msg });
     }
 
     try {
       const { user, task, progressPercentage, notes, blockers, achievements, date } = req.body;
+      const targetUserId = (user && user !== "undefined" && user !== "null") ? user : (req.user?.id || req.user?._id);
 
       // Check if user is active
-      const userDoc = await User.findById(user);
+      const userDoc = await User.findById(targetUserId);
       if (!userDoc || userDoc.stillExist === 0) {
         return res.status(404).json({ error: "User not found or no longer active" });
       }
@@ -230,13 +238,13 @@ router.post(
       // Upload images to Cloudinary if provided
       const uploadedImages = [];
       if (req.files && req.files.length > 0) {
-        console.log(`📸 Uploading ${req.files.length} progress images for user ${user}`);
+        console.log(`📸 Uploading ${req.files.length} progress images for user ${targetUserId}`);
         
         for (const file of req.files) {
           try {
             const imageData = await uploadProgressImage(
               file.buffer, 
-              user, 
+              targetUserId, 
               { taskId: task }
             );
             uploadedImages.push({
@@ -256,11 +264,11 @@ router.post(
       // Create new progress
       const newProgress = new Progress({
         task,
-        user,
-        progressPercentage,
-        notes,
-        blockers,
-        achievements,
+        user: targetUserId,
+        progressPercentage: Number(progressPercentage) || 0,
+        notes: notes || '',
+        blockers: blockers || '',
+        achievements: achievements || '',
         progressImages: uploadedImages,
         date: date || new Date(),
       });
@@ -277,7 +285,7 @@ router.post(
       tomorrow.setDate(tomorrow.getDate() + 1);
 
       let todayAim = await Aim.findOne({
-        user: user,
+        user: targetUserId,
         date: {
           $gte: today,
           $lt: tomorrow
@@ -296,11 +304,11 @@ router.post(
         }
         await todayAim.save();
 
-        console.log(`📊 Updated aim progress for user ${user}: ${progressPercentage}%`);
+        console.log(`📊 Updated aim progress for user ${targetUserId}: ${progressPercentage}%`);
       } else {
         // Auto-create Today's Aim so Aim record is synchronized
         todayAim = new Aim({
-          user: user,
+          user: targetUserId,
           department: userDoc.department || taskDoc.department,
           aims: taskDoc.title || notes || "Daily Task Execution",
           completionStatus: progressPercentage >= 100 ? 'Completed' : 'Pending',
@@ -312,27 +320,26 @@ router.post(
           date: new Date()
         });
         await todayAim.save();
-        console.log(`📊 Auto-created Today's Aim for user ${user} from progress update`);
+        console.log(`📊 Auto-created Today's Aim for user ${targetUserId} from progress update`);
       }
 
       // Notify via Socket.IO
       if (req.io) {
         req.io.to(`task-${task}`).emit("progress-update", {
           task,
-          progress: progressPercentage,
-          user
+          progress: Number(progressPercentage) || 0,
+          user: targetUserId
         });
 
-        if (taskStatusChanged) {
-          req.io.emit("task-updated", taskDoc);
-          req.io.emit("task:updated", taskDoc);
-        }
+        // Always broadcast task updates so MyTasks and Dashboard update their progress bars in real-time
+        req.io.emit("task-updated", taskDoc);
+        req.io.emit("task:updated", taskDoc);
 
         // Emit aim update if aim was updated
         if (todayAim) {
           req.io.emit("aim-updated", {
             aim: todayAim,
-            user: { id: user }
+            user: { id: targetUserId }
           });
         }
       }

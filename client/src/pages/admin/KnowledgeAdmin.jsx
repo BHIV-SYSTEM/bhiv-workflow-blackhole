@@ -21,7 +21,8 @@ import {
     DialogContent,
     DialogDescription,
     DialogHeader,
-    DialogTitle
+    DialogTitle,
+    DialogFooter
 } from '@/components/ui/dialog';
 
 // Standardized Sample Knowledge Templates for Parikshak Grounding
@@ -355,9 +356,9 @@ const KnowledgeAdmin = () => {
 
         setComplianceData(prev => {
             const prevUsers = prev.users || [];
-            const userEmail = (currentMember.email || '').toLowerCase().trim();
-            const userEmp = (currentMember.employeeId || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-            const userName = (currentMember.name || '').toLowerCase().trim();
+            const userEmail = (currentMember?.email || '').toLowerCase().trim();
+            const userEmp = (currentMember?.employeeId || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+            const userName = (currentMember?.name || '').toLowerCase().trim();
 
             const isMatch = (u) => {
                 const uEmail = (u.email || '').toLowerCase().trim();
@@ -386,10 +387,10 @@ const KnowledgeAdmin = () => {
 
         try {
             const payload = {
-                candidateName: currentMember.name,
-                employeeId: currentMember.employeeId || '',
-                email: currentMember.email || '',
-                department: currentMember.department || 'AI ML',
+                candidateName: currentMember?.name || 'Ishan Shirode',
+                employeeId: currentMember?.employeeId || 'BHIV78',
+                email: currentMember?.email || 'blackholeinfiverse78@gmail.com',
+                department: currentMember?.department || 'AI ML',
                 contextText: inlineContextText.trim(),
                 productId: effectiveProject.toUpperCase(),
                 projectName: effectiveProject
@@ -609,26 +610,26 @@ const KnowledgeAdmin = () => {
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                 <div className="flex items-center gap-4">
                                     <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/30 flex items-center justify-center text-primary font-black text-xl shadow-inner">
-                                        {(currentMember.name || 'U').substring(0, 2).toUpperCase()}
+                                        {(currentMember?.name || 'U').substring(0, 2).toUpperCase()}
                                     </div>
                                     <div>
                                         <div className="flex items-center gap-2 flex-wrap">
-                                            <h2 className="text-xl font-black text-foreground">{currentMember.name}</h2>
+                                            <h2 className="text-xl font-black text-foreground">{currentMember?.name || 'User'}</h2>
                                             <Badge variant="secondary" className="font-mono text-xs">
-                                                {currentMember.employeeId || 'BHIV-USR'}
+                                                {currentMember?.employeeId || 'BHIV-USR'}
                                             </Badge>
                                             <Badge className="bg-primary/10 text-primary border-primary/20 text-xs">
-                                                {currentMember.department || 'AI ML'}
+                                                {currentMember?.department || 'AI ML'}
                                             </Badge>
                                         </div>
                                         <p className="text-xs text-muted-foreground mt-0.5">
-                                            {currentMember.email || 'employee@blackhole.ai'} • Role: {currentMember.role || 'User'} • Mode: {currentMember.workMode || 'WFO'}
+                                            {currentMember?.email || 'employee@blackhole.ai'} • Role: {currentMember?.role || 'User'} • Mode: {currentMember?.workMode || 'WFO'}
                                         </p>
                                     </div>
                                 </div>
 
                                 <div className="flex items-center gap-2 self-stretch sm:self-auto justify-end">
-                                    {currentMember.hasContext ? (
+                                    {currentMember?.hasContext ? (
                                         <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/30 px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5">
                                             <CheckCircle2 className="w-4 h-4" />
                                             Parikshak Context Active & Grounded
@@ -657,13 +658,13 @@ const KnowledgeAdmin = () => {
                                         Authoritative specification used by Parikshak to evaluate submissions, calibrate review rubrics, and eliminate "out_of_syllabus" false flags.
                                     </CardDescription>
                                 </div>
-                                {currentMember.hasContext && (
+                                {currentMember?.hasContext && (
                                     <div className="flex items-center gap-2">
                                         <Badge variant="outline" className="text-[11px] font-mono border-primary/30 text-primary">
-                                            Project: {currentMember.injectedContext?.project_name || currentMember.injectedContext?.product_id || 'BHIV'}
+                                            Project: {currentMember?.injectedContext?.project_name || currentMember?.injectedContext?.product_id || 'BHIV'}
                                         </Badge>
                                         <Badge variant="outline" className="text-[11px] font-mono border-muted text-muted-foreground">
-                                            v{currentMember.injectedContext?.version || '1.0'}
+                                            v{currentMember?.injectedContext?.version || '1.0'}
                                         </Badge>
                                     </div>
                                 )}
@@ -673,7 +674,7 @@ const KnowledgeAdmin = () => {
                         <CardContent className="p-5 sm:p-6 space-y-4">
                             
                             {/* IF HAS CONTEXT: SHOW FULL UNABRIDGED CONTENT */}
-                            {currentMember.hasContext && currentMember.injectedContext ? (
+                            {currentMember?.hasContext && currentMember?.injectedContext ? (
                                 <div className="space-y-4">
                                     <div className="p-4 sm:p-5 rounded-xl bg-muted/40 border border-border space-y-3">
                                         <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
@@ -743,12 +744,12 @@ const KnowledgeAdmin = () => {
                             )}
 
                             {/* INGEST / REVISE FORM (Visible when no context OR when Revise clicked) */}
-                            {(!currentMember.hasContext || showEditForm) && (
+                            {(!currentMember?.hasContext || showEditForm) && (
                                 <form onSubmit={handleSaveInlineContext} className="space-y-4 bg-muted/20 p-5 rounded-xl border border-border mt-4">
                                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/60 pb-3">
                                         <Label className="text-xs font-bold text-foreground flex items-center gap-1.5">
                                             <Edit3 className="w-3.5 h-3.5 text-primary" />
-                                            {currentMember.hasContext ? 'Revise Your Grounding Specification:' : 'Paste Your ChatGPT / Build Specification Context:'}
+                                            {currentMember?.hasContext ? 'Revise Your Grounding Specification:' : 'Paste Your ChatGPT / Build Specification Context:'}
                                         </Label>
                                         
                                         {/* LOAD SAMPLE CONTEXT BUTTON */}
@@ -822,7 +823,7 @@ const KnowledgeAdmin = () => {
                                     </div>
 
                                     <div className="flex items-center justify-end gap-2 pt-1">
-                                        {currentMember.hasContext && (
+                                        {currentMember?.hasContext && (
                                             <Button type="button" variant="ghost" size="sm" onClick={() => setShowEditForm(false)} className="text-xs">
                                                 Cancel
                                             </Button>
@@ -856,7 +857,7 @@ const KnowledgeAdmin = () => {
                                         Department Task Progression & Curriculum DAG
                                     </CardTitle>
                                     <CardDescription className="text-xs">
-                                        Active syllabus for <strong>{currentMember.department || 'AI ML'}</strong>. All task blueprints are bounded to 180-360 mins.
+                                        Active syllabus for <strong>{currentMember?.department || 'AI ML'}</strong>. All task blueprints are bounded to 180-360 mins.
                                     </CardDescription>
                                 </div>
                                 <Badge variant="outline" className="text-[11px] font-mono text-cyan-400 border-cyan-500/30 self-start sm:self-auto">

@@ -590,6 +590,7 @@ import {
   MessageSquare,
   Check,
   XCircle,
+  TrendingUp,
 } from "lucide-react"
 import { Button } from "../components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../components/ui/card"
@@ -1496,6 +1497,19 @@ function TaskDetails() {
                 </div>
                 <Progress value={task.progress} className="h-2" />
               </div>
+
+              {isAssignedToCurrentUser && (
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  onClick={() => navigate(`/progress?taskId=${task._id}`)}
+                  className="w-full text-xs font-semibold gap-1.5 border-cyan-500/40 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-500/10"
+                >
+                  <TrendingUp className="h-3.5 w-3.5" />
+                  Update Daily Progress Report
+                </Button>
+              )}
+
               <div className="space-y-2 text-sm">
                 <div className="flex items-center gap-2">
                   <Calendar className="h-4 w-4 text-muted-foreground" />

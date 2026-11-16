@@ -30,6 +30,7 @@ import {
   PlayCircle,
   AlertTriangle,
   MessageSquare,
+  TrendingUp,
 } from "lucide-react"
 import { useToast } from "../hooks/use-toast"
 import { useAuth } from "../context/auth-context"
@@ -723,6 +724,15 @@ function MyTasks() {
                               >
                                 <CheckSquare className="h-3.5 w-3.5" />
                                 {submission?.status === "Rejected" ? "Resubmit Work" : "Submit Work"}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="flex-1 lg:w-full h-9 rounded-xl font-semibold border-cyan-500/40 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-500/10 text-xs gap-1.5"
+                                onClick={() => navigate(`/progress?taskId=${task._id}`)}
+                              >
+                                <TrendingUp className="h-3.5 w-3.5" />
+                                Update Daily Progress
                               </Button>
                               <Button
                                 size="sm"
