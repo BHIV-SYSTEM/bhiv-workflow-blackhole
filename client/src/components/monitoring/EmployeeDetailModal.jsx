@@ -135,8 +135,8 @@ export function EmployeeDetailModal({ employee, onClose }) {
 
       let efficiency = employee.stillExist === 0 ? 'Exited' : 'No Telemetry Today';
       if (logCount > 0 || hasEmployeeSession) {
-        if (avgProd >= 60) efficiency = 'High Efficiency';
-        else if (avgProd >= 40) efficiency = 'Moderate Efficiency';
+        if (avgProd >= 50) efficiency = 'High Efficiency';
+        else if (avgProd >= 30) efficiency = 'Moderate Efficiency';
         else efficiency = 'Low Efficiency';
       }
 
@@ -145,14 +145,30 @@ export function EmployeeDetailModal({ employee, onClose }) {
         : `${Math.floor(calculatedActiveSec / 3600)}h ${Math.floor((calculatedActiveSec % 3600) / 60)}m`;
       const calculatedIdleTime = `${Math.floor(totalIdleSec / 60)}m`;
 
-      const finalActiveHours = backendSummary ? backendSummary.activeHours : ((logCount > 0 || hasEmployeeSession) ? calculatedActiveHours : '0h 0m');
-      const finalIdleTime = backendSummary ? backendSummary.idleTime : (logCount > 0 ? calculatedIdleTime : '0m');
-      const finalKeystrokes = backendSummary ? backendSummary.totalKeystrokes : (logCount > 0 ? totalKeystrokes : 0);
-      const finalMouse = backendSummary ? backendSummary.mouseActivity : (logCount > 0 ? avgMouse : 0);
-      const finalProd = backendSummary ? backendSummary.productivityScore : avgProd;
+      const summaryActiveSec = backendSummary?.activeSeconds ?? calculatedActiveSec;
+      const summaryIdleSec = backendSummary?.totalIdleSeconds ?? totalIdleSec;
+      const finalActiveHours =
+        backendSummary?.activeHours ??
+        (backendSummary
+          ? `${Math.floor(summaryActiveSec / 3600)}h ${Math.floor((summaryActiveSec % 3600) / 60)}m`
+          : ((logCount > 0 || hasEmployeeSession) ? calculatedActiveHours : '0h 0m'));
+      const finalIdleTime =
+        backendSummary?.idleTime ??
+        (backendSummary
+          ? `${Math.floor(summaryIdleSec / 60)}m`
+          : (logCount > 0 ? calculatedIdleTime : '0m'));
+      const finalKeystrokes = Number(
+        backendSummary?.totalKeystrokes ?? (logCount > 0 ? totalKeystrokes : 0)
+      );
+      const finalMouse = Number(
+        backendSummary?.mouseActivity ?? backendSummary?.avgMouseActivity ?? (logCount > 0 ? avgMouse : 0)
+      );
+      const finalProd = Number(
+        backendSummary?.productivityScore ?? backendSummary?.avgProductivityScore ?? avgProd
+      );
       const finalEfficiency = employee.stillExist === 0
         ? 'Exited'
-        : (backendSummary ? backendSummary.productivityEfficiency : efficiency);
+        : (backendSummary?.productivityEfficiency || efficiency);
 
       const latest = dayLogs[0];
       const lastActiveDate = response.data.lastActiveTimestamp

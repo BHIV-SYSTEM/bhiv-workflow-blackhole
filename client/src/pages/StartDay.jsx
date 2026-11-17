@@ -275,18 +275,24 @@ const StartDay = () => {
 
     // Refresh data
     await fetchTodayStatus();
-    
-    // Refresh the entire page after successful start day
-    setTimeout(() => {
-      window.location.reload();
-    }, 2000); // 2 second delay to show success message
+
+    if (data?.aimReminder) {
+      toast('🎯 Reminder: Your day started! Please set your Aim for today in the Set Aims tab.', {
+        duration: 6000,
+      });
+    } else {
+      // Refresh the entire page after successful start day
+      setTimeout(() => {
+        window.location.reload();
+      }, 2000);
+    }
   };
 
   const handleEndDay = async () => {
     try {
       setActionLoading(true);
       
-      // Check if user has set progress for today
+      // Check if user has set progress for today (non-blocking soft reminder only)
       const hasProgressContent = todayProgress && (
         (todayProgress.notes && todayProgress.notes.trim() !== '') ||
         (todayProgress.achievements && todayProgress.achievements.trim() !== '') ||
@@ -294,47 +300,14 @@ const StartDay = () => {
       );
       
       if (!hasProgressContent) {
-        toast.error('❌ Please set your progress for today before ending your day!', {
-          duration: 4000,
-          style: {
-            background: '#fee2e2',
-            color: '#dc2626',
-            border: '1px solid #fecaca',
-          },
-        });
-        setProgressDialog(true);
-        setActionLoading(false);
-        return;
-      }
-      
-      // Check if user has completed their daily aim
-      if (!todayAim || !todayAim.completionStatus || todayAim.completionStatus === 'Pending') {
-        toast.error('🎯 Please complete your daily aim before ending your day!', {
-          duration: 4000,
+        toast("⚠️ Reminder: Today's daily progress was not updated. You will be asked for a reason at tomorrow's Start Day.", {
+          duration: 6000,
           style: {
             background: '#fef3c7',
             color: '#92400e',
             border: '1px solid #fde68a',
           },
         });
-        setAimCompletionDialog(true);
-        setActionLoading(false);
-        return;
-      }
-      
-      if ((todayAim.completionStatus === 'Completed' || todayAim.completionStatus === 'MVP Achieved') && 
-          (!todayAim.completionComment || todayAim.completionComment.trim() === '')) {
-        toast.error('💬 Please add a completion comment for your aim!', {
-          duration: 4000,
-          style: {
-            background: '#fef3c7',
-            color: '#92400e',
-            border: '1px solid #fde68a',
-          },
-        });
-        setAimCompletionDialog(true);
-        setActionLoading(false);
-        return;
       }
       
       // Get current location (optional for end day)
@@ -972,6 +945,7 @@ const StartDay = () => {
       <EnhancedStartDayDialog
         isOpen={startDayDialog}
         onClose={() => setStartDayDialog(false)}
+        onSuccess={onStartDaySuccess}
         onStartDay={onStartDaySuccess}
         user={user}
       />

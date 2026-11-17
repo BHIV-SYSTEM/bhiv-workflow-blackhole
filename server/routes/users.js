@@ -334,9 +334,9 @@ router.get("/:id/daily-summary", auth, async (req, res) => {
     }
 
     let efficiencyLabel = 'No Activity';
-    if (efficiencyScore >= 75) {
+    if (efficiencyScore >= 50) {
       efficiencyLabel = 'High Efficiency';
-    } else if (efficiencyScore >= 45) {
+    } else if (efficiencyScore >= 30) {
       efficiencyLabel = 'Moderate Efficiency';
     } else if (effectiveActiveSeconds > 0) {
       efficiencyLabel = 'Low Efficiency';

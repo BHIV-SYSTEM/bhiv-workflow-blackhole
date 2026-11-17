@@ -388,35 +388,28 @@ function setupEventListeners() {
   const startDayBtn = document.getElementById('startDayBtn');
   if (startDayBtn) {
     startDayBtn.addEventListener('click', async () => {
-      hideDashboardAlert();
-      startDayBtn.disabled = true;
-      const originalHtml = startDayBtn.innerHTML;
-      startDayBtn.textContent = 'Starting Day...';
+      await handleStartDayClick();
+    });
+  }
 
-      const result = await window.electronAPI.startDay();
-
-      if (result.success) {
-        dailySummaryState.baseActiveSeconds = 0;
-        dailySummaryState.syncedAtMs = Date.now();
-        dailySummaryState.latestSummary = null;
-        const mouseCountEl = document.getElementById('mouseCount');
-        const keyCountEl = document.getElementById('keyCount');
-        if (mouseCountEl) mouseCountEl.textContent = '0';
-        if (keyCountEl) keyCountEl.textContent = '0';
-
-        const appState = await window.electronAPI.getAppState();
-        currentAppState = appState || currentAppState;
-        updateDashboard(appState);
-        await refreshDailySummary();
-        startStatsUpdate();
-        await loadTasks();
-        showDashboardAlert('success', 'Work day started! Activity tracking is now active.');
-      } else {
-        showDashboardAlert('error', result.error || 'Failed to start work day.');
+  const submitPrevReasonStartBtn = document.getElementById('submitPrevReasonStartBtn');
+  if (submitPrevReasonStartBtn) {
+    submitPrevReasonStartBtn.addEventListener('click', async () => {
+      const inputEl = document.getElementById('prevProgressReasonInput');
+      const reason = inputEl?.value?.trim() || '';
+      const minLen = Number(submitPrevReasonStartBtn.dataset.minLength || 10);
+      if (reason.length < minLen) {
+        showDashboardAlert('error', `Please enter at least ${minLen} characters explaining why yesterday's progress was not updated.`);
+        return;
       }
+      await handleStartDayClick(reason);
+    });
+  }
 
-      startDayBtn.disabled = false;
-      startDayBtn.innerHTML = originalHtml;
+  const cancelPrevReasonBtn = document.getElementById('cancelPrevReasonBtn');
+  if (cancelPrevReasonBtn) {
+    cancelPrevReasonBtn.addEventListener('click', () => {
+      hidePrevProgressReasonCard();
     });
   }
 
@@ -477,8 +470,88 @@ function setupEventListeners() {
   }
 }
 
+function hidePrevProgressReasonCard() {
+  const card = document.getElementById('prevProgressReasonCard');
+  if (card) card.classList.remove('visible');
+}
+
+function openPrevProgressReasonCard({ previousDateLabel, minLength = 10, error }) {
+  const card = document.getElementById('prevProgressReasonCard');
+  const desc = document.getElementById('prevProgressReasonDesc');
+  const input = document.getElementById('prevProgressReasonInput');
+  const submitBtn = document.getElementById('submitPrevReasonStartBtn');
+  if (!card) return;
+  if (desc) {
+    desc.textContent =
+      error ||
+      `Why was the previous day's progress (${previousDateLabel || 'yesterday'}) not updated? Minimum ${minLength} characters required.`;
+  }
+  if (submitBtn) submitBtn.dataset.minLength = String(minLength);
+  card.classList.add('visible');
+  if (input) input.focus();
+}
+
+async function handleStartDayClick(previousDayProgressReason = null) {
+  const startDayBtn = document.getElementById('startDayBtn');
+  if (!startDayBtn) return;
+
+  hideDashboardAlert();
+  startDayBtn.disabled = true;
+  const originalHtml = startDayBtn.innerHTML;
+  startDayBtn.textContent = 'Starting Day...';
+
+  try {
+    const payload = previousDayProgressReason ? { previousDayProgressReason } : {};
+    const result = await window.electronAPI.startDay(payload);
+
+    if (result.success) {
+      hidePrevProgressReasonCard();
+      const input = document.getElementById('prevProgressReasonInput');
+      if (input) input.value = '';
+
+      dailySummaryState.baseActiveSeconds = 0;
+      dailySummaryState.syncedAtMs = Date.now();
+      dailySummaryState.latestSummary = null;
+      const mouseCountEl = document.getElementById('mouseCount');
+      const keyCountEl = document.getElementById('keyCount');
+      if (mouseCountEl) mouseCountEl.textContent = '0';
+      if (keyCountEl) keyCountEl.textContent = '0';
+
+      const appState = await window.electronAPI.getAppState();
+      currentAppState = appState || currentAppState;
+      updateDashboard(appState);
+      await refreshDailySummary();
+      startStatsUpdate();
+      await loadTasks();
+
+      if (result.aimReminder) {
+        showDashboardAlert(
+          'warning',
+          result.aimReminderMessage ||
+            "Work day started! Reminder: Please set your daily Aim in the Set Aims tab on the web portal."
+        );
+      } else {
+        showDashboardAlert('success', 'Work day started! Activity tracking is now active.');
+      }
+    } else if (result.code === 'PREVIOUS_DAY_PROGRESS_REASON_REQUIRED') {
+      showDashboardAlert(
+        'warning',
+        result.error || "Why was the previous day's progress not updated? Please enter a reason below."
+      );
+      openPrevProgressReasonCard(result);
+    } else {
+      showDashboardAlert('error', result.error || 'Failed to start work day.');
+    }
+  } catch (error) {
+    showDashboardAlert('error', error.message || 'Failed to start work day.');
+  } finally {
+    startDayBtn.disabled = false;
+    startDayBtn.innerHTML = originalHtml;
+  }
+}
+
 /**
- * Execute End Day flow with clear UI feedback & daily progress fallback
+ * Execute End Day flow with clear UI feedback & non-blocking progress reminder
  */
 async function handleEndDayClick() {
   const endDayBtn = document.getElementById('endDayBtn');
@@ -499,7 +572,16 @@ async function handleEndDayClick() {
       currentAppState = appState || currentAppState;
       updateDashboard(appState);
       await refreshDailySummary();
-      showDashboardAlert('success', result.message || 'Work day ended cleanly. Great work today!');
+      if (result.progressReminder || result.data?.progressReminder) {
+        showDashboardAlert(
+          'warning',
+          result.reminderMessage ||
+            result.data?.reminderMessage ||
+            "Work day ended! Reminder: Today's daily progress was not updated. You will be asked for a reason at tomorrow's Start Day."
+        );
+      } else {
+        showDashboardAlert('success', result.message || 'Work day ended cleanly. Great work today!');
+      }
     } else if (result.code === 'PROGRESS_NOT_SET') {
       showDashboardAlert(
         'warning',

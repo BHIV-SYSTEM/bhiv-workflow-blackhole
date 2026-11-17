@@ -1649,17 +1649,12 @@ router.post('/work-session/end', async (req, res) => {
       blockers: todayProgress.blockers ? `"${todayProgress.blockers.substring(0, 50)}..."` : 'null'
     } : 'NO PROGRESS FOUND');
     
-    // MANDATORY VALIDATION: Block end session if user has not updated daily progress
+    // Progress is no longer a blocker for ending work session (checked for tracking + non-blocking reminder)
     if (!hasProgressContent) {
-      console.log(`⛔ User ${employeeId} attempted to end session without progress update - blocking`);
-      return res.status(400).json({
-        success: false,
-        error: 'Please submit your daily progress in the Progress tab before ending your work day.',
-        code: 'PROGRESS_NOT_SET'
-      });
+      console.log(`ℹ️ User ${employeeId} ending work session without daily progress - allowing End Day with reminder`);
+    } else {
+      console.log(`✅ Progress content found for work session end - Employee: ${employeeId}`);
     }
-    
-    console.log(`✅ Progress validation passed for work session end - Employee: ${employeeId}, Progress content found: ${hasProgressContent}`);
 
     // =====================================
     // PROCEED WITH ENDING WORK SESSION
@@ -1687,7 +1682,8 @@ router.post('/work-session/end', async (req, res) => {
         employeeId,
         session,
         endTime,
-        io: req.io || null
+        io: req.io || null,
+        progressCompleted: Boolean(hasProgressContent)
       });
     } catch (syncErr) {
       console.warn(`⚠️ Non-fatal: Failed to sync attendance close for ${employeeId}:`, syncErr.message);
@@ -1695,17 +1691,28 @@ router.post('/work-session/end', async (req, res) => {
     
     console.log(`🏁 Work session ended for employee ${employeeId}`);
 
+    const reminderMessage = !hasProgressContent
+      ? "Reminder: Today's daily progress was not updated. You will be asked for a reason at tomorrow's Start Day."
+      : null;
+
     res.json({ 
       success: true,
-      message: 'Work session ended successfully! Progress validation passed.',
+      message: hasProgressContent
+        ? 'Work session ended successfully!'
+        : "Work session ended! Reminder: Today's daily progress was not updated.",
+      progressReminder: !hasProgressContent,
+      progressCompleted: Boolean(hasProgressContent),
+      reminderMessage,
       data: {
         sessionId: session._id,
         startTime: session.startTime,
         endTime: session.endTime,
         actualWorkDuration: session.actualWorkDuration,
         targetHours: session.targetHours,
+        progressReminder: !hasProgressContent,
+        reminderMessage,
         validations: {
-          progressCompleted: true
+          progressCompleted: Boolean(hasProgressContent)
         }
       }
     });

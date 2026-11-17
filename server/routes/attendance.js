@@ -13,7 +13,12 @@ const auth = require('../middleware/auth');
 const adminAuth = require('../middleware/adminAuth');
 const DailyAttendance = require('../models/DailyAttendance');
 const { reverseGeocode } = require('../utils/reverseGeocode');
-const { findDailyProgressStatus } = require('../utils/progressValidation');
+const {
+  findDailyProgressStatus,
+  validateAndRecordMissedProgressReason,
+  checkPreviousDayMissingProgress,
+  checkTodayAimStatus,
+} = require('../utils/progressValidation');
 const {
   signalNormalActivity,
   signalLateCheckin,
@@ -185,7 +190,7 @@ router.post('/start', auth, async (req, res) => {
 router.post('/start-day/:userId', auth, async (req, res) => {
   try {
     const { userId } = req.params;
-    let { latitude, longitude, address, accuracy, workFromHome, homeLocation, deviceInfo } = req.body;
+    let { latitude, longitude, address, accuracy, workFromHome, homeLocation, deviceInfo, previousDayProgressReason } = req.body;
     
     // Verify user authorization
     if (req.user.id !== userId && req.user.role !== 'Admin') {
@@ -250,6 +255,22 @@ router.post('/start-day/:userId', auth, async (req, res) => {
         error: 'Day already started',
         startTime: existingRecord.startDayTime,
         code: 'DAY_ALREADY_STARTED'
+      });
+    }
+
+    // Require explanation if employee missed updating daily progress on their previous working day
+    const prevProgressCheck = await validateAndRecordMissedProgressReason({
+      userId,
+      reason: previousDayProgressReason
+    });
+    if (!prevProgressCheck.ok) {
+      return res.status(400).json({
+        success: false,
+        error: prevProgressCheck.error,
+        code: prevProgressCheck.code,
+        previousWorkDate: prevProgressCheck.previousWorkDate,
+        previousDateLabel: prevProgressCheck.previousDateLabel,
+        minLength: prevProgressCheck.minLength
       });
     }
     
@@ -480,12 +501,23 @@ router.post('/start-day/:userId', auth, async (req, res) => {
     // KARMA: runtime milestone — day started
     signalNormalActivity(String(userId)).catch(() => {});
 
+    const aimStatus = await checkTodayAimStatus(userId).catch(() => ({
+      hasAimToday: false,
+      aimReminder: true,
+      aimReminderMessage: "Day started! Please set your Aim for today in the Set Aims tab."
+    }));
+
     res.json({
       success: true,
       message: `Day started successfully${workFromHome ? ' from home' : ' from office'}!`,
       startTime,
+      attendanceId: attendanceRecord._id,
       location: { latitude, longitude, address: finalAddress },
       workLocationType,
+      hasAimToday: aimStatus.hasAimToday,
+      aimReminder: aimStatus.aimReminder,
+      aimReminderMessage: aimStatus.aimReminder ? aimStatus.aimReminderMessage : null,
+      previousDayReasonRecorded: Boolean(prevProgressCheck.recordedReason),
       distanceFromOffice: workFromHome ? null : geolib.getDistance(
         { latitude: OFFICE_COORDINATES.latitude, longitude: OFFICE_COORDINATES.longitude },
         { latitude, longitude }
@@ -557,13 +589,9 @@ router.post('/end-day/:userId', auth, async (req, res) => {
       [attendanceRecord.date, attendanceRecord.startDayTime]
     );
     
-    // MANDATORY VALIDATION: Block end day if user has not updated daily progress
+    // Check progress status without blocking End Day (prevents bloated 20+h sessions; missed progress is prompted next Start Day)
     if (!hasProgressContent) {
-      console.log(`⛔ User ${userId} attempted to end day without progress update - blocking`);
-      return res.status(400).json({
-        error: 'Please submit your daily progress in the Progress tab before ending your work day.',
-        code: 'PROGRESS_NOT_SET'
-      });
+      console.log(`ℹ️ User ${userId} ending day without daily progress - allowing End Day with reminder`);
     }
     
     // 🎯 Get aim for reference but don't block end-day if not completed
@@ -644,11 +672,13 @@ router.post('/end-day/:userId', auth, async (req, res) => {
       attendanceRecord.overtimeHours = 0;
     }
 
-    // Mark as verified since it's manually ended with validations
+    // Mark as verified since it's manually ended cleanly
     attendanceRecord.isVerified = true;
     attendanceRecord.approvalStatus = 'Auto-Approved';
     attendanceRecord.spamStatus = 'Valid'; // Normal end-day flow - not spam
     attendanceRecord.autoEnded = false;
+    attendanceRecord.dailyProgressCompleted = Boolean(hasProgressContent);
+    attendanceRecord.progressReminderSent = !hasProgressContent;
 
     await attendanceRecord.save();
     
@@ -675,7 +705,8 @@ router.post('/end-day/:userId', auth, async (req, res) => {
       dailyRecord.breakTime = breakTimeMinutes; // Set break time from work session
       dailyRecord.isPresent = true;
       dailyRecord.status = 'Present';
-      dailyRecord.dailyProgressCompleted = true;
+      dailyRecord.dailyProgressCompleted = Boolean(hasProgressContent);
+      dailyRecord.progressReminderSent = !hasProgressContent;
       dailyRecord.dailyAimCompleted = todayAim ? (todayAim.completionStatus !== 'Pending') : false;
       dailyRecord.aimCompletionStatus = todayAim?.completionStatus || 'Not Set';
       dailyRecord.aimCompletionComment = todayAim?.completionComment || '';
@@ -691,7 +722,8 @@ router.post('/end-day/:userId', auth, async (req, res) => {
         userId,
         endTime,
         hoursWorked: attendanceRecord.hoursWorked,
-        progressCompleted: true,
+        progressCompleted: Boolean(hasProgressContent),
+        progressReminder: !hasProgressContent,
         aimCompleted: todayAim ? (todayAim.completionStatus !== 'Pending') : false
       });
     }
@@ -703,9 +735,18 @@ router.post('/end-day/:userId', auth, async (req, res) => {
       signalNormalActivity(String(userId)).catch(() => {});
     }
 
+    const reminderMessage = !hasProgressContent
+      ? "Reminder: Today's daily progress was not updated. You will be asked for a reason at tomorrow's Start Day."
+      : null;
+
     res.json({
       success: true,
-      message: `Day ended successfully! You worked ${attendanceRecord.hoursWorked} hours.`,
+      message: hasProgressContent
+        ? `Day ended successfully! You worked ${attendanceRecord.hoursWorked} hours.`
+        : `Day ended! You worked ${attendanceRecord.hoursWorked} hours. Reminder: Today's daily progress was not updated.`,
+      progressReminder: !hasProgressContent,
+      progressCompleted: Boolean(hasProgressContent),
+      reminderMessage,
       data: {
         endTime,
         startTime: attendanceRecord.startDayTime,
@@ -713,8 +754,10 @@ router.post('/end-day/:userId', auth, async (req, res) => {
         overtimeHours: attendanceRecord.overtimeHours,
         isOvertime: attendanceRecord.overtimeHours > 0,
         attendanceId: attendanceRecord._id,
+        progressReminder: !hasProgressContent,
+        reminderMessage,
         validations: {
-          progressCompleted: true,
+          progressCompleted: Boolean(hasProgressContent),
           aimCompleted: todayAim ? (todayAim.completionStatus !== 'Pending') : false,
           aimStatus: todayAim?.completionStatus || 'Not Set'
         }
@@ -1113,12 +1156,28 @@ router.get('/verify/:userId', auth, async (req, res) => {
       date: targetDate
     }).populate('user', 'name email');
 
+    const [prevMissing, aimStatus] = await Promise.all([
+      checkPreviousDayMissingProgress(userId).catch(() => ({ missing: false })),
+      checkTodayAimStatus(userId).catch(() => ({ hasAimToday: false, aimReminder: true }))
+    ]);
+
+    const extraPromptInfo = {
+      previousDayProgressMissing: Boolean(prevMissing.missing),
+      previousWorkDate: prevMissing.previousWorkDate || null,
+      previousDateLabel: prevMissing.previousDateLabel || null,
+      minReasonLength: prevMissing.minLength || 10,
+      hasAimToday: Boolean(aimStatus.hasAimToday),
+      aimReminder: Boolean(aimStatus.aimReminder),
+    };
+
     if (!attendance) {
       return res.json({
         success: true,
         data: {
           isPresent: false,
           isVerified: false,
+          canStartDay: true,
+          ...extraPromptInfo,
           message: 'No attendance record found for this date'
         }
       });
@@ -1128,6 +1187,8 @@ router.get('/verify/:userId', auth, async (req, res) => {
       success: true,
       data: {
         ...attendance.toObject(),
+        canStartDay: !attendance.startDayTime || Boolean(attendance.endDayTime),
+        ...extraPromptInfo,
         statusDisplay: attendance.statusDisplay,
         statusColor: attendance.statusColor
       }

@@ -463,10 +463,10 @@ class ReportGenerator {
       let eff = 'No Activity';
       let effColor = '#94a3b8';
       if (summary.hasActivity) {
-        if (summary.avgProductivityScore >= 60) {
+        if (summary.avgProductivityScore >= 50) {
           eff = 'High Efficiency';
           effColor = '#10b981';
-        } else if (summary.avgProductivityScore >= 40) {
+        } else if (summary.avgProductivityScore >= 30) {
           eff = 'Moderate';
           effColor = '#f59e0b';
         } else {
@@ -1576,10 +1576,10 @@ class ReportGenerator {
       let efficiency = 'No Activity';
       let effColor = '#94a3b8';
       if (workedDays > 0 || effectiveActiveSec > 0) {
-        if (avgProd >= 60) {
+        if (avgProd >= 50) {
           efficiency = 'High Efficiency';
           effColor = '#10b981';
-        } else if (avgProd >= 40) {
+        } else if (avgProd >= 30) {
           efficiency = 'Moderate';
           effColor = '#f59e0b';
         } else {

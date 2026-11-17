@@ -22,6 +22,8 @@ import { Button } from '../ui/button';
 import { Card, CardContent } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Progress } from '../ui/progress';
+import { useNavigate } from 'react-router-dom';
+import { Textarea } from '../ui/textarea';
 import { useAuth } from '../../context/auth-context';
 import api from '../../lib/api';
 import { toast } from 'react-hot-toast';
@@ -35,8 +37,10 @@ const OFFICE_ADDRESS = 'Blackhole Infiverse LLP, Road Number 3, near Hathi Circl
 
 const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess }) => {
   const { user } = useAuth();
-  const [step, setStep] = useState('location'); // location, validation, confirmation
+  const navigate = useNavigate();
+  const [step, setStep] = useState('location'); // missed-progress, location, validation, confirmation, aim-reminder
   const [loading, setLoading] = useState(false);
+  const [checkingPrevProgress, setCheckingPrevProgress] = useState(false);
   const [location, setLocation] = useState(null);
   const [locationError, setLocationError] = useState(null);
   const [workFromHome, setWorkFromHome] = useState(false);
@@ -45,12 +49,20 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess }) => {
   const [distanceFromOffice, setDistanceFromOffice] = useState(null);
   const [batteryLevel, setBatteryLevel] = useState(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [previousDayCheck, setPreviousDayCheck] = useState({
+    required: false,
+    previousDateLabel: null,
+    minLength: 10
+  });
+  const [previousDayProgressReason, setPreviousDayProgressReason] = useState('');
+  const [aimReminderInfo, setAimReminderInfo] = useState(null);
 
   useEffect(() => {
     if (isOpen) {
       initializeDialog();
       getDeviceInfo();
       getBatteryInfo();
+      checkPreviousDayProgress();
     }
   }, [isOpen]);
 
@@ -75,6 +87,30 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess }) => {
     setWorkFromHome(false);
     setIsInOfficeRange(false);
     setDistanceFromOffice(null);
+    setPreviousDayCheck({ required: false, previousDateLabel: null, minLength: 10 });
+    setPreviousDayProgressReason('');
+    setAimReminderInfo(null);
+  };
+
+  const checkPreviousDayProgress = async () => {
+    if (!user?.id) return;
+    setCheckingPrevProgress(true);
+    try {
+      const res = await api.get(`/attendance/verify/${user.id}`);
+      const data = res?.data?.data || res?.data || res;
+      if (data?.previousDayProgressMissing) {
+        setPreviousDayCheck({
+          required: true,
+          previousDateLabel: data.previousDateLabel || 'previous working day',
+          minLength: data.minReasonLength || 10
+        });
+        setStep('missed-progress');
+      }
+    } catch {
+      // Backend Start Day validation will still enforce if needed
+    } finally {
+      setCheckingPrevProgress(false);
+    }
   };
 
   const getDeviceInfo = () => {
@@ -440,6 +476,12 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess }) => {
       return;
     }
 
+    const minReasonLen = previousDayCheck.minLength || 10;
+    if (previousDayCheck.required && previousDayProgressReason.trim().length < minReasonLen) {
+      toast.error(`Strict Warning: Please explain why the previous day's progress (${previousDayCheck.previousDateLabel}) was not updated (min ${minReasonLen} characters).`);
+      return;
+    }
+
     try {
       setLoading(true);
       
@@ -451,6 +493,9 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess }) => {
         workFromHome,
         workLocation: workFromHome ? 'Home' : 'Office',
         address: workFromHome ? 'Work From Home' : 'Blackhole Infiverse LLP Office',
+        ...(previousDayProgressReason.trim()
+          ? { previousDayProgressReason: previousDayProgressReason.trim() }
+          : {}),
         deviceInfo: {
           ...deviceInfo,
           deviceType: isMobileDevice ? 'Mobile' : 'Desktop'
@@ -470,18 +515,37 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess }) => {
         });
         
         onSuccess && onSuccess(response);
-        onClose();
 
-        setTimeout(() => {
-          window.location.reload();
-        }, 4000); // same as toast duration
+        if (response.aimReminder) {
+          setAimReminderInfo(
+            response.aimReminderMessage ||
+              "Your work day has started! Please set your Aim for today in the Set Aims tab."
+          );
+          setStep('aim-reminder');
+        } else {
+          onClose();
+          setTimeout(() => {
+            window.location.reload();
+          }, 4000);
+        }
       }
       
     } catch (error) {
       console.error('Start day error:', error);
-      const errorData = error.response?.data;
+      const errorData = error.response?.data || error;
       
-      if (errorData?.code === 'LOCATION_TOO_FAR') {
+      if (errorData?.code === 'PREVIOUS_DAY_PROGRESS_REASON_REQUIRED') {
+        setPreviousDayCheck({
+          required: true,
+          previousDateLabel: errorData.previousDateLabel || 'previous working day',
+          minLength: errorData.minLength || 10
+        });
+        setStep('missed-progress');
+        toast.error(
+          errorData.error || "Why was the previous day's progress not updated? Please enter a valid reason.",
+          { duration: 6000 }
+        );
+      } else if (errorData?.code === 'LOCATION_TOO_FAR') {
         toast.error('You are too far from office. Please go to office or select "Work From Home"', {
           duration: 6000,
         });
@@ -515,15 +579,31 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess }) => {
       <DialogContent className="w-[95vw] sm:max-w-md max-h-[90vh] overflow-y-auto bg-gray-800/95 backdrop-blur-xl border border-white/10 shadow-2xl rounded-2xl">
         <DialogHeader className="relative pb-2">
           <DialogTitle className="text-lg font-semibold text-white">
-            Start Your Work Day
+            {step === 'missed-progress'
+              ? "Yesterday's Progress Not Uploaded"
+              : step === 'aim-reminder'
+              ? "Set Today's Daily Aim"
+              : 'Start Your Work Day'}
           </DialogTitle>
           <DialogDescription className="text-gray-300 dark:text-gray-400 text-sm">
-            Verify your location and start tracking your work hours
+            {step === 'missed-progress'
+              ? `Explain why your daily progress was not updated on ${previousDayCheck.previousDateLabel || 'the previous working day'}`
+              : step === 'aim-reminder'
+              ? 'Your day has started. Remember to set your Aim for today.'
+              : 'Verify your location and start tracking your work hours'}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
+          {checkingPrevProgress && step !== 'missed-progress' && (
+            <div className="py-8 flex flex-col items-center justify-center gap-3 text-gray-300 text-xs">
+              <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+              <span>Checking previous day progress status...</span>
+            </div>
+          )}
+
           {/* Device Status Bar */}
+          {!checkingPrevProgress && (
           <div className="bg-gray-600/50 dark:bg-gray-700/50 backdrop-blur-sm rounded-xl p-3 shadow-lg border border-gray-500/30 dark:border-gray-600/30">
             <div className="flex items-center justify-between text-xs">
               <div className="flex items-center space-x-3">
@@ -557,10 +637,86 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess }) => {
               </div>
             </div>
           </div>
+          )}
 
           <AnimatePresence mode="wait">
+            {/* Step 0 (Strict Warning Prompt): Yesterday's Progress Missing */}
+            {!checkingPrevProgress && step === 'missed-progress' && (
+              <motion.div
+                key="missed-progress"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -12 }}
+                className="space-y-4"
+              >
+                <div className="rounded-2xl border-2 border-red-500/70 bg-red-950/60 p-4 space-y-3 shadow-xl">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2.5 rounded-xl bg-red-500/20 text-red-400 shrink-0">
+                      <AlertTriangle className="w-6 h-6" />
+                    </div>
+                    <div className="space-y-1">
+                      <h4 className="font-bold text-sm text-red-200">
+                        Why was the previous day&apos;s progress not updated?
+                      </h4>
+                      <p className="text-xs text-red-200/85 leading-relaxed">
+                        No daily progress update was recorded for{' '}
+                        <span className="font-semibold text-white">
+                          {previousDayCheck.previousDateLabel || 'your previous working day'}
+                        </span>
+                        . A valid explanation is mandatory before you can start today&apos;s work day.
+                      </p>
+                    </div>
+                  </div>
+
+                  <Textarea
+                    value={previousDayProgressReason}
+                    onChange={(e) => setPreviousDayProgressReason(e.target.value)}
+                    placeholder="Enter the reason why yesterday's progress was not uploaded..."
+                    rows={4}
+                    maxLength={500}
+                    autoFocus
+                    className="bg-gray-900/90 border-red-400/50 text-white placeholder:text-gray-400 text-xs focus-visible:ring-red-400"
+                  />
+
+                  <div className="flex justify-between items-center text-[11px]">
+                    <span
+                      className={
+                        previousDayProgressReason.trim().length >= (previousDayCheck.minLength || 10)
+                          ? 'text-emerald-300 font-medium'
+                          : 'text-red-300'
+                      }
+                    >
+                      {previousDayProgressReason.trim().length} / {previousDayCheck.minLength || 10} characters minimum
+                    </span>
+                    <span className="text-gray-400">{previousDayProgressReason.length}/500</span>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={onClose}
+                    className="flex-1 h-11 border border-gray-500/30 bg-gray-700/60 hover:bg-gray-700 text-white font-semibold"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={
+                      previousDayProgressReason.trim().length < (previousDayCheck.minLength || 10)
+                    }
+                    onClick={() => setStep(location ? 'confirmation' : 'location')}
+                    className="flex-1 h-11 bg-red-600 hover:bg-red-700 text-white font-semibold shadow-lg disabled:opacity-50"
+                  >
+                    Continue to Start Day
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+
             {/* Step 1: Location Detection */}
-            {step === 'location' && (
+            {!checkingPrevProgress && step === 'location' && (
               <motion.div
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
@@ -805,6 +961,37 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess }) => {
                   </div>
                 </div>
 
+                {/* Strict Warning Prompt: Missing Previous Day Progress */}
+                {previousDayCheck.required && (
+                  <div className="rounded-xl border-2 border-red-500/70 bg-red-950/50 p-4 space-y-2.5 shadow-lg">
+                    <div className="flex items-start gap-2.5">
+                      <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+                      <div>
+                        <h4 className="font-bold text-sm text-red-300">
+                          Strict Warning: Previous Day Progress Missing ({previousDayCheck.previousDateLabel})
+                        </h4>
+                        <p className="text-xs text-red-200/90 mt-0.5">
+                          Why was the previous day&apos;s progress not updated? This explanation is mandatory before you can Start Day.
+                        </p>
+                      </div>
+                    </div>
+                    <Textarea
+                      value={previousDayProgressReason}
+                      onChange={(e) => setPreviousDayProgressReason(e.target.value)}
+                      placeholder="Explain why yesterday's progress update was missed..."
+                      rows={3}
+                      maxLength={500}
+                      className="bg-gray-900/90 border-red-400/50 text-white placeholder:text-gray-400 text-xs focus-visible:ring-red-400"
+                    />
+                    <div className="flex justify-between items-center text-[11px]">
+                      <span className={previousDayProgressReason.trim().length >= (previousDayCheck.minLength || 10) ? 'text-emerald-300' : 'text-red-300'}>
+                        {previousDayProgressReason.trim().length} / {previousDayCheck.minLength || 10} characters minimum
+                      </span>
+                      <span className="text-gray-400">{previousDayProgressReason.length}/500</span>
+                    </div>
+                  </div>
+                )}
+
                 {/* Action Buttons */}
                 <div className="flex space-x-3 pt-4">
                   <Button
@@ -817,7 +1004,12 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess }) => {
                   
                   <Button
                     onClick={handleStartDay}
-                    disabled={loading || (!isInOfficeRange && !workFromHome)}
+                    disabled={
+                      loading ||
+                      (!isInOfficeRange && !workFromHome) ||
+                      (previousDayCheck.required &&
+                        previousDayProgressReason.trim().length < (previousDayCheck.minLength || 10))
+                    }
                     className="flex-1 h-11 bg-green-500/90 hover:bg-green-600/90 text-white shadow-lg font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed border border-green-400/50"
                   >
                     {loading ? (
@@ -831,6 +1023,55 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess }) => {
                         <span>Start Day</span>
                       </div>
                     )}
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+
+            {step === 'aim-reminder' && (
+              <motion.div
+                key="aim-reminder"
+                initial={{ opacity: 0, scale: 0.96 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.96 }}
+                className="space-y-5 py-2"
+              >
+                <div className="rounded-2xl border border-amber-400/40 bg-amber-500/15 p-5 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2.5 rounded-xl bg-amber-500/25 text-amber-300 shrink-0">
+                      <Target className="w-6 h-6" />
+                    </div>
+                    <div className="space-y-1">
+                      <h4 className="font-bold text-base text-white">
+                        Day Started! Set Today&apos;s Aim
+                      </h4>
+                      <p className="text-xs text-amber-100/90 leading-relaxed">
+                        {aimReminderInfo ||
+                          "Your daily Aim for today has not been set yet. Setting a clear Aim helps track your priorities for the day."}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      onClose();
+                    }}
+                    className="flex-1 h-11 border border-gray-500/30 bg-gray-700/60 hover:bg-gray-700 text-white font-semibold"
+                  >
+                    Continue to Dashboard
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      onClose();
+                      navigate('/aims');
+                    }}
+                    className="flex-1 h-11 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold shadow-lg"
+                  >
+                    <Target className="w-4 h-4 mr-2" />
+                    Set Aim Now
                   </Button>
                 </div>
               </motion.div>

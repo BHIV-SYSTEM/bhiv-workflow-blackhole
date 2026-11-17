@@ -6,54 +6,10 @@ import { DashboardSidebar } from "../components/dashboard/sidebar"
 import UniverseBackground from "../components/UniverseBackground"
 import { useTheme } from "../components/theme-provider"
 import { DashboardHeader } from "../components/dashboard/header"
-import EnhancedStartDayDialog from "../components/attendance/EnhancedStartDayDialog"
-import { useAuth } from "../context/auth-context"
-import api from "../lib/api"
 
 export function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const { theme } = useTheme()
-  const { user } = useAuth()
-  const [showStartDayDialog, setShowStartDayDialog] = useState(false)
-  const [checkedPrompt, setCheckedPrompt] = useState(false)
-
-  useEffect(() => {
-    // Only check once after login
-    if (!user || checkedPrompt) return
-
-    const dateKey = new Date().toISOString().slice(0, 10)
-    const storageKey = `startDayPromptShown:${user.id}:${dateKey}`
-
-    // If user already started day previously or we've shown the prompt manually today, skip
-    if (localStorage.getItem(storageKey)) {
-      setCheckedPrompt(true)
-      return
-    }
-
-    // Use verify endpoint to determine if the user can start day
-    api
-      .get(`/attendance/verify/${user.id}`)
-      .then((res) => {
-        const data = res?.data || res // handle both {success,data} and direct data
-        if (data && data.canStartDay) {
-          setShowStartDayDialog(true)
-        }
-      })
-      .catch(() => {
-        // On failure, do nothing; user can still start from Start Day page
-      })
-      .finally(() => {
-        setCheckedPrompt(true)
-      })
-  }, [user, checkedPrompt])
-
-  const handleStartDaySuccess = () => {
-    if (!user) return
-    const dateKey = new Date().toISOString().slice(0, 10)
-    const storageKey = `startDayPromptShown:${user.id}:${dateKey}`
-    localStorage.setItem(storageKey, "1")
-    setShowStartDayDialog(false)
-  }
 
   const location = useLocation()
 
@@ -130,13 +86,6 @@ export function DashboardLayout() {
           </div>
         </main>
       </div>
-
-      {/* Start Day Dialog */}
-      <EnhancedStartDayDialog
-        isOpen={showStartDayDialog}
-        onClose={() => setShowStartDayDialog(false)}
-        onSuccess={handleStartDaySuccess}
-      />
     </div>
   )
 }

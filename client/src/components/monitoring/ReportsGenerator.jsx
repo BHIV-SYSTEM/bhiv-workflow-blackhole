@@ -369,8 +369,8 @@ export function ReportsGenerator({
       if (reportData?.dailyMetrics && reportData.dailyMetrics.length > 0) {
         reportData.dailyMetrics.forEach(day => {
           let eff = 'Low Efficiency';
-          if (day.avgProductivityScore >= 60) eff = 'High Efficiency';
-          else if (day.avgProductivityScore >= 40) eff = 'Moderate Efficiency';
+          if (day.avgProductivityScore >= 50) eff = 'High Efficiency';
+          else if (day.avgProductivityScore >= 30) eff = 'Moderate Efficiency';
 
           const activeText = (day.totalActivities > 0 || day.activeSeconds > 0 || day.activeHours > 0)
             ? (day.activeHoursFormatted || `${day.activeHours}h`)
@@ -1237,10 +1237,10 @@ export function ReportsGenerator({
                       {reportData.dailyMetrics.map((day) => {
                         let eff = 'Low Efficiency';
                         let effColor = 'text-rose-400 bg-rose-500/10 border-rose-500/30';
-                        if (day.avgProductivityScore >= 60) {
+                        if (day.avgProductivityScore >= 50) {
                           eff = 'High Efficiency';
                           effColor = 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30';
-                        } else if (day.avgProductivityScore >= 40) {
+                        } else if (day.avgProductivityScore >= 30) {
                           eff = 'Moderate Efficiency';
                           effColor = 'text-amber-400 bg-amber-500/10 border-amber-500/30';
                         }

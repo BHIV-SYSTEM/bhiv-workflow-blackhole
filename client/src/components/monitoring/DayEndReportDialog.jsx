@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Dialog,
   DialogContent,
@@ -434,7 +435,8 @@ function generatePrintableReportHtml(data) {
 </html>`;
 }
 
-export function DayEndReportDialog({ isOpen, onClose, reportData, isLoading }) {
+export function DayEndReportDialog({ isOpen, onClose, reportData, isLoading, progressReminder }) {
+  const navigate = useNavigate();
   if (!isOpen) return null;
 
   const handlePrint = () => {
@@ -511,6 +513,36 @@ export function DayEndReportDialog({ isOpen, onClose, reportData, isLoading }) {
             </div>
           ) : (
             <div className="space-y-4">
+              {/* Soft Non-Blocking Daily Progress Reminder */}
+              {(progressReminder?.show || progressReminder === true) && (
+                <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/35 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-start gap-2.5">
+                    <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                    <div className="text-xs">
+                      <p className="font-semibold text-amber-600 dark:text-amber-400">
+                        Reminder: Daily Progress Not Posted Today
+                      </p>
+                      <p className="text-muted-foreground mt-0.5">
+                        {progressReminder?.message ||
+                          "You ended your work day cleanly. Update your progress in the Progress tab now — otherwise you will be asked for a reason on your next Start Day."}
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      onClose();
+                      navigate('/progress');
+                    }}
+                    className="shrink-0 h-8 text-xs border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
+                  >
+                    Set Progress Now
+                  </Button>
+                </div>
+              )}
+
               {/* Employee & Date Meta Card */}
               <div className="p-4 rounded-xl bg-muted/40 border border-border/70 grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
                 <div className="space-y-0.5">

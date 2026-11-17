@@ -333,6 +333,13 @@ class MonitoringService {
     const mouseEvents = this._tMouse;
     this._tKeys = 0;
     this._tMouse = 0;
+
+    // If the browser tab is hidden/backgrounded and saw no input, don't log fake idle ticks
+    // (employee is likely working in another desktop app or tab).
+    if (document.visibilityState === 'hidden' && keyboardEvents === 0 && mouseEvents === 0) {
+      return;
+    }
+
     const idleSeconds = Math.max(0, Math.round((Date.now() - this._tLastInputAt) / 1000));
 
     try {

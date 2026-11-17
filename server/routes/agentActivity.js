@@ -158,16 +158,13 @@ router.post('/activity/ingest', auth, async (req, res) => {
       }
     }
 
-    // Calculate mouse activity score normalized by interval length.
-    // Previous formula (events/20*100) saturated to 100 after just 20 events,
-    // so cursor movement was effectively binary. Scale events-per-minute
-    // against the agent's move throttle ceiling (10/s = 600/min) instead.
+    // Calculate mouse activity score normalized by interval length (120 events/min = 2/sec sustained cursor activity).
     const validIntervalDuration = intervalDuration && intervalDuration > 0 ? intervalDuration : 30;
     const validMouseEvents = mouseEvents || 0;
     const mousePerMinute = (validMouseEvents / validIntervalDuration) * 60;
     const mouseActivityScore = (idleSeconds >= 30 || validMouseEvents === 0)
       ? 0
-      : Math.min(100, Math.round((mousePerMinute / 240) * 100));
+      : Math.min(100, Math.round((mousePerMinute / 120) * 100));
     
     // Create EmployeeActivity document
     const activityData = new EmployeeActivity({

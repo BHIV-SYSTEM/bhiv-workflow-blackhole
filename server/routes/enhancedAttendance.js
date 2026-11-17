@@ -7,7 +7,11 @@ const auth = require('../middleware/auth');
 const adminAuth = require('../middleware/adminAuth');
 const geolib = require('geolib');
 const enhancedSalaryCalculator = require('../services/enhancedSalaryCalculator');
-const { findDailyProgressStatus } = require('../utils/progressValidation');
+const {
+  findDailyProgressStatus,
+  validateAndRecordMissedProgressReason,
+  checkTodayAimStatus,
+} = require('../utils/progressValidation');
 
 // Office coordinates from environment variables - Blackhole Infiverse LLP Mumbai
 const OFFICE_COORDINATES = {
@@ -40,7 +44,7 @@ const isOfficeIp = (ip) => {
 // Start day with enhanced validation and status tracking
 router.post('/start-day', auth, async (req, res) => {
   try {
-    let { latitude, longitude, address, accuracy, deviceInfo, workFromHome } = req.body;
+    let { latitude, longitude, address, accuracy, deviceInfo, workFromHome, previousDayProgressReason } = req.body;
     const userId = req.user.id;
 
     // Detect client device type and IP
@@ -141,6 +145,22 @@ router.post('/start-day', auth, async (req, res) => {
       });
     }
 
+    // Require explanation if employee missed updating daily progress on their previous working day
+    const prevProgressCheck = await validateAndRecordMissedProgressReason({
+      userId,
+      reason: previousDayProgressReason
+    });
+    if (!prevProgressCheck.ok) {
+      return res.status(400).json({
+        success: false,
+        error: prevProgressCheck.error,
+        code: prevProgressCheck.code,
+        previousWorkDate: prevProgressCheck.previousWorkDate,
+        previousDateLabel: prevProgressCheck.previousDateLabel,
+        minLength: prevProgressCheck.minLength
+      });
+    }
+
     const startTime = new Date();
     const startDayData = {
       user: userId,
@@ -185,15 +205,28 @@ router.post('/start-day', auth, async (req, res) => {
       });
     }
 
+    const aimStatus = await checkTodayAimStatus(userId).catch(() => ({
+      hasAimToday: false,
+      aimReminder: true,
+      aimReminderMessage: "Day started! Please set your Aim for today in the Set Aims tab."
+    }));
+
     res.json({
       success: true,
       message: 'Day started successfully!',
+      hasAimToday: aimStatus.hasAimToday,
+      aimReminder: aimStatus.aimReminder,
+      aimReminderMessage: aimStatus.aimReminder ? aimStatus.aimReminderMessage : null,
+      previousDayReasonRecorded: Boolean(prevProgressCheck.recordedReason),
       data: {
         attendanceId: attendanceRecord._id,
         startTime,
         location: { latitude, longitude, address },
         status: attendanceRecord.status,
-        canEndDay: true
+        canEndDay: true,
+        hasAimToday: aimStatus.hasAimToday,
+        aimReminder: aimStatus.aimReminder,
+        aimReminderMessage: aimStatus.aimReminder ? aimStatus.aimReminderMessage : null
       }
     });
 
@@ -339,7 +372,8 @@ router.post('/end-day', auth, async (req, res) => {
     attendanceRecord.aimCompletionComment = todayAim?.completionComment || '';
     
     // Store progress completion status
-    attendanceRecord.dailyProgressCompleted = !!todayProgress;
+    attendanceRecord.dailyProgressCompleted = Boolean(hasProgressContent);
+    attendanceRecord.progressReminderSent = !hasProgressContent;
 
     await attendanceRecord.save();
 
@@ -351,13 +385,24 @@ router.post('/end-day', auth, async (req, res) => {
         endTime,
         totalHours: attendanceRecord.totalHoursWorked,
         status: attendanceRecord.status,
-        earnedAmount: attendanceRecord.earnedAmount
+        earnedAmount: attendanceRecord.earnedAmount,
+        progressCompleted: Boolean(hasProgressContent),
+        progressReminder: !hasProgressContent
       });
     }
 
+    const reminderMessage = !hasProgressContent
+      ? "Reminder: Today's daily progress was not updated. You will be asked for a reason at tomorrow's Start Day."
+      : null;
+
     res.json({
       success: true,
-      message: `Day ended successfully! You worked ${attendanceRecord.totalHoursWorked} hours.`,
+      message: hasProgressContent
+        ? `Day ended successfully! You worked ${attendanceRecord.totalHoursWorked} hours.`
+        : `Day ended! You worked ${attendanceRecord.totalHoursWorked} hours. Reminder: Today's daily progress was not updated.`,
+      progressReminder: !hasProgressContent,
+      progressCompleted: Boolean(hasProgressContent),
+      reminderMessage,
       data: {
         attendanceId: attendanceRecord._id,
         startTime: attendanceRecord.startDayTime,
@@ -368,6 +413,9 @@ router.post('/end-day', auth, async (req, res) => {
         status: attendanceRecord.status,
         earnedAmount: Math.round(attendanceRecord.earnedAmount * 100) / 100,
         isOvertime: attendanceRecord.overtimeHours > 0,
+        progressReminder: !hasProgressContent,
+        progressCompleted: Boolean(hasProgressContent),
+        reminderMessage,
         summary: {
           workingTime: `${Math.floor(totalHours)}h ${Math.floor((totalHours % 1) * 60)}m`,
           earnings: `₹${Math.round(attendanceRecord.earnedAmount * 100) / 100}`,

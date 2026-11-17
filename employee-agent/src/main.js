@@ -295,9 +295,9 @@ ipcMain.handle('logout', async () => {
   return { success: true };
 });
 
-ipcMain.handle('start-day', async () => {
+ipcMain.handle('start-day', async (event, payload) => {
   try {
-    const result = await apiService.startDay();
+    const result = await apiService.startDay(payload || {});
     if (result.success) {
       appState.isDayStarted = true;
       appState.dayEndedToday = false;
