@@ -59,6 +59,8 @@ const TesterTasks = lazy(() => import("./pages/TesterTasks"));
 const TesterEvaluation = lazy(() => import("./pages/TesterEvaluation"));
 const TesterAlerts = lazy(() => import("./pages/TesterAlerts"));
 const TestedTasks = lazy(() => import("./pages/TestedTasks"));
+const AdminMonitoringV2Page = lazy(() => import("./modules/employee-monitoring-v2/pages/AdminMonitoringV2Page"));
+const EmployeeMonitoringV2Page = lazy(() => import("./modules/employee-monitoring-v2/pages/EmployeeMonitoringV2Page"));
 
 function PageLoader() {
   return (
@@ -388,6 +390,30 @@ function AppContent() {
                   element={
                     <ProtectedRoute>
                       <EmployeeMonitoring />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/monitoring-v2/admin"
+                  element={
+                    <ProtectedRoute>
+                      <AdminMonitoringV2Page />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/monitoring-v2/employee"
+                  element={
+                    <ProtectedRoute>
+                      <EmployeeMonitoringV2Page />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/monitoring-v2"
+                  element={
+                    <ProtectedRoute>
+                      <Navigate to={isAdmin ? "/monitoring-v2/admin" : "/monitoring-v2/employee"} replace />
                     </ProtectedRoute>
                   }
                 />

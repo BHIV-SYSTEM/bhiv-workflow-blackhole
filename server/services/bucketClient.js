@@ -13,7 +13,7 @@ const BUCKET_BASE_URL = (
   process.env.BUCKET_BASE_URL ||
   process.env.BUCKET_VM_URL ||
   process.env.BUCKET_URL ||
-  "http://163.128.209.18:8012"
+  ""
 ).replace(/\/+$/, "");
 const BUCKET_API_KEY = process.env.BUCKET_API_KEY;
 const BUCKET_TIMEOUT_MS = parseInt(process.env.BUCKET_TIMEOUT_MS || "20000", 10);

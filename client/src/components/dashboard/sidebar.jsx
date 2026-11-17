@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation, Link } from "react-router-dom";
-import { LayoutDashboard, CheckSquare, Network, Users, Sparkles, Settings, LogOut, CheckCircle, BarChart, Airplay, LayoutDashboardIcon, Target, Monitor, DollarSign, Calendar, Clock, UserCog, UserCheck, ShoppingCart, Mail, ChevronLeft, ChevronRight, Building2, FolderKanban, ClipboardCheck, AlertTriangle, FileText, BookOpen } from "lucide-react";
+import { LayoutDashboard, CheckSquare, Network, Users, Sparkles, Settings, LogOut, CheckCircle, BarChart, Airplay, LayoutDashboardIcon, Target, Monitor, DollarSign, Calendar, Clock, UserCog, UserCheck, ShoppingCart, Mail, ChevronLeft, ChevronRight, Building2, FolderKanban, ClipboardCheck, AlertTriangle, FileText, BookOpen, ShieldCheck } from "lucide-react";
 import { useAuth } from "../../context/auth-context";
 import { api } from "../../lib/api";
 
@@ -76,7 +76,11 @@ export function DashboardSidebar({ onNavigate, isMobile = false } = {}) {
 
   // Unified navigation structure with sections
   const getNavigationSections = () => {
-    const role = user?.role;
+    let role = user?.role;
+    if (!role && import.meta.env.DEV) {
+      if (location.pathname.startsWith('/monitoring-v2/admin')) role = 'Admin';
+      else if (location.pathname.startsWith('/monitoring-v2/employee')) role = 'User';
+    }
 
     if (role === "User") {
       return [
@@ -88,6 +92,7 @@ export function DashboardSidebar({ onNavigate, isMobile = false } = {}) {
             { title: "Set Aims", href: "/aims", icon: Target },
             { title: "Progress", href: "/progress", icon: BarChart },
             { title: "Knowledge Admin", href: "/knowledge-admin", icon: BookOpen },
+            { title: "My Monitoring V2", href: "/monitoring-v2/employee", icon: ShieldCheck },
           ]
         },
         {
@@ -134,6 +139,7 @@ export function DashboardSidebar({ onNavigate, isMobile = false } = {}) {
           routes: [
             { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
             { title: "AI Optimization", href: "/optimization", icon: Sparkles },
+            { title: "My Monitoring V2", href: "/monitoring-v2/employee", icon: ShieldCheck },
           ]
         },
         {
@@ -153,6 +159,7 @@ export function DashboardSidebar({ onNavigate, isMobile = false } = {}) {
           routes: [
             { title: "User Management", href: "/user-management", icon: UserCog },
             { title: "Employee Monitoring", href: "/monitoring", icon: Monitor },
+            { title: "Employee Monitoring V2", href: "/monitoring-v2/admin", icon: ShieldCheck },
             { title: "Leaderboard", href: "/leaderboard", icon: Sparkles },
           ]
         },
@@ -225,6 +232,7 @@ export function DashboardSidebar({ onNavigate, isMobile = false } = {}) {
           { title: "Completed Tasks", href: "/completedtask", icon: CheckCircle },
           { title: "Test Tasks", href: "/tested-tasks", icon: FileText },
           { title: "Knowledge Admin", href: "/knowledge-admin", icon: BookOpen },
+          { title: "My Monitoring V2", href: "/monitoring-v2/employee", icon: ShieldCheck },
         ]
       },
       {

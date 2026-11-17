@@ -1,0 +1,26 @@
+/**
+ * Employee Monitoring V2 - Root API Router
+ * 
+ * Namespaced under /api/monitoring-v2/*
+ * Enforces requireV2Active middleware globally across all V2 endpoints.
+ * When ENABLE_MONITORING_V2 is false, all routes return 404 Not Found.
+ */
+
+const express = require('express');
+const router = express.Router();
+const { requireV2Active } = require('../security/scopeGuard');
+
+// Global V2 Feature Flag Guard
+router.use(requireV2Active);
+
+// Foundation Status Ping
+router.get('/ping', (req, res) => {
+  res.json({
+    service: 'niyantran-employee-monitoring-v2',
+    status: 'FOUNDATION_INITIALIZED',
+    phase: 'Phase A: Foundation & Strict Isolation',
+    timestamp: new Date().toISOString()
+  });
+});
+
+module.exports = router;

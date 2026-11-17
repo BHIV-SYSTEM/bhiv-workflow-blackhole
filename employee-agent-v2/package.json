@@ -1,0 +1,18 @@
+{
+  "name": "niyantran-employee-agent-v2",
+  "version": "2.0.0-phase-a",
+  "description": "Niyantran Employee Monitoring V2 - Lightweight, Privacy-First Desktop Agent",
+  "main": "src/lifecycle.js",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.js"
+  },
+  "keywords": [
+    "niyantran",
+    "monitoring-v2",
+    "privacy-first"
+  ],
+  "author": "Niyantran Engineering",
+  "license": "UNLICENSED",
+  "private": true
+}
