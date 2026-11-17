@@ -605,6 +605,7 @@ import { Textarea } from "../components/ui/textarea"
 import { API_URL } from "@/lib/api"
 import { formatDate } from "@/lib/dateFormat"
 import { getTaskStatusLabel } from "../lib/taskStatus"
+import ParikshakReviewCard from "../components/submissions/ParikshakReviewCard"
 
 function TaskDetails() {
   const { id } = useParams()
@@ -1447,7 +1448,10 @@ function TaskDetails() {
                         )}
                       </CardContent>
                     </Card>
-                    {submission.feedback && (
+                    {submission.aiReviewDetails && (
+                      <ParikshakReviewCard submission={submission} />
+                    )}
+                    {submission.feedback && (!submission.aiReviewDetails || (!submission.aiReviewDetails.doneWell && !submission.aiReviewDetails.missingWork)) && (
                       <Card>
                         <CardContent className="p-4">
                           <h4 className="text-sm font-medium mb-2">Review Feedback</h4>

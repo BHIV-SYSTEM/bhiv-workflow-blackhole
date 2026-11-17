@@ -40,6 +40,7 @@ import axios from "axios"
 import { TaskSubmissionDialog } from "../components/tasks/task-submission-dialog"
 import { TaskIntakeDialog } from "../components/tasks/TaskIntakeDialog"
 import { TaskProgressDialog } from "../components/tasks/TaskProgressDialog"
+import ParikshakReviewCard from "../components/submissions/ParikshakReviewCard"
 
 function MyTasks() {
   const navigate = useNavigate()
@@ -249,7 +250,8 @@ function MyTasks() {
     return (
       !isClosedTask(task) &&
       !isValidationTask(task) &&
-      (task.status === "Submitted for Review" || (Boolean(sub) && sub.status !== "Rejected"))
+      task.status !== "In Progress" &&
+      (task.status === "Submitted for Review" || (Boolean(sub) && sub.status === "Pending"))
     )
   }
 
@@ -659,10 +661,11 @@ function MyTasks() {
                                   </a>
                                 )}
                               </div>
-                              {submission.feedback && (
-                                <div className="mt-2 p-2 bg-background/80 rounded border text-xs">
-                                  <span className="font-semibold text-foreground">Review Outcome: </span>
-                                  <span className="text-muted-foreground">{submission.feedback}</span>
+                              <ParikshakReviewCard submission={submission} />
+                              {submission.feedback && (!submission.aiReviewDetails || (!submission.aiReviewDetails.doneWell && !submission.aiReviewDetails.missingWork)) && (
+                                <div className="mt-2 p-2.5 bg-background/80 rounded-xl border border-border/60 text-xs">
+                                  <span className="font-semibold text-foreground block mb-1">Review Feedback: </span>
+                                  <p className="text-muted-foreground whitespace-pre-line leading-relaxed">{submission.feedback}</p>
                                 </div>
                               )}
                             </div>
@@ -771,15 +774,26 @@ function MyTasks() {
                           )}
 
                           {isReview && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="flex-1 h-9 rounded-xl border-purple-500/40 text-purple-400 hover:bg-purple-500/10 text-xs gap-1.5"
-                              onClick={() => openSubmissionDialog(task)}
-                            >
-                              <RefreshCw className="h-3.5 w-3.5" />
-                              Update Submission
-                            </Button>
+                            <div className="flex flex-wrap lg:flex-col gap-2 w-full">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="flex-1 lg:w-full h-9 rounded-xl border-purple-500/40 text-purple-400 hover:bg-purple-500/10 text-xs gap-1.5"
+                                onClick={() => openSubmissionDialog(task)}
+                              >
+                                <RefreshCw className="h-3.5 w-3.5" />
+                                Update Submission
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="flex-1 lg:w-full h-9 rounded-xl font-semibold border-cyan-500/40 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-500/10 text-xs gap-1.5"
+                                onClick={() => openProgressDialog(task)}
+                              >
+                                <TrendingUp className="h-3.5 w-3.5" />
+                                Update Daily Progress
+                              </Button>
+                            </div>
                           )}
 
                           {isClosed && (

@@ -47,6 +47,7 @@ import {
 import { Textarea } from "../components/ui/textarea"
 import { Alert, AlertDescription, AlertTitle } from "../components/ui/alert"
 import { SubmissionFeedbackCard } from "../components/dashboard/SubmissionFeedbackCard"
+import ParikshakReviewCard from "../components/submissions/ParikshakReviewCard"
 import { DashboardProvider } from "../context/DashboardContext" // New import
 import { api } from "@/lib/api"
 import { formatDate, formatTime } from "@/lib/dateFormat"
@@ -880,7 +881,7 @@ function UserDashboard() {
                 )}
 
                 {/* AI Score */}
-                {selectedSubmission.parikshakReview?.score != null && selectedSubmission.status !== "Pending" && (
+                {selectedSubmission.parikshakReview?.score != null && (
                   <div className="space-y-2.5">
                     <div className="flex items-center gap-2">
                       <div className="h-7 w-7 rounded-lg bg-purple-500/15 flex items-center justify-center ring-1 ring-purple-500/30">
@@ -910,17 +911,24 @@ function UserDashboard() {
                   </div>
                 )}
 
+                {/* AI Review Structured Details */}
+                {selectedSubmission.aiReviewDetails && (
+                  <div className="space-y-2.5">
+                    <ParikshakReviewCard submission={selectedSubmission} />
+                  </div>
+                )}
+
                 {/* AI Review Comments */}
-                {selectedSubmission.parikshakReview?.review && selectedSubmission.status !== "Pending" && (
+                {selectedSubmission.parikshakReview?.review && (
                   <div className="space-y-2.5">
                     <div className="flex items-center gap-2">
                       <div className="h-7 w-7 rounded-lg bg-purple-500/15 flex items-center justify-center ring-1 ring-purple-500/30">
                         <Bot className="h-4 w-4 text-purple-500" />
                       </div>
-                      <p className="font-semibold text-sm text-foreground">AI Review Comments</p>
+                      <p className="font-semibold text-sm text-foreground">AI Review Comments & Diagnostics</p>
                     </div>
                     <div className="rounded-xl border border-purple-500/30 bg-purple-500/10 p-4">
-                      <p className="text-sm whitespace-pre-line leading-relaxed text-foreground/90">
+                      <p className="text-sm whitespace-pre-line leading-relaxed text-foreground/90 font-mono text-xs">
                         {selectedSubmission.parikshakReview.review}
                       </p>
                     </div>

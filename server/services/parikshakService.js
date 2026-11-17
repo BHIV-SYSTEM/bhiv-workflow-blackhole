@@ -184,60 +184,106 @@ const invokeParikshak = async (submissionId, traceId, io) => {
             ? response.score
             : ((response.readiness_percent !== undefined && response.readiness_percent !== null) ? response.readiness_percent : 0);
 
+        const isApproved = responseStatus === "PASS" || responseStatus === "APPROVED" || responseStatus === "SUCCESS";
+        const finalStatus = isApproved ? "Approved" : "Rejected";
+        const passFailStatus = response.result || response.status || (isApproved ? "PASS" : (responseStatus === "PARTIAL" ? "PARTIAL" : "FAIL"));
+
         let reviewText = response.review || response.detail || response.reason || "";
-        if (!reviewText && Array.isArray(response.failure_reasons) && response.failure_reasons.length > 0) {
-            reviewText = response.failure_reasons.join('\n');
-        }
-        if (!reviewText && Array.isArray(response.improvement_hints) && response.improvement_hints.length > 0) {
-            reviewText = response.improvement_hints.join('\n');
-        }
         if (!reviewText && response.failure_type) {
             reviewText = `Evaluation check failed (${response.failure_type}): Please ensure a valid GitHub repository URL is attached and detailed task completion notes (>50 words) are provided.`;
         }
-        if (!reviewText) {
-            reviewText = "Submission did not pass automated AI evaluation criteria. Please ensure your GitHub repository URL is accessible and resubmit.";
-        }
 
-        let finalStatus = "Pending"; // Default fallback to manual admin review
-        let finalFeedback = reviewText;
+        // Extract deep engineering review details from Parikshak payload
+        const engReview = response.engineering_review || response.analysis?.engineering_review || response.review?.analysis?.engineering_review || {};
+        const preflight = response.preflight_diagnostics || response.review?.preflight_diagnostics || {};
+        const rawFailureReasons = Array.isArray(response.failure_reasons) ? response.failure_reasons : (Array.isArray(response.review?.failure_reasons) ? response.review.failure_reasons : []);
+        const rawImprovementHints = Array.isArray(response.improvement_hints) ? response.improvement_hints : (Array.isArray(response.review?.improvement_hints) ? response.review.improvement_hints : []);
+        const whatsDoneWellList = Array.isArray(engReview.whats_done_well) ? engReview.whats_done_well : (Array.isArray(response.review?.whats_done_well) ? response.review.whats_done_well : []);
 
-        if (responseStatus === "PASS" || responseStatus === "APPROVED" || responseStatus === "SUCCESS") {
-            finalStatus = "Approved";
+        // Structured What Was Done Well
+        let doneWell = "";
+        if (response.review_details?.done_well) {
+            doneWell = response.review_details.done_well;
+        } else if (whatsDoneWellList.length > 0) {
+            doneWell = whatsDoneWellList.map(item => `• ${item}`).join('\n');
         } else {
-            // Rejection / FAIL / PARTIAL: Do not directly hard reject for candidate.
-            // Queue in "Pending" status for user, but preserve AI review score & details for Admin manual review.
-            finalStatus = "Pending";
-            finalFeedback = `Submission is under manual admin review. (AI Assessment: ${responseStatus || 'REJECTED'}, Score: ${scoreVal}/100).\n\nPreliminary Assessment:\n${reviewText}`;
+            doneWell = isApproved
+                ? "• Verified clean codebase architecture and completed deliverables."
+                : "• Codebase metadata and submission structure received by Parikshak.";
         }
 
-        // Extract structured fields
-        let doneWell = "Good effort on submitting the task.";
-        let missingWork = "Review the feedback for details.";
-        let recommendations = "Please check the AI review guidelines.";
-        let readiness = (responseStatus === "PASS" || responseStatus === "APPROVED") ? "Production Ready" : "Requires Revisions";
-
-        if (response.review_details) {
-            doneWell = response.review_details.done_well || doneWell;
-            missingWork = response.review_details.missing_work || missingWork;
-            recommendations = response.review_details.recommendations || recommendations;
-            readiness = response.review_details.readiness || readiness;
+        // Structured Missing Work / Actionable Fixes Checklist
+        let missingWork = "";
+        if (response.review_details?.missing_work) {
+            missingWork = response.review_details.missing_work;
         } else {
-            doneWell = (responseStatus === "PASS" || responseStatus === "APPROVED")
-                ? (reviewText || "Clean codebase integration matching expected requirements.")
-                : "Submission passed initial automated structure intake.";
-            missingWork = (responseStatus === "PASS" || responseStatus === "APPROVED")
-                ? "None"
-                : (Array.isArray(response.failure_reasons) && response.failure_reasons.length > 0
-                    ? response.failure_reasons.join('\n')
-                    : (response.failure_type
-                        ? `Evaluation check failed (${response.failure_type}): Attach accessible GitHub repository URL and provide detailed submission notes (>50 words).`
-                        : reviewText));
-            recommendations = (Array.isArray(response.improvement_hints) && response.improvement_hints.length > 0)
-                ? response.improvement_hints.join(' ')
-                : (finalStatus === "Approved" ? "Proceed to recommended next task." : "Provide detailed task completion notes (>50 words) describing implementation architecture and resubmit.");
+            const missingItems = [];
+            if (preflight && !preflight.repo_accessible) {
+                missingItems.push(`Repository Access: ${preflight.error_message || 'HTTP 401 Unauthorized (Private Repository)'}. Ensure repository is public or invite evaluator credentials with read access.`);
+            }
+            if (Array.isArray(engReview.required_fixes) && engReview.required_fixes.length > 0) {
+                engReview.required_fixes.forEach(fix => {
+                    if (fix === 'integration_fail') {
+                        missingItems.push('Automated tests missing or failed. Add passing unit tests in tests/ directory and verify entrypoints.');
+                    } else {
+                        missingItems.push(fix);
+                    }
+                });
+            } else if (rawFailureReasons.length > 0) {
+                rawFailureReasons.forEach(reason => {
+                    if (reason === 'integration_fail') {
+                        missingItems.push('Automated tests missing or failed. Add passing unit tests in tests/ directory and verify entrypoints.');
+                    } else if (reason === 'schema_violation') {
+                        missingItems.push('Mandatory structural files missing (e.g., README.md, package.json, requirements.txt).');
+                    } else {
+                        missingItems.push(reason);
+                    }
+                });
+            }
+            if (Array.isArray(engReview.missing_incomplete) && engReview.missing_incomplete.length > 0) {
+                engReview.missing_incomplete.forEach(item => {
+                    if (!missingItems.includes(item)) missingItems.push(item);
+                });
+            }
+            if (missingItems.length === 0) {
+                missingWork = isApproved ? "None" : "• Revisions required before production sign-off.";
+            } else {
+                missingWork = missingItems.map(item => item.startsWith('•') ? item : `• ${item}`).join('\n');
+            }
         }
 
-        const passFailStatus = response.result || response.status || (finalStatus === "Approved" ? "PASS" : (responseStatus === "PARTIAL" ? "PARTIAL" : "FAIL"));
+        // Structured Recommendations & Action Plan
+        let recommendations = "";
+        if (response.review_details?.recommendations) {
+            recommendations = response.review_details.recommendations;
+        } else {
+            const recItems = [];
+            if (rawImprovementHints.length > 0) {
+                rawImprovementHints.forEach(h => recItems.push(h));
+            }
+            if (Array.isArray(engReview.next_3_tasks) && engReview.next_3_tasks.length > 0) {
+                recItems.push(`Remediation Plan: ${engReview.next_3_tasks.join('; ')}`);
+            }
+            if (recItems.length === 0) {
+                recommendations = isApproved
+                    ? "Proceed to the next assigned engineering milestone."
+                    : "Address the missing work checklist, commit changes to your repository, and click 'Resubmit Work'.";
+            } else {
+                recommendations = recItems.map(item => item.startsWith('•') ? item : `• ${item}`).join('\n');
+            }
+        }
+
+        const readiness = response.review_details?.readiness || (isApproved ? "Production Ready" : "Requires Revisions");
+
+        // Construct comprehensive, human-readable finalFeedback
+        const finalFeedback = [
+            `Parikshak Assessment: ${passFailStatus} (Score: ${scoreVal}/100) - ${readiness}`,
+            reviewText ? `\nSummary:\n${reviewText}` : '',
+            missingWork && missingWork !== 'None' ? `\n\nMissing Work / Actionable Fixes Checklist:\n${missingWork}` : '',
+            recommendations ? `\n\nRecommended Steps:\n${recommendations}` : '',
+            doneWell ? `\n\nWhat Was Done Well:\n${doneWell}` : ''
+        ].filter(Boolean).join('');
+
         const nextTaskName = response.next_task || (response.next_task_proposal && response.next_task_proposal.title) || "";
 
         // Update submission
@@ -258,6 +304,7 @@ const invokeParikshak = async (submissionId, traceId, io) => {
             nextTask: nextTaskName,
             reviewedAt: new Date()
         };
+        await submission.save();
         await submission.save();
 
         // Phase 2: MasterDB Integration - Candidate Execution History (Disabled per user preference)
@@ -382,35 +429,45 @@ const invokeParikshak = async (submissionId, traceId, io) => {
                 // End Phase 3
 
             } else {
+                // Task needs revisions - reopen task into In Progress so candidate can resubmit work
+                task.status = "In Progress";
+                if ((Number(task.progress) || 0) >= 100) {
+                    task.progress = 50;
+                }
+                task.closedAt = null;
+                await task.save();
+
                 execContext = await emitTaskFailedEvent(
                     submission,
                     finalFeedback || "submission_rejected_by_ai",
                     traceId,
                     task.branch
                 );
-                console.log(`[TRACE_EMITTED] Task failed (Automated, queued for manual review) - trace_id=${execContext?.traceId}`);
+                console.log(`[TRACE_EMITTED] Task reopened for candidate revision - trace_id=${execContext?.traceId}`);
             }
         } catch (execErr) {
             console.error("[TRACE_FAILURE] Failed to emit automated review event:", execErr);
         }
 
-        // Emit Socket Event
+        // Emit Socket Events for real-time updates across candidate & admin views
         if (io) {
             io.emit("submission-reviewed", {
                 submission,
                 trace_id: execContext?.traceId,
                 automated: true
             });
+            io.emit("task:updated", task);
+            io.emit("task-updated", task);
         }
 
         const statusMessage = finalStatus === "Approved"
             ? "has been approved by Parikshak AI."
-            : "is currently under manual review by an admin.";
+            : `requires revisions (Score: ${scoreVal}/100). Review the feedback checklist and click 'Resubmit Work'.`;
 
         await Notification.create({
             recipient: user._id,
             type: "submission_reviewed",
-            title: `Automated Review: ${finalStatus === "Approved" ? "Approved" : "Under Review"}`,
+            title: `Automated Review: ${finalStatus === "Approved" ? "Approved" : "Revisions Required"}`,
             message: `Your submission for task '${task.title}' ${statusMessage}`,
             task: task._id
         });
@@ -635,9 +692,45 @@ const evaluateParikshakSubmission = async (submissionId, traceId) => {
     const isPass = responseStatus === "PASS" || responseStatus === "APPROVED" || responseStatus === "SUCCESS" || (scoreVal !== null && scoreVal >= 70);
     const result = isPass ? "PASS" : (responseStatus === "PARTIAL" ? "PARTIAL" : "FAIL");
 
-    const doneWell = response.review_details?.done_well || response.review || "Submission evaluated by Parikshak AI Engine.";
-    const missingWork = response.review_details?.missing_work || (isPass ? "None" : (Array.isArray(response.failure_reasons) ? response.failure_reasons.join('\n') : "Revisions required."));
-    const recommendations = response.review_details?.recommendations || (Array.isArray(response.improvement_hints) ? response.improvement_hints.join(' ') : "Follow standard development guidelines.");
+    const engReview = response.engineering_review || response.analysis?.engineering_review || {};
+    const preflight = response.preflight_diagnostics || {};
+    const rawFailureReasons = Array.isArray(response.failure_reasons) ? response.failure_reasons : [];
+    const rawImprovementHints = Array.isArray(response.improvement_hints) ? response.improvement_hints : [];
+    const whatsDoneWellList = Array.isArray(engReview.whats_done_well) ? engReview.whats_done_well : [];
+
+    let doneWell = response.review_details?.done_well;
+    if (!doneWell && whatsDoneWellList.length > 0) {
+        doneWell = whatsDoneWellList.map(item => `• ${item}`).join('\n');
+    }
+    if (!doneWell) {
+        doneWell = response.review || (isPass ? "Clean codebase architecture matching specifications." : "Codebase structure intake verified.");
+    }
+
+    let missingWork = response.review_details?.missing_work;
+    if (!missingWork) {
+        const missingItems = [];
+        if (preflight && !preflight.repo_accessible) {
+            missingItems.push(`Repository Access: ${preflight.error_message || 'HTTP 401 Unauthorized (Private Repository)'}. Ensure repo is public.`);
+        }
+        if (Array.isArray(engReview.required_fixes) && engReview.required_fixes.length > 0) {
+            engReview.required_fixes.forEach(f => missingItems.push(f));
+        } else if (rawFailureReasons.length > 0) {
+            rawFailureReasons.forEach(r => missingItems.push(r === 'integration_fail' ? 'Automated tests missing or failed. Add passing unit tests in tests/.' : r));
+        }
+        if (Array.isArray(engReview.missing_incomplete) && engReview.missing_incomplete.length > 0) {
+            engReview.missing_incomplete.forEach(i => { if (!missingItems.includes(i)) missingItems.push(i); });
+        }
+        missingWork = missingItems.length > 0 ? missingItems.map(i => i.startsWith('•') ? i : `• ${i}`).join('\n') : (isPass ? "None" : "Revisions required.");
+    }
+
+    let recommendations = response.review_details?.recommendations;
+    if (!recommendations) {
+        const recItems = [...rawImprovementHints];
+        if (Array.isArray(engReview.next_3_tasks) && engReview.next_3_tasks.length > 0) {
+            recItems.push(`Remediation Plan: ${engReview.next_3_tasks.join('; ')}`);
+        }
+        recommendations = recItems.length > 0 ? recItems.map(i => i.startsWith('•') ? i : `• ${i}`).join('\n') : (isPass ? "Proceed to next assigned task." : "Review checklist, fix identified gaps, and resubmit.");
+    }
     const readiness = response.review_details?.readiness || (isPass ? "Production Ready" : "Requires Revisions");
 
     const nextTaskObj = (typeof response.canonical_next_task_packet === 'object' && response.canonical_next_task_packet)
