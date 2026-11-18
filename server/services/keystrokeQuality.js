@@ -76,8 +76,9 @@ function computeWordScore(text) {
 
 function computeRepetitionScore(text) {
   const stripped = text.replace(/\s+/g, '');
-  if (stripped.length < 4) return 0;
-  return longestSameCharRun(stripped) / stripped.length;
+  if (stripped.length < 4) return { repetitionScore: 0, longestRun: 0 };
+  const longestRun = longestSameCharRun(stripped);
+  return { repetitionScore: longestRun / stripped.length, longestRun };
 }
 
 function normalizeTiming(intervals, timingSummary) {
@@ -112,9 +113,13 @@ function normalizeTiming(intervals, timingSummary) {
  *  - correctionRatio: backspaces relative to produced characters
  *  - timing:         machine-like intervals (very fast + very regular)
  *
+ * Size is deliberately NOT a quality signal: short but real words
+ * ("hello", "bye", "ok") are valuable. Only text with no word-like
+ * content at all can be judged insufficient / key-mashing.
+ *
  * @param {Object} input
  * @param {string} input.text               Reconstructed typed text
- * @param {number} [input.keyCount]         Total printable keys pressed
+ * @param {number} [input.keyCount]         Total keys pressed (all keys)
  * @param {number} [input.backspaceCount]   Correction keys
  * @param {number} [input.pasteCount]       Paste (Ctrl+V) events
  * @param {number[]} [input.intervals]      Inter-key intervals in ms
@@ -131,15 +136,17 @@ function analyzeKeystrokeSegment(input = {}) {
   const pasteCount = Math.max(0, Number(input.pasteCount) || 0);
 
   const { wordScore, tokenCount } = computeWordScore(text);
-  const repetitionScore = computeRepetitionScore(text);
+  const { repetitionScore, longestRun } = computeRepetitionScore(text);
+  // Only a genuinely long same-key run counts as hammering. A double
+  // letter inside a short real word ("hello", "coffee") is normal typing
+  // and must not demote the segment.
+  const hasHammerRun = longestRun >= 4;
   const charCount = text.replace(/\s+/g, '').length;
   const correctionRatio = charCount > 0
     ? Math.min(1, backspaceCount / Math.max(1, charCount))
     : (keyCount > 0 ? Math.min(1, backspaceCount / keyCount) : 0);
 
   const timing = normalizeTiming(input.intervals, input.timing);
-  const hasSpaces = /\s/.test(trimmed);
-  const meaningfulLength = trimmed.length >= 8 || (hasSpaces && trimmed.length >= 4);
   const superhuman = timing.count >= 10
     && timing.mean > 0
     && timing.mean < SUPERHUMAN_MEAN_INTERVAL_MS
@@ -148,21 +155,29 @@ function analyzeKeystrokeSegment(input = {}) {
   const reasons = [];
   let classification;
 
-  if (tokenCount < 2 && trimmed.length < 8) {
+  if (!trimmed.length) {
+    // No printable content (e.g. sensitive window, or keys only).
     classification = 'insufficient';
-    reasons.push('Too little text to judge');
+    reasons.push('No printable text captured');
   } else if (wordScore < MASHING_WORD_SCORE) {
-    classification = 'key_mashing';
-    reasons.push('Almost no word-like tokens in the output');
-  } else if (repetitionScore >= MAX_REPETITION_SCORE && wordScore < 0.5) {
+    if (tokenCount < 2 && trimmed.length < 8) {
+      // A stray character or two — too little to judge either way.
+      classification = 'insufficient';
+      reasons.push('Too little text to judge');
+    } else {
+      classification = 'key_mashing';
+      reasons.push('Almost no word-like tokens in the output');
+    }
+  } else if (hasHammerRun && wordScore < 0.5) {
     classification = 'key_mashing';
     reasons.push('Long same-key runs with no readable words');
   } else if (superhuman && wordScore < 0.65) {
     classification = 'key_mashing';
     reasons.push('Machine-like key rhythm without readable words');
-  } else if (wordScore >= VALUABLE_WORD_SCORE && meaningfulLength && repetitionScore < MAX_REPETITION_SCORE) {
+  } else if (wordScore >= VALUABLE_WORD_SCORE && !hasHammerRun) {
+    // Word-like content — regardless of how short it is.
     classification = 'valuable';
-    reasons.push('Readable words at a human pace');
+    reasons.push('Readable words');
   } else {
     classification = 'low_value';
     reasons.push('Some readable content, but weak word structure');

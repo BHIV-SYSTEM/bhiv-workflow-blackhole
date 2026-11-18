@@ -215,7 +215,8 @@ class ActivityTracker {
     }
     // sendActivityData flushes keystroke segments on success; also flush
     // directly so nothing typed in the final moments is lost either way.
-    await this.flushKeystrokeSegments();
+    // final:true force-closes the live segment (session is ending).
+    await this.flushKeystrokeSegments({ final: true });
 
     this.attendanceId = null;
     this.resetStats();
@@ -307,7 +308,9 @@ class ActivityTracker {
 
           await this.flushOfflineBuffer();
           // Typed-text segments ride the same cadence as telemetry.
-          await this.flushKeystrokeSegments();
+          // Non-final: only ship segments that already hit a real boundary
+          // so an in-progress sentence is never split at the tick.
+          await this.flushKeystrokeSegments({ final: flushFinal });
         }
       }
 
@@ -401,11 +404,15 @@ class ActivityTracker {
    * Upload reconstructed typed-text segments to the server.
    * Segments are drained from the capture buffer, batched with any
    * previously failed segments, and re-queued on retryable errors.
+   * Non-final drains ship only finished segments — the live segment keeps
+   * buffering across ticks so an in-progress sentence stays in one block.
+   * @param {Object} [options]
+   * @param {boolean} [options.final] - Session end: flush the live segment too.
    */
-  async flushKeystrokeSegments() {
+  async flushKeystrokeSegments({ final = false } = {}) {
     if (!this.attendanceId) return;
 
-    const drained = this.keystrokeCapture.drain();
+    const drained = this.keystrokeCapture.drain({ final });
     if (drained.length === 0 && this.keystrokeOfflineBuffer.length === 0) return;
 
     const batch = [...this.keystrokeOfflineBuffer, ...drained].slice(0, 100);

@@ -47,10 +47,19 @@ export function EmployeeDetailModal({ employee, onClose }) {
     }
   }, [employee]);
 
-  const fetchEmployeeDetails = async () => {
+  // Live update: keep keystroke/metrics fresh while the modal stays
+  // open — silent so the loading state doesn't flash every 30s.
+  useEffect(() => {
+    if (!employee) return undefined;
+    const timer = setInterval(() => fetchEmployeeDetails(true), 30000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employee]);
+
+  const fetchEmployeeDetails = async (silent = false) => {
     if (!employee?._id && !employee?.employeeId) return;
     const empId = employee._id || employee.employeeId;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const token = localStorage.getItem('WorkflowToken') || localStorage.getItem('token');
       
@@ -185,7 +194,7 @@ export function EmployeeDetailModal({ employee, onClose }) {
     } catch (error) {
       console.error('Error fetching employee detailed monitoring:', error);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 

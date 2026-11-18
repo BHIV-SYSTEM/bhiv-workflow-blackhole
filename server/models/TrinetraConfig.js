@@ -153,6 +153,10 @@ const trinetraConfigSchema = new mongoose.Schema(
       dedupe_distance: { type: Number, min: 0, max: 64, default: 5 },
       max_per_hour: { type: Number, min: 1, max: 60, default: 8 },
       capture_when_idle: { type: Boolean, default: false },
+      // When true, the desktop agent also captures each visible top-level window
+      // (in addition to full screens) so reviewers can see per-app context.
+      capture_windows: { type: Boolean, default: false },
+      max_windows_per_capture: { type: Number, min: 1, max: 20, default: 5 },
       retention_days: { type: Number, min: 1, max: 365, default: 90 },
       max_upload_bytes: { type: Number, min: 10240, max: 5242880, default: 512000 },
       jpeg_quality: { type: Number, min: 30, max: 95, default: 70 },

@@ -79,6 +79,9 @@ const screenCaptureSchema = new mongoose.Schema({
     requested_trigger: String,
     cloudinary_url: String,
     cloudinary_public_id: String,
+    monitor_index: { type: Number, default: 0 },
+    monitor_label: { type: String, default: null },
+    capture_scope: { type: String, default: 'screen' },
     ai_analysis: {
       activityType: String,
       activityDescription: String,

@@ -154,6 +154,7 @@ router.post('/start', auth, async (req, res) => {
         officeHours: 0,
         remoteHours: 0,
         branch: selectedBranch,
+        source: 'StartDay',
         activities: [{
           type: 'StartDay',
           timestamp: startTime,

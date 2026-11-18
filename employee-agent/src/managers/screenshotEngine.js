@@ -27,6 +27,8 @@ const DEFAULT_POLICY = {
   dedupe_distance: 5,
   max_per_hour: 8,
   capture_when_idle: false,
+  capture_windows: false,
+  max_windows_per_capture: 5,
   jpeg_quality: 70,
   max_upload_bytes: 512000,
   blocked_title_patterns: []
@@ -34,6 +36,10 @@ const DEFAULT_POLICY = {
 
 const POLICY_REFRESH_MS = 5 * 60 * 1000;
 const IDLE_THRESHOLD_SECONDS = 120;
+// Thumbnails below this width are broken captures (64×64/100×100 red or
+// blank frames seen when the capture session is denied/headless) — they
+// would only pollute the admin gallery, so they are never uploaded.
+const MIN_USABLE_THUMB_PX = 320;
 
 class ScreenshotEngine extends EventEmitter {
   constructor(apiService) {
@@ -47,6 +53,7 @@ class ScreenshotEngine extends EventEmitter {
     this.timer = null;
     this.policyTimer = null;
     this.lastSignature = null;
+    this.lastSignatures = new Map();
     this.lastCaptureAt = null;
     this.nextCaptureAt = null;
     this.uploadCount = 0;
@@ -267,7 +274,7 @@ class ScreenshotEngine extends EventEmitter {
     return { buffer, quality };
   }
 
-  async grabScreen() {
+  async grabScreens() {
     const sources = await desktopCapturer.getSources({
       types: ['screen'],
       thumbnailSize: { width: 1600, height: 1000 },
@@ -278,13 +285,59 @@ class ScreenshotEngine extends EventEmitter {
       throw new Error('No screen sources available (permission or headless session)');
     }
 
-    const source = sources[0];
-    const image = source.thumbnail;
-    if (!image || image.isEmpty()) {
-      throw new Error('Empty capture thumbnail (screen recording permission may be denied)');
+    const screens = [];
+    sources.forEach((source, index) => {
+      const image = source && source.thumbnail;
+      if (image && !image.isEmpty()) {
+        const { width } = image.getSize();
+        if (width < MIN_USABLE_THUMB_PX) return; // broken/tiny capture
+        screens.push({
+          index,
+          label: (source.name || `Display ${index + 1}`),
+          sourceId: source.id,
+          image
+        });
+      }
+    });
+
+    if (screens.length === 0) {
+      throw new Error(
+        'Empty or unusable capture thumbnails (screen recording permission may be denied)'
+      );
     }
 
-    return image;
+    return screens;
+  }
+
+  async grabWindows(maxWindows) {
+    const limit = Math.max(1, Number(maxWindows) || 5);
+    const sources = await desktopCapturer.getSources({
+      types: ['window'],
+      thumbnailSize: { width: 1280, height: 800 },
+      fetchWindowIcons: false
+    });
+
+    if (!sources || sources.length === 0) return [];
+
+    const windows = [];
+    for (const source of sources) {
+      if (windows.length >= limit) break;
+      const image = source && source.thumbnail;
+      if (!image || image.isEmpty()) continue;
+      const { width } = image.getSize();
+      if (width < MIN_USABLE_THUMB_PX) continue; // broken/tiny capture
+      const title = source.name || '';
+      // Skip empty/hidden/system windows
+      if (!title.trim()) continue;
+      windows.push({
+        index: windows.length,
+        label: title,
+        sourceId: source.id,
+        image,
+        appName: title.split(' - ').pop() || title
+      });
+    }
+    return windows;
   }
 
   async captureOnce(trigger = 'scheduled') {
@@ -320,58 +373,107 @@ class ScreenshotEngine extends EventEmitter {
 
     this.capturing = true;
     try {
-      const image = await this.grabScreen();
-      const signature = this.dHash(image);
+      const screens = await this.grabScreens();
+      const results = [];
+      let anyStored = false;
 
-      if (
-        signature &&
-        this.lastSignature &&
-        this.hamming(signature, this.lastSignature) <= (Number(this.policy.dedupe_distance) || 5)
-      ) {
-        this.duplicateCount += 1;
-        this.lastCaptureAt = new Date();
-        this.emit('status', this.getStatus());
-        return { captured: false, reason: 'duplicate_frame', signature };
-      }
+      for (const screen of screens) {
+        const signature = this.dHash(screen.image);
+        const previousSignature = this.lastSignatures.get(screen.index) || null;
 
-      const { buffer, quality } = this.compressToLimit(image, this.policy.max_upload_bytes);
-
-      const result = await this.apiService.uploadScreenshot({
-        image: buffer.toString('base64'),
-        signature,
-        capturedAt: new Date().toISOString(),
-        activeApp: appName,
-        windowTitle,
-        sessionId: this.attendanceId,
-        trigger: trigger || 'scheduled',
-        intervalSeconds: Math.round((Number(this.policy.interval_minutes) || 15) * 60),
-        quality,
-        taskId: this.activeTaskId || null
-      });
-
-      if (result && result.success) {
-        this.lastSignature = signature;
-        this.lastCaptureAt = new Date();
-        this.consecutiveFailures = 0;
-        this.lastError = null;
-
-        if (result.stored) {
-          this.uploadCount += 1;
-        } else if (result.skipped === 'duplicate_frame') {
+        if (
+          signature &&
+          previousSignature &&
+          this.hamming(signature, previousSignature) <= (Number(this.policy.dedupe_distance) || 5)
+        ) {
           this.duplicateCount += 1;
-        } else {
-          this.skippedCount += 1;
+          results.push({ monitor: screen.index, captured: false, reason: 'duplicate_frame', signature });
+          continue;
         }
 
-        this.emit('status', this.getStatus());
-        return { captured: !!result.stored, reason: result.skipped || null, signature };
+        const { buffer, quality } = this.compressToLimit(screen.image, this.policy.max_upload_bytes);
+
+        const result = await this.apiService.uploadScreenshot({
+          image: buffer.toString('base64'),
+          signature,
+          capturedAt: new Date().toISOString(),
+          activeApp: appName,
+          windowTitle,
+          sessionId: this.attendanceId,
+          trigger: trigger || 'scheduled',
+          intervalSeconds: Math.round((Number(this.policy.interval_minutes) || 15) * 60),
+          quality,
+          taskId: this.activeTaskId || null,
+          monitorIndex: screen.index,
+          monitorLabel: screen.label,
+          captureScope: 'screen'
+        });
+
+        if (result && result.success) {
+          if (signature) this.lastSignatures.set(screen.index, signature);
+          this.lastCaptureAt = new Date();
+          this.consecutiveFailures = 0;
+          this.lastError = null;
+
+          if (result.stored) {
+            this.uploadCount += 1;
+            anyStored = true;
+          } else if (result.skipped === 'duplicate_frame') {
+            this.duplicateCount += 1;
+          } else {
+            this.skippedCount += 1;
+          }
+          results.push({ monitor: screen.index, captured: !!result.stored, reason: result.skipped || null, signature });
+        } else {
+          this.failureCount += 1;
+          this.consecutiveFailures += 1;
+          this.lastError = (result && result.error) || 'Upload rejected';
+          results.push({ monitor: screen.index, captured: false, reason: 'upload_rejected', error: this.lastError });
+        }
       }
 
-      this.failureCount += 1;
-      this.consecutiveFailures += 1;
-      this.lastError = (result && result.error) || 'Upload rejected';
+      // Optional per-window capture for deeper OS context (admin-controlled).
+      if (this.policy.capture_windows) {
+        try {
+          const windows = await this.grabWindows(this.policy.max_windows_per_capture);
+          for (const win of windows) {
+            const signature = this.dHash(win.image);
+            const { buffer, quality } = this.compressToLimit(win.image, this.policy.max_upload_bytes);
+            const result = await this.apiService.uploadScreenshot({
+              image: buffer.toString('base64'),
+              signature,
+              capturedAt: new Date().toISOString(),
+              activeApp: win.appName,
+              windowTitle: win.label,
+              sessionId: this.attendanceId,
+              trigger: trigger || 'scheduled',
+              intervalSeconds: Math.round((Number(this.policy.interval_minutes) || 15) * 60),
+              quality,
+              taskId: this.activeTaskId || null,
+              monitorIndex: 1000 + win.index,
+              monitorLabel: win.label,
+              captureScope: 'window'
+            });
+            if (result && result.success) {
+              if (result.stored) {
+                this.uploadCount += 1;
+                anyStored = true;
+              } else if (result.skipped === 'duplicate_frame') {
+                this.duplicateCount += 1;
+              } else {
+                this.skippedCount += 1;
+              }
+            } else {
+              this.skippedCount += 1;
+            }
+          }
+        } catch (windowErr) {
+          console.warn('Window capture failed:', windowErr.message);
+        }
+      }
+
       this.emit('status', this.getStatus());
-      return { captured: false, reason: 'upload_rejected', error: this.lastError };
+      return { captured: anyStored, reason: anyStored ? null : 'no_capture', results };
     } catch (error) {
       this.failureCount += 1;
       this.consecutiveFailures += 1;

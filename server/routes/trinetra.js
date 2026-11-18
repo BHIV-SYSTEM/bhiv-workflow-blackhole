@@ -394,6 +394,8 @@ router.get('/agent/config', auth, async (req, res) => {
         dedupe_distance: screenshot.dedupe_distance,
         max_per_hour: screenshot.max_per_hour,
         capture_when_idle: screenshot.capture_when_idle,
+        capture_windows: screenshot.capture_windows === true,
+        max_windows_per_capture: screenshot.max_windows_per_capture || 5,
         jpeg_quality: screenshot.jpeg_quality,
         max_upload_bytes: screenshot.max_upload_bytes,
         blocked_title_patterns: screenshot.blocked_title_patterns || []
@@ -471,7 +473,10 @@ router.post('/agent/screenshot', auth, async (req, res) => {
       activeApp,
       windowTitle,
       sessionId,
-      trigger
+      trigger,
+      monitorIndex,
+      monitorLabel,
+      captureScope
     } = req.body || {};
 
     if (!image || typeof image !== 'string') {
@@ -646,9 +651,53 @@ router.post('/agent/screenshot', auth, async (req, res) => {
         client_signature: signature || null,
         requested_trigger: trigger || 'scheduled',
         cloudinary_url: cloudUpload ? cloudUpload.cloudinary_url : null,
-        cloudinary_public_id: cloudUpload ? cloudUpload.cloudinary_public_id : null
+        cloudinary_public_id: cloudUpload ? cloudUpload.cloudinary_public_id : null,
+        monitor_index: Number.isFinite(Number(monitorIndex)) ? Number(monitorIndex) : 0,
+        monitor_label: monitorLabel ? String(monitorLabel) : null,
+        capture_scope: captureScope ? String(captureScope) : 'screen',
+        ocr_analysis: null
       }
     });
+
+    // Async OCR extraction so TRINETRA can read on-screen text without blocking ingest.
+    try {
+      const ocrService = require('../services/ocrAnalysisService');
+      ocrService.extractTextFromScreenshot(filePath).then((ocrResult) => {
+        if (ocrResult && ocrResult.success) {
+          ScreenCapture.findByIdAndUpdate(capture._id, {
+            $set: {
+              'metadata.ocr_analysis': {
+                text: ocrResult.text,
+                confidence: ocrResult.confidence,
+                extractedAt: ocrResult.extractedAt
+              }
+            }
+          }).catch(() => {});
+        }
+      }).catch(() => {});
+    } catch (ocrErr) {
+      // OCR is optional; never fail the capture.
+    }
+
+    // Real-time live feed to connected clients (admins/managers).
+    if (req.io) {
+      try {
+        req.io.emit('trinetra:screenshot:new', {
+          screenshot_id: String(capture._id),
+          employee_id: String(employeeId),
+          captured_at: capture.timestamp,
+          active_app: activeApp || 'Unknown',
+          window_title: windowTitle || '',
+          monitor_index: Number.isFinite(Number(monitorIndex)) ? Number(monitorIndex) : 0,
+          monitor_label: monitorLabel ? String(monitorLabel) : null,
+          capture_scope: captureScope ? String(captureScope) : 'screen',
+          file_size: processed.info.size,
+          signature: serverHash
+        });
+      } catch (socketErr) {
+        // Socket broadcast is best-effort.
+      }
+    }
 
     res.status(201).json({
       success: true,
@@ -1163,6 +1212,11 @@ router.get('/screenshots', auth, async (req, res) => {
         title: (capture.active_application && capture.active_application.title) || null,
         category: (capture.metadata && capture.metadata.app_category) || null,
         signature: (capture.metadata && capture.metadata.screen_signature) || null,
+        monitor_index: (capture.metadata && capture.metadata.monitor_index) || 0,
+        monitor_label: (capture.metadata && capture.metadata.monitor_label) || null,
+        capture_scope: (capture.metadata && capture.metadata.capture_scope) || 'screen',
+        ocr_text: (capture.metadata && capture.metadata.ocr_analysis && capture.metadata.ocr_analysis.text) || null,
+        ocr_confidence: (capture.metadata && capture.metadata.ocr_analysis && capture.metadata.ocr_analysis.confidence) || null,
         file_size: capture.file_size,
         url: `/api/trinetra/screenshots/${capture._id}`
       }))
