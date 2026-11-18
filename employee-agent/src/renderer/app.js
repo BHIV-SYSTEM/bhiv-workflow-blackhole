@@ -441,6 +441,7 @@ function setupEventListeners() {
   if (activeTaskSelect && window.electronAPI.setActiveTask) {
     activeTaskSelect.addEventListener('change', async () => {
       const taskId = activeTaskSelect.value || null;
+      currentAppState.activeTaskId = taskId;
       await window.electronAPI.setActiveTask(taskId);
     });
   }
@@ -620,8 +621,10 @@ async function openQuickProgressCard() {
     select.appendChild(opt);
   } else {
     cachedTasks.forEach((task) => {
+      const taskVal = getTaskOptionValue(task);
+      if (!taskVal) return;
       const opt = document.createElement('option');
-      opt.value = task._id;
+      opt.value = taskVal;
       opt.textContent = task.title || 'Untitled Task';
       select.appendChild(opt);
     });
@@ -759,22 +762,42 @@ async function loadTasks() {
   }
 }
 
+function getTaskOptionValue(task) {
+  const val = task?.id || task?._id || task?.task_id || '';
+  return val && val !== 'undefined' && val !== 'null' ? String(val) : '';
+}
+
 function renderTasks(tasks) {
   cachedTasks = Array.isArray(tasks) ? tasks : (tasks?.tasks || []);
   const select = document.getElementById('activeTaskSelect');
   if (!select) return;
 
-  const previous = select.value;
+  const desiredValue =
+    (select.value && select.value !== 'undefined' ? select.value : '') ||
+    (currentAppState?.activeTaskId && currentAppState.activeTaskId !== 'undefined'
+      ? String(currentAppState.activeTaskId)
+      : '');
+
   select.innerHTML = '<option value="">— Not attributed to a task —</option>';
 
   cachedTasks.forEach((task) => {
+    const taskVal = getTaskOptionValue(task);
+    if (!taskVal) return;
     const opt = document.createElement('option');
-    opt.value = task._id;
+    opt.value = taskVal;
     opt.textContent = task.status ? `${task.title} (${task.status})` : task.title;
     select.appendChild(opt);
   });
 
-  if (previous) select.value = previous;
+  if (desiredValue && Array.from(select.options).some((o) => o.value === desiredValue)) {
+    select.value = desiredValue;
+  } else if (currentAppState?.activeTaskId && !Array.from(select.options).some((o) => o.value === String(currentAppState.activeTaskId))) {
+    // Task no longer open/assigned; clear stale selection cleanly
+    currentAppState.activeTaskId = null;
+    if (window.electronAPI?.setActiveTask) {
+      window.electronAPI.setActiveTask(null).catch(() => {});
+    }
+  }
 }
 
 /**

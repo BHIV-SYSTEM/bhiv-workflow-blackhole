@@ -188,7 +188,14 @@ async function beginTracking(attendanceId, startTime = null, forceReset = false)
   }
 
   // Restore the task the employee had selected before the app restarted.
-  const storedTaskId = store.get('activeTaskId');
+  const rawStoredTaskId = store.get('activeTaskId');
+  const storedTaskId =
+    rawStoredTaskId && rawStoredTaskId !== 'undefined' && rawStoredTaskId !== 'null'
+      ? String(rawStoredTaskId)
+      : null;
+  if (rawStoredTaskId && !storedTaskId) {
+    store.set('activeTaskId', null);
+  }
   if (storedTaskId) {
     if (activityTracker) activityTracker.setActiveTask(storedTaskId);
     if (screenshotEngine) screenshotEngine.setActiveTask(storedTaskId);
@@ -405,6 +412,15 @@ ipcMain.handle('get-app-state', async () => {
     }
   }
   
+  const rawStoredTaskId = store.get('activeTaskId');
+  const cleanStoredTaskId =
+    rawStoredTaskId && rawStoredTaskId !== 'undefined' && rawStoredTaskId !== 'null'
+      ? String(rawStoredTaskId)
+      : null;
+  if (rawStoredTaskId && !cleanStoredTaskId) {
+    store.set('activeTaskId', null);
+  }
+
   return {
     isLoggedIn: appState.isLoggedIn,
     isDayStarted: appState.isDayStarted,
@@ -412,7 +428,8 @@ ipcMain.handle('get-app-state', async () => {
     user: appState.user,
     startTime: appState.startTime,
     endTime: appState.endTime,
-    consentGiven: appState.consentGiven
+    consentGiven: appState.consentGiven,
+    activeTaskId: cleanStoredTaskId
   };
 });
 
@@ -431,14 +448,16 @@ ipcMain.handle('get-tasks', async () => {
 });
 
 ipcMain.handle('set-active-task', (event, taskId) => {
+  const normalizedTaskId =
+    taskId && taskId !== 'undefined' && taskId !== 'null' ? String(taskId) : null;
   if (activityTracker) {
-    activityTracker.setActiveTask(taskId);
+    activityTracker.setActiveTask(normalizedTaskId);
   }
   if (screenshotEngine) {
-    screenshotEngine.setActiveTask(taskId);
+    screenshotEngine.setActiveTask(normalizedTaskId);
   }
-  store.set('activeTaskId', taskId || null);
-  return { success: true, activeTaskId: taskId || null };
+  store.set('activeTaskId', normalizedTaskId);
+  return { success: true, activeTaskId: normalizedTaskId };
 });
 
 ipcMain.handle('get-screenshot-status', () => {
