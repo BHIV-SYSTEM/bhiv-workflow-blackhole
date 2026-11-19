@@ -50,6 +50,7 @@ import { AIInsightsPanel } from '@/components/monitoring/AIInsightsPanel';
 import { WhitelistManager } from '@/components/monitoring/WhitelistManager';
 import { ProductionDashboard } from '@/components/monitoring/ProductionDashboard';
 import { TrinetraConsole } from '@/components/monitoring/TrinetraConsole';
+import { MissedProgressReasonsPanel } from '@/components/monitoring/MissedProgressReasonsPanel';
 
 export function EmployeeMonitoring() {
   const { user } = useAuth();
@@ -489,6 +490,14 @@ export function EmployeeMonitoring() {
           </TabsTrigger>
 
           <TabsTrigger
+            value="missed-progress"
+            className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-zinc-400 hover:text-white bg-transparent data-[state=active]:bg-amber-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-amber-900/40 data-[state=active]:border data-[state=active]:border-amber-400 ring-2 ring-transparent data-[state=active]:ring-amber-500/30"
+          >
+            <Clock className="h-3.5 w-3.5" />
+            Missed Progress
+          </TabsTrigger>
+
+          <TabsTrigger
             value="ai-insights"
             className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-zinc-400 hover:text-white bg-transparent data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-blue-900/40 data-[state=active]:border data-[state=active]:border-blue-400 ring-2 ring-transparent data-[state=active]:ring-blue-500/30"
           >
@@ -643,6 +652,15 @@ export function EmployeeMonitoring() {
 
         <TabsContent value="alerts" className="mt-6">
           <AlertsPanel employee={selectedEmployee || filteredEmployeesList[0]} />
+        </TabsContent>
+
+        <TabsContent value="missed-progress" className="mt-6">
+          <MissedProgressReasonsPanel
+            selectedEmployeeId={selectedEmployeeFilter === 'all' ? '' : selectedEmployeeFilter}
+            searchQuery={searchQuery}
+            departmentFilter={filterDepartment}
+            statusTab={statusTab}
+          />
         </TabsContent>
 
         <TabsContent value="activity" className="mt-6">

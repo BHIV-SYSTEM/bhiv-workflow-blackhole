@@ -165,6 +165,11 @@ router.get("/:id/daily-summary", auth, async (req, res) => {
     }
 
     const { getIstDayBounds } = require("../utils/progressValidation");
+    const {
+      getLocalDateKey,
+      summarizeActivitiesWithSession,
+      resolveSessionsMap
+    } = require("../utils/telemetryMetrics");
     const now = new Date();
     const istNow = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
     const localYear = istNow.getUTCFullYear();
@@ -181,7 +186,7 @@ router.get("/:id/daily-summary", auth, async (req, res) => {
     const EmployeeActivity = require("../models/EmployeeActivity");
     const WorkSession = require("../models/WorkSession");
 
-    const [todayAim, todayProgresses, todayActivities, attendanceRecords, dailyAttendanceRecords, workSessionRecords, userTasks] = await Promise.all([
+    const [todayAim, todayProgresses, todayActivities, attendanceRecords, dailyAttendanceRecords, workSessionRecords, userTasks, sessionsMap] = await Promise.all([
       Aim.findOne({
         user: userId,
         date: { $gte: today, $lt: tomorrow }
@@ -195,7 +200,7 @@ router.get("/:id/daily-summary", auth, async (req, res) => {
       EmployeeActivity.find({
         employee: userId,
         timestamp: { $gte: today, $lt: tomorrow }
-      }).select('timestamp keystroke_count mouse_activity_score mouse_event_count mouse_cadence keystroke_cadence idle_duration productivity_score active_application interval_seconds').lean(),
+      }).select('timestamp keystroke_count mouse_activity_score mouse_event_count mouse_cadence keystroke_cadence idle_duration productivity_score active_application interval_seconds app_category metadata').lean(),
 
       Attendance.find({
         user: userId,
@@ -222,10 +227,12 @@ router.get("/:id/daily-summary", auth, async (req, res) => {
         ]
       }).sort({ updatedAt: -1, startTime: -1 }).lean(),
 
-      Task.find({ assignee: userId }).select('status priority dueDate title progress').lean()
+      Task.find({ assignee: userId }).select('status priority dueDate title progress').lean(),
+
+      resolveSessionsMap([userId], today, tomorrow, now)
     ]);
 
-    // 1. Determine the authoritative latest WorkSession / Attendance window (matches WorkHoursManager exactly)
+    // 1. Determine authoritative WorkSession / Attendance seconds (unified with monitoring & reports)
     let sessionSeconds = 0;
     let sessionStart = null;
     let sessionEnd = null;
@@ -258,89 +265,42 @@ router.get("/:id/daily-summary", auth, async (req, res) => {
       sessionSeconds = Math.round((latestAttendance.totalHoursWorked || latestAttendance.hoursWorked) * 3600);
     }
 
-    // 2. Scope telemetry activities to the active/latest work session window if available
-    //    (prevents earlier test pings / previous sessions today from inflating current session metrics)
-    let scopedActivities = todayActivities;
-    if (sessionStart && sessionEnd) {
-      const startMs = sessionStart.getTime() - 60000;
-      const endMs = sessionEnd.getTime() + 60000;
-      scopedActivities = todayActivities.filter(act => {
-        const ts = new Date(act.timestamp).getTime();
-        return ts >= startMs && ts <= endMs;
-      });
-    }
+    const sessionMapEntry =
+      sessionsMap.get(`${userId}_${getLocalDateKey(now)}`) ||
+      sessionsMap.get(`${userId}_${localDateStr}`) ||
+      (sessionSeconds > 0 ? { sessionSeconds, startTime: sessionStart } : null);
 
-    // Calculate telemetry metrics from scoped activities
-    let totalKeystrokes = 0;
-    let totalMouseScore = 0;
-    let activeMouseCount = 0;
+    // 2. Compute unified telemetry metrics via shared telemetryMetrics helper (matches Reports & Monitoring 100%)
+    const unified = summarizeActivitiesWithSession(todayActivities || [], sessionMapEntry);
+
     let totalMouseEvents = 0;
-    let totalIdleSeconds = 0;
-    let productivitySum = 0;
-    let productivityCount = 0;
-    let telemetryActiveSeconds = 0;
-
-    scopedActivities.forEach(act => {
-      totalKeystrokes += (act.keystroke_count || 0);
-      totalMouseScore += (act.mouse_activity_score || 0);
-      if ((act.mouse_activity_score || 0) > 0) {
-        activeMouseCount++;
-      }
+    let totalMouseScoreRaw = 0;
+    (todayActivities || []).forEach(act => {
       totalMouseEvents += (act.mouse_event_count || 0);
-
-      if (act.productivity_score > 0) {
-        productivitySum += act.productivity_score;
-        productivityCount++;
-      }
-      const isActive = (act.keystroke_count || 0) > 0 || (act.mouse_activity_score || 0) >= 15 || (act.mouse_event_count || 0) > 0;
-      let idle = 0;
-      if (!isActive) {
-        let raw = act.idle_duration || 0;
-        if (raw > 10000) raw = Math.round(raw / 1000);
-        idle = Math.min(30, Math.max(0, raw));
-      }
-      totalIdleSeconds += idle;
-      telemetryActiveSeconds += Math.max(0, 30 - idle);
+      totalMouseScoreRaw += (act.mouse_activity_score || 0);
     });
-
-    // If mouse events weren't logged separately but mouse score was, estimate realistic count
-    if (totalMouseEvents === 0 && (totalMouseScore > 0 || scopedActivities.length > 0)) {
-      totalMouseEvents = Math.round(totalMouseScore * 2.5);
+    if (totalMouseEvents === 0 && (totalMouseScoreRaw > 0 || (todayActivities || []).length > 0)) {
+      totalMouseEvents = Math.round(totalMouseScoreRaw * 2.5);
     }
 
-    // Authoritative active working hours: strictly match WorkHoursManager session duration when a session exists;
-    // fallback to telemetryActiveSeconds only if no work session/attendance was started.
-    const effectiveActiveSeconds = (sessionStart || sessionSeconds > 0) ? sessionSeconds : telemetryActiveSeconds;
+    const totalKeystrokes = unified.totalKeystrokes;
+    const totalIdleSeconds = unified.totalIdleSeconds;
+    const effectiveActiveSeconds = unified.activeSeconds;
     const totalHours = Math.round((effectiveActiveSeconds / 3600) * 10) / 10;
     const h = Math.floor(effectiveActiveSeconds / 3600);
     const m = Math.floor((effectiveActiveSeconds % 3600) / 60);
     const activeHoursFormatted = `${h}h ${m}m`;
 
-    const sessionH = Math.floor(sessionSeconds / 3600);
-    const sessionM = Math.floor((sessionSeconds % 3600) / 60);
+    const resolvedSessionSec = sessionMapEntry?.sessionSeconds || sessionSeconds;
+    const sessionH = Math.floor(resolvedSessionSec / 3600);
+    const sessionM = Math.floor((resolvedSessionSec % 3600) / 60);
     const sessionHoursFormatted = `${sessionH}h ${sessionM}m`;
 
-    const avgProductivity = productivityCount > 0 ? Math.round(productivitySum / productivityCount) : (scopedActivities.length > 0 || effectiveActiveSeconds > 0 ? 65 : 0);
-    const avgMouse = activeMouseCount > 0 ? Math.round(totalMouseScore / activeMouseCount) : (totalMouseEvents > 0 ? 50 : 0);
-
-    // Calculate Efficiency
-    let efficiencyScore = 0;
-    if (effectiveActiveSeconds > 0) {
-      const activeRatio = Math.min(1.0, Math.max(0.1, (effectiveActiveSeconds - Math.min(effectiveActiveSeconds * 0.7, totalIdleSeconds)) / effectiveActiveSeconds));
-      const prodFactor = (avgProductivity > 0 ? avgProductivity : 60) / 100;
-      efficiencyScore = Math.min(100, Math.max(10, Math.round((activeRatio * 0.5 + prodFactor * 0.5) * 100)));
-    } else {
-      efficiencyScore = 0;
-    }
-
-    let efficiencyLabel = 'No Activity';
-    if (efficiencyScore >= 50) {
-      efficiencyLabel = 'High Efficiency';
-    } else if (efficiencyScore >= 30) {
-      efficiencyLabel = 'Moderate Efficiency';
-    } else if (effectiveActiveSeconds > 0) {
-      efficiencyLabel = 'Low Efficiency';
-    }
+    const avgProductivity = unified.avgProductivityScore;
+    const avgMouse = unified.avgMouseActivity;
+    const efficiencyScore = unified.avgProductivityScore;
+    const efficiencyLabel = unified.productivityEfficiency;
+    const scopedActivities = todayActivities || [];
 
     // Task counts
     const taskCounts = computeUserTaskCounts(userTasks);

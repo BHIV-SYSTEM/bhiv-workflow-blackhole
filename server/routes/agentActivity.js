@@ -367,17 +367,19 @@ router.get('/activity/summary/:userId', auth, async (req, res) => {
     const activities = await EmployeeActivity.find({
       employee: userId,
       timestamp: { $gte: today, $lt: tomorrow }
-    }).sort({ timestamp: -1 });
+    }).sort({ timestamp: -1 }).lean();
+
+    const { summarizeActivitiesWithSession } = require('../utils/telemetryMetrics');
+    const unified = summarizeActivitiesWithSession(activities);
 
     // Calculate summary
     const summary = {
-      totalLogs: activities.length,
-      totalKeystrokes: activities.reduce((sum, a) => sum + a.keystroke_count, 0),
-      totalMouseActivity: activities.reduce((sum, a) => sum + a.mouse_activity_score, 0),
-      totalIdleSeconds: activities.reduce((sum, a) => sum + a.idle_duration, 0),
-      avgProductivityScore: activities.length > 0 
-        ? Math.round(activities.reduce((sum, a) => sum + a.productivity_score, 0) / activities.length)
-        : 0,
+      totalLogs: unified.logCount,
+      totalKeystrokes: unified.totalKeystrokes,
+      totalMouseActivity: unified.avgMouseActivity,
+      totalIdleSeconds: unified.totalIdleSeconds,
+      avgProductivityScore: unified.avgProductivityScore,
+      productivityEfficiency: unified.productivityEfficiency,
       recentLogs: activities.slice(0, 10) // Most recent 10 entries
     };
 

@@ -208,7 +208,7 @@ class ReportGenerator {
       EmployeeActivity.find({
         employee: employeeId,
         timestamp: { $gte: start, $lte: end }
-      }).select('timestamp keystroke_count mouse_activity_score mouse_event_count idle_duration interval_seconds app_category productivity_score active_application').sort({ timestamp: -1 }).lean(),
+      }).select('timestamp keystroke_count mouse_activity_score mouse_event_count idle_duration interval_seconds app_category productivity_score active_application metadata').sort({ timestamp: -1 }).lean(),
 
       MonitoringAlert.find({
         employee: employeeId,

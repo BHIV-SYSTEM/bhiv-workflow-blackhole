@@ -1713,4 +1713,173 @@ router.post('/confirm-upload', auth, async (req, res) => {
   }
 });
 
+/**
+ * GET /api/attendance/missed-progress-reasons
+ * Admin endpoint to list all explanations submitted on Start Day when previous day's progress was missed.
+ */
+router.get('/missed-progress-reasons', auth, adminAuth, async (req, res) => {
+  try {
+    const {
+      startDate,
+      endDate,
+      employeeId,
+      department,
+      statusTab = 'all',
+      search = '',
+      limit = 200
+    } = req.query;
+
+    const branchQuery = getBranchQuery(req);
+    const baseFilter = {
+      missedProgressReason: { $exists: true, $nin: [null, ''] },
+      ...branchQuery
+    };
+
+    if (employeeId && employeeId !== 'all' && mongoose.Types.ObjectId.isValid(employeeId)) {
+      baseFilter.user = employeeId;
+    }
+
+    if (startDate || endDate) {
+      const dateCond = {};
+      if (startDate) {
+        const s = new Date(startDate);
+        if (!Number.isNaN(s.getTime())) {
+          s.setHours(0, 0, 0, 0);
+          dateCond.$gte = s;
+        }
+      }
+      if (endDate) {
+        const e = new Date(endDate);
+        if (!Number.isNaN(e.getTime())) {
+          e.setHours(23, 59, 59, 999);
+          dateCond.$lte = e;
+        }
+      }
+      if (Object.keys(dateCond).length > 0) {
+        baseFilter.date = dateCond;
+      }
+    }
+
+    const populateOpt = {
+      path: 'user',
+      select: 'name email employeeId avatar department stillExist branch',
+      populate: { path: 'department', select: 'name' }
+    };
+
+    const maxDocs = Math.min(500, Math.max(20, parseInt(limit, 10) || 200));
+    const { branch: _ignoredBranch, ...dailyFilter } = baseFilter;
+
+    const [attendanceDocs, dailyDocs] = await Promise.all([
+      Attendance.find(baseFilter)
+        .populate(populateOpt)
+        .sort({ missedProgressReasonSubmittedAt: -1, date: -1 })
+        .limit(maxDocs)
+        .lean(),
+      DailyAttendance.find(dailyFilter)
+        .populate(populateOpt)
+        .sort({ missedProgressReasonSubmittedAt: -1, date: -1 })
+        .limit(maxDocs)
+        .lean()
+    ]);
+
+    // Merge Attendance + DailyAttendance and deduplicate per (userId, missedWorkDate)
+    const mergedMap = new Map();
+    const toDateKey = (val) => {
+      if (!val) return '';
+      const d = new Date(val);
+      if (Number.isNaN(d.getTime())) return '';
+      const ist = new Date(d.getTime() + 5.5 * 60 * 60 * 1000);
+      return ist.toISOString().slice(0, 10);
+    };
+
+    const ingestDoc = (doc, sourceModel) => {
+      if (!doc || !doc.user) return;
+      const u = doc.user;
+      if (branchQuery.branch && u.branch && u.branch !== branchQuery.branch) return;
+
+      const userIdStr = String(u._id);
+      const workDateKey = toDateKey(doc.startDayTime || doc.date);
+      const dedupeKey = `${userIdStr}_${workDateKey}`;
+
+      const entry = {
+        id: String(doc._id),
+        sourceModel,
+        userId: userIdStr,
+        name: u.name || 'Employee',
+        email: u.email || '',
+        employeeId: u.employeeId || '',
+        avatar: u.avatar || null,
+        departmentId: u.department?._id ? String(u.department._id) : (u.department ? String(u.department) : ''),
+        departmentName: u.department?.name || 'General',
+        stillExist: u.stillExist !== undefined ? u.stillExist : 1,
+        missedWorkDate: doc.date || doc.startDayTime,
+        missedWorkDateKey: workDateKey,
+        startDayTime: doc.startDayTime || null,
+        endDayTime: doc.endDayTime || null,
+        hoursWorked: Number(doc.hoursWorked ?? doc.totalHoursWorked ?? 0),
+        reason: String(doc.missedProgressReason || '').trim(),
+        submittedAt: doc.missedProgressReasonSubmittedAt || doc.updatedAt || doc.date
+      };
+
+      const existing = mergedMap.get(dedupeKey);
+      if (!existing || (sourceModel === 'Attendance' && existing.sourceModel !== 'Attendance')) {
+        mergedMap.set(dedupeKey, entry);
+      }
+    };
+
+    attendanceDocs.forEach((d) => ingestDoc(d, 'Attendance'));
+    dailyDocs.forEach((d) => ingestDoc(d, 'DailyAttendance'));
+
+    let records = Array.from(mergedMap.values());
+
+    if (employeeId && employeeId !== 'all') {
+      records = records.filter((r) => r.userId === String(employeeId));
+    }
+
+    if (department && department !== 'all') {
+      records = records.filter((r) => r.departmentId === String(department));
+    }
+
+    if (statusTab === 'active') {
+      records = records.filter((r) => r.stillExist !== 0);
+    } else if (statusTab === 'exited') {
+      records = records.filter((r) => r.stillExist === 0);
+    }
+
+    if (search && search.trim()) {
+      const q = search.trim().toLowerCase();
+      records = records.filter(
+        (r) =>
+          r.name.toLowerCase().includes(q) ||
+          r.email.toLowerCase().includes(q) ||
+          r.employeeId.toLowerCase().includes(q) ||
+          r.departmentName.toLowerCase().includes(q) ||
+          r.reason.toLowerCase().includes(q)
+      );
+    }
+
+    records.sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
+
+    const todayKey = toDateKey(new Date());
+    const uniqueEmployees = new Set(records.map((r) => r.userId)).size;
+    const submittedToday = records.filter((r) => toDateKey(r.submittedAt) === todayKey).length;
+
+    res.json({
+      success: true,
+      records,
+      summary: {
+        totalReasons: records.length,
+        uniqueEmployees,
+        submittedToday
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching missed progress reasons:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch missed progress reasons'
+    });
+  }
+});
+
 module.exports = router;

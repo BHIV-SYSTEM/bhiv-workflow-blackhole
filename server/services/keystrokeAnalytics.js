@@ -365,9 +365,9 @@ class KeystrokeAnalyticsService {
     analysis.productivity_metrics.focus_score = focusScore;
 
     // Determine efficiency rating
-    if (analysis.productivity_metrics.productivity_score >= 60) {
+    if (analysis.productivity_metrics.productivity_score >= 50) {
       analysis.productivity_metrics.efficiency_rating = 'high';
-    } else if (analysis.productivity_metrics.productivity_score >= 40) {
+    } else if (analysis.productivity_metrics.productivity_score >= 30) {
       analysis.productivity_metrics.efficiency_rating = 'medium';
     } else {
       analysis.productivity_metrics.efficiency_rating = 'low';

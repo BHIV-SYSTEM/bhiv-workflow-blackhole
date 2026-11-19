@@ -1033,7 +1033,7 @@ router.get('/reports/:employeeId', async (req, res) => {
       EmployeeActivity.find({
         employee: employeeId,
         timestamp: { $gte: start, $lte: end }
-      }).select('timestamp keystroke_count mouse_activity_score mouse_event_count idle_duration interval_seconds app_category productivity_score active_application').sort({ timestamp: 1 }).lean(),
+      }).select('timestamp keystroke_count mouse_activity_score mouse_event_count idle_duration interval_seconds app_category productivity_score active_application metadata').sort({ timestamp: 1 }).lean(),
       ScreenCapture.find({
         employee: employeeId,
         timestamp: { $gte: start, $lte: end }
@@ -1789,7 +1789,7 @@ router.get('/team-summary', async (req, res) => {
       employee: { $in: empIds },
       timestamp: { $gte: startOfDay, $lte: endOfDay }
     })
-    .select('employee keystroke_count mouse_activity_score mouse_event_count idle_duration interval_seconds app_category productivity_score active_application timestamp')
+    .select('employee keystroke_count mouse_activity_score mouse_event_count idle_duration interval_seconds app_category productivity_score active_application metadata timestamp')
     .sort({ timestamp: -1 })
     .lean();
 
@@ -1987,7 +1987,7 @@ router.get('/daily-summary', async (req, res) => {
       employee: { $in: activeEmpIds },
       timestamp: { $gte: startOfDay, $lte: endOfDay }
     })
-    .select('employee keystroke_count mouse_activity_score mouse_event_count idle_duration interval_seconds app_category productivity_score active_application timestamp')
+    .select('employee keystroke_count mouse_activity_score mouse_event_count idle_duration interval_seconds app_category productivity_score active_application metadata timestamp')
     .sort({ timestamp: 1 })
     .lean();
 
@@ -2148,7 +2148,7 @@ router.get('/monthly-summary', async (req, res) => {
         employee: { $in: activeEmpIds },
         timestamp: { $gte: startOfMonth, $lte: endOfMonth }
       })
-      .select('employee timestamp keystroke_count mouse_activity_score mouse_event_count idle_duration interval_seconds app_category productivity_score')
+      .select('employee timestamp keystroke_count mouse_activity_score mouse_event_count idle_duration interval_seconds app_category productivity_score active_application.name metadata')
       .sort({ timestamp: 1 })
       .lean()
       .limit(300000);
@@ -2382,7 +2382,7 @@ router.get('/monthly-employee-breakdown', async (req, res) => {
       employee: employeeId,
       timestamp: { $gte: startOfMonth, $lte: endOfMonth }
     })
-    .select('timestamp idle_duration interval_seconds keystroke_count mouse_activity_score mouse_event_count app_category productivity_score active_application.name')
+    .select('timestamp idle_duration interval_seconds keystroke_count mouse_activity_score mouse_event_count app_category productivity_score active_application.name metadata')
     .sort({ timestamp: 1 })
     .lean();
 
