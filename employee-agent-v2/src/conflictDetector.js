@@ -41,8 +41,9 @@ export class AgentConflictDetector {
       };
     }
 
-    // Check if electron/node is running from the employee-agent directory
-    if (lower.includes('employee-agent') && (lower.includes('electron') || lower.includes('node') || lower.includes('main.js'))) {
+    // Check if electron/node is running from the employee-agent directory (excluding employee-agent-v2)
+    const lowerWithoutV2 = lower.replace(/employee-agent-v2/g, '');
+    if (lowerWithoutV2.includes('employee-agent') && (lowerWithoutV2.includes('electron') || lowerWithoutV2.includes('node') || lowerWithoutV2.includes('main.js'))) {
       return {
         hasConflict: true,
         detectedProcess: 'V1 Agent Process Instance',
