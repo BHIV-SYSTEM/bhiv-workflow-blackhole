@@ -20,7 +20,9 @@
       "/node_modules/",
       "modules/employee-monitoring-v2",
       "tests/employeeId",
-      "tests/pranaClient"
+      "tests/pranaClient",
+      "tests/pravesh",
+      "tests/orgEmail"
     ],
     "forceExit": true,
     "clearMocks": true

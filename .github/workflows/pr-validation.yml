@@ -97,11 +97,13 @@ jobs:
         run: |
           node --test tests/employeeId.test.js
           node --test tests/pranaClient.test.js
+          if [ -f tests/pravesh.test.js ]; then node tests/pravesh.test.js; fi
+          if [ -f tests/orgEmail.test.js ]; then node tests/orgEmail.test.js; fi
 
       - name: Run Server Jest Suites (Unit & Security)
         run: |
           npm test -- \
-            --testPathIgnorePatterns="modules/employee-monitoring-v2|tests/employeeId|tests/pranaClient" \
+            --testPathIgnorePatterns="modules/employee-monitoring-v2|tests/employeeId|tests/pranaClient|tests/pravesh|tests/orgEmail" \
             --forceExit
 
   desktop-agent-v2-validation:
