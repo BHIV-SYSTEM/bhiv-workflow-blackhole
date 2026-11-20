@@ -43,6 +43,10 @@ const registeredDeviceSchema = new mongoose.Schema({
     type: String,
     required: true // Cryptographic hash of the issued device secret
   },
+  encrypted_device_key: {
+    type: String,
+    default: null // AES-256-GCM encrypted secret for HMAC verification at rest
+  },
   status: {
     type: String,
     enum: ['PENDING_APPROVAL', 'ACTIVE', 'REVOKED', 'BLOCKED'],

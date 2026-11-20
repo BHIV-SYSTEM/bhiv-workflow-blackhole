@@ -17,10 +17,17 @@ router.use(requireV2Active);
 router.get('/ping', (req, res) => {
   res.json({
     service: 'niyantran-employee-monitoring-v2',
-    status: 'FOUNDATION_INITIALIZED',
-    phase: 'Phase A: Foundation & Strict Isolation',
+    status: 'ACTIVE',
+    phase: 'Phase D: Secure Backend & Live Telemetry Integration',
     timestamp: new Date().toISOString()
   });
 });
+
+// V2 Submodules
+router.use('/devices', require('./devices'));
+router.use('/sessions', require('./sessions'));
+router.use('/telemetry', require('./telemetry'));
+router.use('/admin', require('./admin'));
+router.use('/installer', require('./installer'));
 
 module.exports = router;

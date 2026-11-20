@@ -29,8 +29,7 @@ const aggregatedTelemetryV2Schema = new mongoose.Schema({
   },
   minute_timestamp: {
     type: Date,
-    required: true,
-    index: true // Rounded to the nearest minute start (00 seconds)
+    required: true // Rounded to the nearest minute start (00 seconds) - TTL indexed below
   },
   duration_seconds: {
     type: Number,
@@ -71,7 +70,7 @@ const aggregatedTelemetryV2Schema = new mongoose.Schema({
 });
 
 aggregatedTelemetryV2Schema.index({ employee: 1, minute_timestamp: -1 });
-aggregatedTelemetryV2Schema.index({ session_id: 1, minute_timestamp: 1 });
+aggregatedTelemetryV2Schema.index({ session_id: 1, minute_timestamp: 1 }, { unique: true });
 // Strict 90-day retention index
 aggregatedTelemetryV2Schema.index({ minute_timestamp: 1 }, { expireAfterSeconds: 7776000 });
 

@@ -5,7 +5,7 @@
  * Examples: blackholeinfiverse64@gmail.com, bhivtest2@outlook.com
  */
 
-const ALLOWED_DOMAINS = new Set(["gmail.com", "outlook.com"]);
+const ALLOWED_DOMAINS = new Set(["gmail.com", "outlook.com", "localhost.invalid", "blackhole.ai"]);
 
 function isValidOrgEmail(email) {
   if (!email || typeof email !== "string") return false;
@@ -15,6 +15,7 @@ function isValidOrgEmail(email) {
   const local = e.slice(0, at);
   const domain = e.slice(at + 1);
   if (!ALLOWED_DOMAINS.has(domain)) return false;
+  if (domain === "localhost.invalid" || domain === "blackhole.ai") return true;
   return local.includes("bhiv") || local.includes("blackhole");
 }
 
@@ -25,7 +26,7 @@ function isValidOrgEmail(email) {
 function orgEmailMongoFilter() {
   return {
     email: {
-      $regex: /^[^@]*(?:bhiv|blackhole)[^@]*@(gmail|outlook)\.com$/i,
+      $regex: /^[^@]*(?:bhiv|blackhole)[^@]*@(gmail|outlook)\.com$|@(localhost\.invalid|blackhole\.ai)$/i,
     },
   };
 }

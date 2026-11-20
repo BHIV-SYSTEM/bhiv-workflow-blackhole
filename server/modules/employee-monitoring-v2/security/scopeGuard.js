@@ -30,8 +30,8 @@ function verifyMonitoringScope(req, res, next) {
     return res.status(401).json({ error: 'Unauthorized: Authentication required', code: 'AUTH_REQUIRED' });
   }
 
-  const targetEmployeeId = req.params.employeeId || req.query.employeeId || req.body.employeeId;
   const requestingUserId = String(req.user.id || req.user._id);
+  const targetEmployeeId = req.params?.employeeId || req.query?.employeeId || req.body?.employeeId || requestingUserId;
 
   // 1. Self-access is always permitted for personal workspace data
   if (targetEmployeeId && requestingUserId === String(targetEmployeeId)) {

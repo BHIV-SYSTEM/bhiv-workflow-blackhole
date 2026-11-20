@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation, Link } from "react-router-dom";
-import { LayoutDashboard, CheckSquare, Network, Users, Sparkles, Settings, LogOut, CheckCircle, BarChart, Airplay, LayoutDashboardIcon, Target, Monitor, DollarSign, Calendar, Clock, UserCog, UserCheck, ShoppingCart, Mail, ChevronLeft, ChevronRight, Building2, FolderKanban, ClipboardCheck, AlertTriangle, FileText, BookOpen, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, CheckSquare, Network, Users, Sparkles, Settings, LogOut, CheckCircle, BarChart, Airplay, LayoutDashboardIcon, Target, Monitor, DollarSign, Calendar, Clock, UserCog, UserCheck, ShoppingCart, Mail, ChevronLeft, ChevronRight, Building2, FolderKanban, ClipboardCheck, AlertTriangle, FileText, BookOpen, ShieldCheck, MonitorDown } from "lucide-react";
 import { useAuth } from "../../context/auth-context";
 import { api } from "../../lib/api";
 
@@ -88,11 +88,12 @@ export function DashboardSidebar({ onNavigate, isMobile = false } = {}) {
           title: "Main",
           routes: [
             { title: "Dashboard", href: "/userdashboard", icon: LayoutDashboardIcon },
+            { title: "Desktop Agent", href: "/desktop-agent", icon: MonitorDown },
             { title: "My Tasks", href: "/my-tasks", icon: CheckSquare },
             { title: "Set Aims", href: "/aims", icon: Target },
             { title: "Progress", href: "/progress", icon: BarChart },
             { title: "Knowledge Admin", href: "/knowledge-admin", icon: BookOpen },
-            { title: "My Monitoring V2", href: "/monitoring-v2/employee", icon: ShieldCheck },
+            { title: "Work Session", href: "/monitoring-v2/employee", icon: ShieldCheck },
           ]
         },
         {
@@ -138,8 +139,9 @@ export function DashboardSidebar({ onNavigate, isMobile = false } = {}) {
           title: "Main",
           routes: [
             { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+            { title: "Desktop Agent", href: "/desktop-agent", icon: MonitorDown },
             { title: "AI Optimization", href: "/optimization", icon: Sparkles },
-            { title: "My Monitoring V2", href: "/monitoring-v2/employee", icon: ShieldCheck },
+            { title: "My Work Session", href: "/monitoring-v2/employee", icon: ShieldCheck },
           ]
         },
         {
@@ -232,7 +234,8 @@ export function DashboardSidebar({ onNavigate, isMobile = false } = {}) {
           { title: "Completed Tasks", href: "/completedtask", icon: CheckCircle },
           { title: "Test Tasks", href: "/tested-tasks", icon: FileText },
           { title: "Knowledge Admin", href: "/knowledge-admin", icon: BookOpen },
-          { title: "My Monitoring V2", href: "/monitoring-v2/employee", icon: ShieldCheck },
+          { title: "Desktop Agent", href: "/desktop-agent", icon: MonitorDown },
+          { title: "Work Session", href: "/monitoring-v2/employee", icon: ShieldCheck },
         ]
       },
       {

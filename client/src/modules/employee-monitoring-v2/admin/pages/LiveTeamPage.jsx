@@ -3,9 +3,10 @@
  * Admin Overview — Live Team Activity Table Page
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useMonitoringV2Context } from '../../context/MonitoringV2Context.jsx';
 import MockDataService from '../../services/mockDataService.js';
+import monitoringV2Api from '../../services/monitoringV2Api.js';
 import Card, { CardHeader, CardTitle, CardDescription, CardContent } from '../../components/ui/Card.jsx';
 import Table, { TableHeader, TableBody, TableRow, TableHead, TableCell } from '../../components/ui/Table.jsx';
 import Badge from '../../components/ui/Badge.jsx';
@@ -18,6 +19,7 @@ import {
   Eye,
   AlertTriangle,
   Radio,
+  RefreshCw,
 } from 'lucide-react';
 
 const STATUS_OPTIONS = [
@@ -30,11 +32,65 @@ const STATUS_OPTIONS = [
 export const LiveTeamPage = () => {
   const { departmentFilter, searchQuery, setSearchQuery, setActiveTab } = useMonitoringV2Context();
   const [selectedStatus, setSelectedStatus] = useState('ALL');
+  const [backendTeam, setBackendTeam] = useState(null);
+  const [loading, setLoading] = useState(false);
 
-  const team = MockDataService.getLiveTeam({
+  const fetchLiveTeam = async () => {
+    setLoading(true);
+    try {
+      const res = await monitoringV2Api.getLiveTeam();
+      if (res?.data?.team && res.data.team.length > 0) {
+        const mapped = res.data.team.map((s) => ({
+          id: s.sessionId || s.employeeId,
+          name: s.employeeName,
+          role: s.department || 'Software Engineer',
+          department: s.department,
+          avatar: (s.employeeName || 'U').split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase(),
+          employmentStatus: 'ACTIVE',
+          sessionStatus: s.state,
+          activeDevice: {
+            type: s.mode === 'PHONE' ? 'phone' : 'laptop',
+            name: s.deviceId || (s.mode === 'PHONE' ? 'Mobile Phone' : 'Windows PC'),
+          },
+          currentCategory: s.primaryCategory || 'DEVELOPMENT',
+          currentApplication: s.primaryCategory === 'DEVELOPMENT' ? 'VS Code' : 'Chrome',
+          inputActivityPercent: s.focusScore || 70,
+          lastHeartbeatSecondsAgo: Math.max(0, Math.round((Date.now() - new Date(s.lastTelemetryAt || s.startedAt).getTime()) / 1000)),
+          isPilotUser: true,
+        }));
+        setBackendTeam(mapped);
+      }
+    } catch {
+      // Backend live team fallback to mock
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchLiveTeam();
+    const interval = setInterval(fetchLiveTeam, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const mockTeam = MockDataService.getLiveTeam({
     department: departmentFilter,
     search: searchQuery,
     sessionStatus: selectedStatus,
+  });
+
+  const rawTeam = backendTeam && backendTeam.length > 0 ? backendTeam : mockTeam;
+  const team = rawTeam.filter((m) => {
+    if (selectedStatus !== 'ALL' && m.sessionStatus !== selectedStatus) return false;
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      return (
+        m.name?.toLowerCase().includes(q) ||
+        m.role?.toLowerCase().includes(q) ||
+        m.currentApplication?.toLowerCase().includes(q)
+      );
+    }
+    return true;
   });
 
   return (
@@ -61,6 +117,16 @@ export const LiveTeamPage = () => {
             placeholder="Search employee, role, or app..."
             className="w-full sm:w-64"
           />
+          <Button
+            variant="outline"
+            size="sm"
+            icon={RefreshCw}
+            onClick={fetchLiveTeam}
+            className={`text-xs ${loading ? 'animate-spin' : ''}`}
+            title="Refresh Live Fleet"
+          >
+            Refresh
+          </Button>
         </div>
       </div>
 
@@ -134,10 +200,10 @@ export const LiveTeamPage = () => {
                           member.sessionStatus === 'ACTIVE'
                             ? 'success'
                             : member.sessionStatus === 'IDLE'
-                            ? 'warning'
-                            : member.sessionStatus === 'V1_AGENT_CONFLICT'
-                            ? 'danger'
-                            : 'neutral'
+                              ? 'warning'
+                              : member.sessionStatus === 'V1_AGENT_CONFLICT'
+                                ? 'danger'
+                                : 'neutral'
                         }
                       >
                         {member.sessionStatus}
@@ -152,12 +218,10 @@ export const LiveTeamPage = () => {
                           ) : (
                             <Laptop className="w-3.5 h-3.5 text-indigo-400" />
                           )}
-                          <span className="truncate max-w-[130px]" title={member.activeDevice.name}>
-                            {member.activeDevice.name}
-                          </span>
+                          <span>{member.activeDevice.name}</span>
                         </div>
                       ) : (
-                        <span className="text-slate-500 text-xs">—</span>
+                        <span className="text-xs text-slate-500">—</span>
                       )}
                     </TableCell>
 
@@ -169,21 +233,15 @@ export const LiveTeamPage = () => {
 
                     <TableCell>
                       <span className="text-xs text-slate-300 font-medium">
-                        {member.focusedApp}
+                        {member.currentApplication || '—'}
                       </span>
                     </TableCell>
 
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <div className="w-14 h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                        <div className="w-16 h-1.5 rounded-full bg-slate-800 overflow-hidden">
                           <div
-                            className={`h-full rounded-full ${
-                              member.inputActivityPercent > 70
-                                ? 'bg-indigo-500'
-                                : member.inputActivityPercent > 30
-                                ? 'bg-sky-500'
-                                : 'bg-amber-500'
-                            }`}
+                            className="h-full bg-indigo-500 rounded-full"
                             style={{ width: `${member.inputActivityPercent}%` }}
                           />
                         </div>
@@ -206,10 +264,11 @@ export const LiveTeamPage = () => {
                         variant="ghost"
                         size="sm"
                         icon={Eye}
-                        onClick={() => setActiveTab('employee-activity')}
-                        title="Drill down to activity timeline"
+                        onClick={() => setActiveTab('activity')}
+                        className="text-slate-400 hover:text-slate-100"
+                        title="View Detailed Activity"
                       >
-                        Activity
+                        Details
                       </Button>
                     </TableCell>
                   </TableRow>

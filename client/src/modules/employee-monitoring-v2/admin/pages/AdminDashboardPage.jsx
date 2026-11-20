@@ -3,9 +3,10 @@
  * Admin Overview — Main Fleet Dashboard Page
  */
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useMonitoringV2Context } from '../../context/MonitoringV2Context.jsx';
 import MockDataService from '../../services/mockDataService.js';
+import monitoringV2Api from '../../services/monitoringV2Api.js';
 import MetricCard from '../../components/ui/MetricCard.jsx';
 import Card, { CardHeader, CardTitle, CardDescription, CardContent } from '../../components/ui/Card.jsx';
 import Table, { TableHeader, TableBody, TableRow, TableHead, TableCell } from '../../components/ui/Table.jsx';
@@ -30,8 +31,46 @@ import {
 export const AdminDashboardPage = () => {
   const { departmentFilter, setActiveTab } = useMonitoringV2Context();
 
+  const [realLiveTeam, setRealLiveTeam] = useState(null);
+
+  useEffect(() => {
+    let mounted = true;
+    async function loadData() {
+      try {
+        const teamRes = await monitoringV2Api.getLiveTeam();
+        if (mounted && teamRes?.data?.team && teamRes.data.team.length > 0) {
+          const mapped = teamRes.data.team.map((s) => ({
+            id: s.sessionId || s.employeeId,
+            name: s.employeeName,
+            role: s.department || 'Engineer',
+            department: s.department,
+            avatar: (s.employeeName || 'U').split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase(),
+            employmentStatus: 'ACTIVE',
+            sessionStatus: s.state,
+            activeDevice: { name: s.deviceId || (s.mode === 'PHONE' ? 'Mobile Phone' : 'Windows PC') },
+            currentCategory: s.primaryCategory || 'DEVELOPMENT',
+            inputActivityPercent: s.focusScore || 70,
+            lastHeartbeatSecondsAgo: Math.max(0, Math.round((Date.now() - new Date(s.lastTelemetryAt || s.startedAt).getTime()) / 1000)),
+          }));
+          setRealLiveTeam(mapped);
+        }
+      } catch {
+        // Fallback to local fleet mock
+      }
+    }
+
+    loadData();
+    const interval = setInterval(loadData, 8000);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
   const stats = MockDataService.getSummaryStats();
-  const liveTeam = MockDataService.getLiveTeam({ department: departmentFilter }).slice(0, 5);
+  const liveTeam = realLiveTeam && realLiveTeam.length > 0
+    ? realLiveTeam.slice(0, 5)
+    : MockDataService.getLiveTeam({ department: departmentFilter }).slice(0, 5);
   const trends = MockDataService.getDailyTrends();
   const categories = MockDataService.getCategoryBreakdown();
   const alerts = MockDataService.getAlerts().filter((a) => !a.resolved);
@@ -74,77 +113,87 @@ export const AdminDashboardPage = () => {
       {/* Primary KPI Metrics: Separate Employment Status from Live Work-Session Status */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
         <MetricCard
-          title="All Users"
-          value={stats.allUsers}
-          subtext="Total directory"
+          label="Total Headcount"
+          value={stats.employment.totalHeadcount}
+          subtext="Active in HR Master"
           icon={Users}
         />
         <MetricCard
-          title="Active Users"
-          value={stats.activeUsers}
-          subtext="Employed staff"
+          label="Employed Active"
+          value={stats.employment.employedActive}
+          subtext="Contract active"
           icon={UserCheck}
         />
         <MetricCard
-          title="Exited Users"
-          value={stats.exitedUsers}
-          subtext="Separated/former"
+          label="On Leave Today"
+          value={stats.employment.onLeaveToday}
+          subtext="Approved leave"
           icon={UserX}
         />
         <MetricCard
-          title="Connected Agents"
-          value={stats.connectedAgents}
-          subtext="Desktop v2.0.0"
-          icon={Laptop}
-        />
-        <MetricCard
-          title="Active Sessions"
-          value={stats.activeSessions}
-          subtext="Working now"
+          label="Active Session"
+          value={realLiveTeam ? realLiveTeam.length : stats.workSessions.activeSessions}
+          subtext="Actively working"
           icon={Activity}
-          badge={<Badge variant="success">Live</Badge>}
+          highlight="emerald"
         />
         <MetricCard
-          title="Idle Sessions"
-          value={stats.idleSessions}
-          subtext=">5m inactivity"
+          label="Idle Session"
+          value={stats.workSessions.idleSessions}
+          subtext="No input >3 min"
           icon={Clock}
-          badge={<Badge variant="warning">Idle</Badge>}
+          highlight="amber"
         />
         <MetricCard
-          title="Offline Sessions"
-          value={stats.offlineSessions}
-          subtext="No heartbeat"
+          label="Offline Today"
+          value={stats.workSessions.offlineWorkstations}
+          subtext="No session opened"
           icon={WifiOff}
-          badge={<Badge variant="neutral">Offline</Badge>}
+        />
+        <MetricCard
+          label="V1 Coexistence"
+          value={stats.workSessions.v1ConflictHold}
+          subtext="V2 paused (V1 run)"
+          icon={Laptop}
+          highlight="purple"
         />
       </div>
 
-      {/* Charts Row: Hourly Trends & Category Distribution */}
+      {/* Aggregate Charts Grid: 1-hour Activity Distribution & Categories */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Daily Telemetry Cadence</CardTitle>
-            <CardDescription>
-              Hourly aggregate distribution of active focused hours vs idle time across active devices
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ActivityBarChart data={trends} height={190} />
-          </CardContent>
-        </Card>
+        <div className="lg:col-span-2">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Fleet Activity Heatmap (Hourly Aggregates)</CardTitle>
+                <CardDescription>
+                  Aggregated active vs idle minutes across all enrolled workstations today
+                </CardDescription>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-slate-400">
+                <span className="w-2.5 h-2.5 rounded bg-indigo-500 inline-block" /> Focused
+                <span className="w-2.5 h-2.5 rounded bg-amber-500 inline-block ml-2" /> Idle
+              </div>
+            </CardHeader>
+            <CardContent>
+              <ActivityBarChart data={trends} />
+            </CardContent>
+          </Card>
+        </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Application Categories</CardTitle>
-            <CardDescription>
-              Distribution of authorized process categories (non-invasive binary names)
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <CategoryDonut categories={categories} size={150} />
-          </CardContent>
-        </Card>
+        <div className="lg:col-span-1">
+          <Card>
+            <CardHeader>
+              <CardTitle>Work Category Distribution</CardTitle>
+              <CardDescription>
+                High-level classification (Zero private URLs/Text)
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <CategoryDonut categories={categories} />
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       {/* Live Team Quick Table */}
@@ -203,10 +252,10 @@ export const AdminDashboardPage = () => {
                         member.sessionStatus === 'ACTIVE'
                           ? 'success'
                           : member.sessionStatus === 'IDLE'
-                          ? 'warning'
-                          : member.sessionStatus === 'V1_AGENT_CONFLICT'
-                          ? 'danger'
-                          : 'neutral'
+                            ? 'warning'
+                            : member.sessionStatus === 'V1_AGENT_CONFLICT'
+                              ? 'danger'
+                              : 'neutral'
                       }
                     >
                       {member.sessionStatus}

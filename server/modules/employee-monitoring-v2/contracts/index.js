@@ -50,7 +50,7 @@ function validateTelemetrySample(sample) {
   }
 
   // Anti-Surveillance Gate: Strictly reject forbidden fields
-  const forbiddenFields = ['text', 'keystrokes', 'screenshot', 'image', 'base64', 'clipboard', 'url'];
+  const forbiddenFields = ['text', 'keystrokes', 'screenshot', 'image', 'base64', 'clipboard', 'url', 'windowTitle'];
   for (const field of forbiddenFields) {
     if (Object.prototype.hasOwnProperty.call(sample, field)) {
       errors.push(`CRITICAL PRIVACY VIOLATION: Forbidden field '${field}' detected in telemetry payload`);

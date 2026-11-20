@@ -4,7 +4,7 @@
  */
 
 export const AGENT_CONFIG = Object.freeze({
-  VERSION: '2.0.0-phase-a',
+  VERSION: '2.0.0-phase-c',
   API_BASE_URL: process.env.V2_SERVER_URL || 'http://localhost:5000/api/monitoring-v2',
   TELEMETRY_INTERVAL_MS: 60 * 1000,       // 60-second aggregation window
   HEARTBEAT_INTERVAL_MS: 30 * 1000,       // 30-second heartbeat

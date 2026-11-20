@@ -89,8 +89,9 @@ jobs:
       - name: Install server dependencies
         run: npm ci || npm install --legacy-peer-deps
 
-      - name: Run Backend V2 Isolation Suite
-        run: node --test modules/employee-monitoring-v2/tests/isolation.test.js
+      - name: Run Backend V2 Suites (All V2 Contract, Lifecycle & Handoff Tests)
+        run: |
+          node --test modules/employee-monitoring-v2/tests/*.test.js
 
       - name: Run Native Node Unit Tests
         run: |
@@ -116,7 +117,7 @@ jobs:
           node-version: 20
 
       - name: Run Agent V2 Lifecycle & Security Tests
-        run: node --test employee-agent-v2/tests/agent.test.js
+        run: node --test employee-agent-v2/tests/*.test.js
 
   pr-quality-gate:
     name: PR Quality Gate Summary

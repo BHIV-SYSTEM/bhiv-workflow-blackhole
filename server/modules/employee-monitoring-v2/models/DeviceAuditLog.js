@@ -39,8 +39,7 @@ const deviceAuditLogSchema = new mongoose.Schema({
   },
   timestamp: {
     type: Date,
-    default: Date.now,
-    index: true
+    default: Date.now // 365-day TTL indexed below
   }
 }, {
   timestamps: false,

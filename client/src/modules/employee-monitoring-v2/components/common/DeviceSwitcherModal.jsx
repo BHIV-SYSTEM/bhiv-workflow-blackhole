@@ -42,7 +42,7 @@ export const DeviceSwitcherModal = ({
               Cancel
             </Button>
             <Button variant="primary" size="sm" onClick={handleConfirm} icon={ArrowRightLeft}>
-              Confirm Handoff (Demo)
+              Confirm Device Handoff
             </Button>
           </>
         ) : null
@@ -53,9 +53,9 @@ export const DeviceSwitcherModal = ({
           <div className="w-10 h-10 mx-auto rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
             <Check className="w-5 h-5" />
           </div>
-          <h4 className="text-sm font-semibold text-slate-100">Device Handoff Simulated</h4>
+          <h4 className="text-sm font-semibold text-slate-100">Device Handoff Completed</h4>
           <p className="text-xs text-slate-400">
-            Active session transferred to {selectedTarget === 'PHONE' ? 'Phone' : 'Laptop / PC'}.
+            Active monitoring session transferred to {selectedTarget === 'PHONE' ? 'Phone (Mobile PWA)' : 'Laptop / PC Workstation'}.
           </p>
         </div>
       ) : (
@@ -67,10 +67,10 @@ export const DeviceSwitcherModal = ({
               <span>Single Active Device Governance</span>
             </div>
             <p className="text-[11px] text-slate-400 leading-relaxed">
-              In V2, an employee can only have one active telemetry lease at a time.
-              Switching devices gracefully releases the desktop 90s session lease and establishes ownership on the target device.
+              An employee can only have one active telemetry lease at any time.
+              Switching devices gracefully revokes the prior device's authorization lease and establishes verified ownership on the target device.
               <span className="block mt-1 text-emerald-400">
-                Attendance clock-in/out records are NEVER mutated by device switching.
+                Attendance records and salary calculations are NEVER mutated by device switching.
               </span>
             </p>
           </div>
@@ -93,7 +93,7 @@ export const DeviceSwitcherModal = ({
                   <span className="text-xs font-semibold text-slate-200">Laptop / PC</span>
                 </div>
                 <p className="text-[10px] text-slate-400">
-                  Desktop agent telemetry with input frequency counts.
+                  Full Win32 foreground application duration tracking & hardware idle detection.
                 </p>
                 {currentMode === 'LAPTOP_PC' && (
                   <Badge variant="neutral" className="mt-2 text-[10px]">
@@ -116,7 +116,7 @@ export const DeviceSwitcherModal = ({
                   <span className="text-xs font-semibold text-slate-200">Phone (PWA)</span>
                 </div>
                 <p className="text-[10px] text-slate-400">
-                  Mobile work mode with attendance verification.
+                  Mobile work presence and task timer. (Desktop app tracking paused while on phone).
                 </p>
                 {currentMode === 'PHONE' && (
                   <Badge variant="neutral" className="mt-2 text-[10px]">

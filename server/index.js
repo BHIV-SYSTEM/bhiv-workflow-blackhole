@@ -599,6 +599,7 @@ app.use('/api/aims', aimRoutes);
 app.use('/api/user-notifications', userNotificationRoutes);
 app.use("/api/push", pushRoutes) // Added push routes use
 app.use("/api/monitoring", require("./routes/monitoring")); // Employee monitoring routes
+app.use("/api/monitoring-v2", require("./modules/employee-monitoring-v2/routes")); // Employee monitoring V2 routes (isolated, feature-flagged)
 app.use("/api/attendance", attendanceRoutes); // Attendance management routes
 app.use("/api/enhanced-attendance", enhancedAttendanceRoutes); // Enhanced attendance routes
 app.use("/api/attendance", attendanceStatusRoutes); // Electron agent polling endpoint (/api/attendance/status)
