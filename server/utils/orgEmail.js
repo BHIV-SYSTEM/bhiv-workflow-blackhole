@@ -31,6 +31,6 @@ function orgEmailMongoFilter() {
 }
 
 const ORG_EMAIL_ERROR =
-  "Email must be @gmail.com or @outlook.com, and the name must include bhiv or blackhole (e.g. blackholeinfiverse64@gmail.com, bhivtest2@outlook.com)";
+  "Email must be @gmail.com or @outlook.com, and the name must include bhiv or blackhole (e.g. blackholeinfiverse64@gmail.com, bhivtest2@outlook.com, BHIVMSSU0030@outlook.com)";
 
 module.exports = { isValidOrgEmail, orgEmailMongoFilter, ORG_EMAIL_ERROR };

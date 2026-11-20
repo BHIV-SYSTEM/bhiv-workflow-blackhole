@@ -455,7 +455,7 @@ export default function Register() {
       newErrors.email = "Email is invalid"
     } else if (!isValidOrgEmail(formData.email)) {
       newErrors.email =
-        "Use @gmail.com or @outlook.com; name must include bhiv or blackhole (e.g. blackholeinfiverse64@gmail.com)"
+        "Use @gmail.com or @outlook.com; name must include bhiv or blackhole (e.g. blackholeinfiverse64@gmail.com, BHIVMSSU0030@outlook.com)"
     }
 
     if (!formData.password) {
@@ -604,7 +604,7 @@ export default function Register() {
                     name="email"
                     type="email"
                     autoComplete="email"
-                    placeholder="name.bhiv@gmail.com"
+                    placeholder="name.bhiv@gmail.com or BHIVMSSU0030@outlook.com"
                     value={formData.email}
                     onChange={handleChange}
                     disabled={loading || success}

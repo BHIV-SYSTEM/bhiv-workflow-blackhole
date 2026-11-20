@@ -128,7 +128,7 @@ export default function Login() {
                   name="email"
                   type="email"
                   autoComplete="email"
-                  placeholder="you@blackholeinfiverse.com"
+                  placeholder="blackholeinfiverse90@gmail.com or BHIVMSSU0030@outlook.com"
                   value={formData.email}
                   onChange={handleChange}
                   disabled={loading}

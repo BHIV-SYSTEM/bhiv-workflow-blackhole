@@ -44,8 +44,31 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [praveshBlocked, setPraveshBlocked] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem("niyantran_pravesh_blocked");
+      return saved ? JSON.parse(saved) : null;
+    } catch (_) {
+      return null;
+    }
+  });
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  const clearPraveshBlocked = async () => {
+    try {
+      sessionStorage.removeItem("niyantran_pravesh_blocked");
+    } catch (_) {}
+    setPraveshBlocked(null);
+    try {
+      await fetch(`${API_URL}/pravesh/logout`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+    } catch (_) {}
+  };
 
   const axiosInstance = axios.create({
     baseURL: API_URL,
@@ -123,6 +146,10 @@ export const AuthProvider = ({ children }) => {
         if (response.ok) {
           const data = await response.json().catch(() => null);
           if (!cancelled && data?.success && data.access_token && data.user) {
+            try {
+              sessionStorage.removeItem("niyantran_pravesh_blocked");
+            } catch (_) {}
+            setPraveshBlocked(null);
             localStorage.setItem("WorkflowToken", data.access_token);
             localStorage.setItem("WorkflowUser", JSON.stringify(data.user));
             setUser(data.user);
@@ -133,6 +160,28 @@ export const AuthProvider = ({ children }) => {
               data.user.email,
               data.user.role
             );
+            return;
+          }
+        } else if (response.status === 403) {
+          const data = await response.json().catch(() => null);
+          const blockedCodes = ["ACCOUNT_NOT_ALLOWED", "ACCOUNT_NOT_SUPPORTED", "ACCOUNT_DEACTIVATED"];
+          if (!cancelled && blockedCodes.includes(data?.code)) {
+            const blockedInfo = {
+              code: data.code,
+              error: data.error || "This account is not allowed or not supported on Niyantran.",
+              email: data.email || null,
+            };
+            localStorage.removeItem("WorkflowToken");
+            localStorage.removeItem("WorkflowUser");
+            setUser(null);
+            setPraveshBlocked(blockedInfo);
+            try {
+              sessionStorage.setItem("niyantran_pravesh_blocked", JSON.stringify(blockedInfo));
+            } catch (_) {}
+            setLoading(false);
+            if (window.location.pathname !== "/account-not-supported") {
+              navigate("/account-not-supported", { replace: true });
+            }
             return;
           }
         }
@@ -275,7 +324,7 @@ export const AuthProvider = ({ children }) => {
   const getToken = () => localStorage.getItem("WorkflowToken");
 
   return (
-    <AuthContext.Provider value={{ user, loading, actionLoading, login, register, logout, getToken }}>
+    <AuthContext.Provider value={{ user, loading, actionLoading, praveshBlocked, clearPraveshBlocked, login, register, logout, getToken }}>
       {children}
     </AuthContext.Provider>
   );
