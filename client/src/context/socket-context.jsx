@@ -118,6 +118,11 @@ export const SocketProvider = ({ children }) => {
         setMonitoringAlerts(prev => [...prev, { type: 'new-alert', data, timestamp: Date.now() }]);
       });
 
+      socketInstance.on('trinetra:screenshot:new', (data) => {
+        console.log('📸 TRINETRA screenshot:', data);
+        window.dispatchEvent(new CustomEvent('trinetra-screenshot-new', { detail: data }));
+      });
+
       // Parikshak review-complete handler
       socketInstance.on('parikshak:review-complete', (data) => {
         console.log('🤖 Parikshak review complete:', data);

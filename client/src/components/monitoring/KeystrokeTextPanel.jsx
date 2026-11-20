@@ -60,9 +60,11 @@ export function KeystrokeTextPanel({ employeeId, date }) {
   const [error, setError] = useState(null);
   const [filter, setFilter] = useState('');
 
-  const fetchSegments = useCallback(async () => {
+  // Silent keeps the spinner hidden so auto-refreshes don't interrupt
+  // the admin mid-view (manual Refresh still shows loading state).
+  const fetchSegments = useCallback(async ({ silent = false } = {}) => {
     if (!employeeId) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const token = localStorage.getItem('WorkflowToken') || localStorage.getItem('token');
@@ -80,12 +82,21 @@ export function KeystrokeTextPanel({ employeeId, date }) {
       console.error('Error fetching keystroke text:', err);
       setError(err.response?.data?.error || 'Failed to load typed text');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [employeeId, date, filter]);
 
   useEffect(() => {
     fetchSegments();
+  }, [fetchSegments]);
+
+  // Live update: keystrokes typed within the last minute must show up
+  // without the admin hitting Refresh — poll quietly every 30s.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      fetchSegments({ silent: true });
+    }, 30000);
+    return () => clearInterval(timer);
   }, [fetchSegments]);
 
   const metaFor = (classification) =>
@@ -101,7 +112,7 @@ export function KeystrokeTextPanel({ employeeId, date }) {
         <Button
           variant="ghost"
           size="sm"
-          onClick={fetchSegments}
+          onClick={() => fetchSegments()}
           disabled={loading}
           className="text-zinc-400 hover:text-white"
         >

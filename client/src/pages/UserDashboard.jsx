@@ -28,7 +28,10 @@ import {
   Sparkles,
   ListTodo,
   Send,
+  Monitor,
+  Download,
 } from "lucide-react"
+import { downloadAgentInstaller } from "@/modules/employee-monitoring-v2/services/installerDownload"
 import { useNavigate } from "react-router-dom"
 import { useToast } from "../hooks/use-toast"
 import { useAuth } from "../context/auth-context"
@@ -79,6 +82,26 @@ function UserDashboard() {
   const [hasNewReviews, setHasNewReviews] = useState(false)
   const [recentReviews, setRecentReviews] = useState([])
   const [currentPage, setCurrentPage] = useState(0)
+  const [isDownloadingAgent, setIsDownloadingAgent] = useState(false)
+
+  const handleDownloadAgent = async () => {
+    setIsDownloadingAgent(true)
+    try {
+      const result = await downloadAgentInstaller('exe')
+      toast({
+        title: "Agent Downloaded",
+        description: `Saved ${result.fileName} to your Downloads folder.`,
+      })
+    } catch (err) {
+      toast({
+        title: "Download Failed",
+        description: err.message || "Failed to download installer",
+        variant: "destructive"
+      })
+    } finally {
+      setIsDownloadingAgent(false)
+    }
+  }
 
   const TASKS_PER_PAGE = 5
 
@@ -316,25 +339,45 @@ function UserDashboard() {
       markReviewsAsSeen={markReviewsAsSeen}
     >
       <div className="space-y-6 pb-8">
-        {/* Enhanced Header Section */}
-        <div className="relative overflow-hidden rounded-2xl border border-border/60 bg-card/70 p-5 sm:p-6 shadow-sm">
-          <div className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="space-y-1">
-              <h1 className="text-2xl sm:text-3xl font-heading font-bold tracking-tight text-foreground">
-                My Dashboard
-              </h1>
-              <p className="text-muted-foreground text-sm sm:text-base">
-                Welcome back, <span className="font-semibold text-foreground">{user?.name || "User"}</span>. Here's your task overview.
-              </p>
+        {/* Niyantran Desktop Agent Banner - Always Discoverable */}
+        <div className="relative overflow-hidden rounded-2xl border border-purple-500/30 bg-gradient-to-r from-purple-950/40 via-card to-purple-900/20 p-5 shadow-sm">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-start sm:items-center gap-3.5">
+              <div className="w-11 h-11 rounded-xl bg-purple-600/20 border border-purple-500/40 flex items-center justify-center text-purple-400 shrink-0 mt-0.5 sm:mt-0">
+                <Monitor className="w-6 h-6" />
+              </div>
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-bold text-foreground">
+                    Niyantran Desktop Agent (Windows)
+                  </h3>
+                  <Badge className="bg-purple-600/30 text-purple-300 border-purple-500/40 text-[10px]">
+                    v2.0.0
+                  </Badge>
+                </div>
+                <p className="text-xs sm:text-sm text-muted-foreground">
+                  Track your work sessions, focus metrics, and application activity with our privacy-preserving desktop agent.
+                </p>
+              </div>
             </div>
-            <div className="flex gap-2 self-start sm:self-auto">
-              <Button 
-                variant="outline" 
-                onClick={fetchUserDashboardData}
-                className="relative overflow-hidden group hover:border-primary/50 transition-all rounded-xl"
+
+            <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+              <Button
+                id="btn-dashboard-download-agent"
+                onClick={handleDownloadAgent}
+                disabled={isDownloadingAgent}
+                className="bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs px-4 rounded-xl shadow-md"
               >
-                <RefreshCw className="mr-2 h-4 w-4 group-hover:rotate-180 transition-transform duration-500" />
-                Refresh
+                <Download className="w-4 h-4 mr-1.5" />
+                {isDownloadingAgent ? 'Downloading...' : 'Download Agent (.exe)'}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => navigate('/desktop-agent')}
+                className="border-purple-500/30 hover:bg-purple-500/10 text-purple-300 text-xs rounded-xl"
+              >
+                Open Agent Hub
+                <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
               </Button>
             </div>
           </div>

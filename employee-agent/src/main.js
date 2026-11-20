@@ -10,6 +10,32 @@ const ApiService = require('./services/apiService');
 // Initialize store for persistent data
 const store = new Store();
 
+// A single agent must own tracking. Without this lock, a boot-started login
+// item plus a manual double-click runs two agents that fight over counters,
+// the electron-store config and duplicate activity payloads.
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+}
+
+// checkAttendanceStatus() never throws — it returns {error:true} for both a
+// rejected token and a transient network failure. Only auth-shaped errors
+// should trigger a re-login; everything else is recoverable by the poller.
+function isAuthFailure(status) {
+  return /401|403|unauthorized|not valid|authorization denied/i.test(
+    String(status?.errorMessage || '')
+  );
+}
+
 function loadEnvConfig() {
   const envPath = path.join(__dirname, '../.env');
   const env = {};
@@ -88,19 +114,16 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => {
     store.set('consentGiven', true);
     appState.consentGiven = true;
-    
+
+    // Always surface the window on launch so the agent appears in the
+    // taskbar immediately (closing it still hides it to the tray).
     if (appState.isLoggedIn) {
       mainWindow.webContents.send('show-dashboard', { user: appState.user });
-      const startMinimized = envConfig.AGENT_START_MINIMIZED !== 'false';
-      if (!startMinimized) {
-        mainWindow.show();
-      } else {
-        console.log('✓ Agent running silently in background (system tray)');
-      }
     } else {
       mainWindow.webContents.send('show-login');
-      mainWindow.show();
     }
+    mainWindow.show();
+    mainWindow.focus();
   });
 }
 
@@ -473,12 +496,20 @@ ipcMain.handle('capture-now', async () => {
 
 // App lifecycle
 app.whenReady().then(async () => {
+  if (!gotSingleInstanceLock) return;
+
   // 1. Setup auto-start with Windows on PC boot
   if (process.platform === 'win32' && envConfig.AGENT_AUTO_START_ON_BOOT !== 'false') {
     try {
+      // Electron 28 writes the Run entry by joining path + args with no
+      // quoting, so dev builds (`electron .`) must pass the app path as a
+      // quoted arg — otherwise the boot launch starts a bare electron.exe
+      // with nothing to run.
+      const launchArgs = app.isPackaged ? [] : [`"${app.getAppPath()}"`];
       app.setLoginItemSettings({
         openAtLogin: true,
-        openAsHidden: true
+        path: process.execPath,
+        args: launchArgs
       });
       console.log('✓ Configured to launch automatically on Windows boot');
     } catch (e) {
@@ -494,11 +525,17 @@ app.whenReady().then(async () => {
   screenshotEngine = new ScreenshotEngine(apiService);
   screenshotEngine.on('status', (status) => sendToRenderer('screenshot-status', status));
 
-  // 3. Mark consent as automatically given
+  // 3. Show the UI immediately. Session recovery below performs network calls
+  // that can take seconds (or time out at 30s), so creating the window first
+  // is what makes the agent appear on launch instead of silently starting.
+  createWindow();
+  createTray();
+
+  // 4. Mark consent as automatically given
   store.set('consentGiven', true);
   appState.consentGiven = true;
 
-  // 4. Automatic session recovery / login
+  // 5. Automatic session recovery / login
   const savedToken = store.get('authToken');
   const savedUser = store.get('user');
   const savedCredentials = store.get('savedCredentials') || 
@@ -511,8 +548,30 @@ app.whenReady().then(async () => {
 
   if (savedToken) {
     apiService.setAuthToken(savedToken);
-    try {
-      const status = await apiService.checkAttendanceStatus();
+    const status = await apiService.checkAttendanceStatus();
+
+    if (status.error && isAuthFailure(status)) {
+      // Rejected token: fall through to the saved-credentials re-login below.
+      // The old try/catch around this call never fired because the helper
+      // swallows HTTP errors, so expired tokens used to skip re-login and
+      // leave the agent polling with a dead token — launched, never tracking.
+      console.log('⚠️ Saved token expired, attempting automatic re-login...');
+    } else if (status.error) {
+      // Server unreachable right now (typical at boot before the network is
+      // up). Keep the session; the poller reconciles day state and starts
+      // tracking as soon as the server is reachable again.
+      console.log('⚠️ Server unreachable at startup — restoring session, poller will sync when it reconnects...');
+      const tokenUser = apiService.getUserFromToken();
+      appState.isLoggedIn = true;
+      appState.user = {
+        name: tokenUser?.name || savedUser?.name || savedCredentials?.email?.split('@')[0] || 'Employee',
+        email: tokenUser?.email || savedUser?.email || savedCredentials?.email || ''
+      };
+      sessionRestored = true;
+      startAttendancePoller();
+      updateTrayMenu();
+      sendToRenderer('show-dashboard', { user: appState.user });
+    } else {
       const tokenUser = apiService.getUserFromToken();
       appState.isLoggedIn = true;
       appState.startTime = status.startTime || null;
@@ -527,6 +586,8 @@ app.whenReady().then(async () => {
 
       startAttendancePoller();
       if (attendancePoller) {
+        // Seed the poller with the fresh status so its first poll does not
+        // re-emit a day-started transition for a day that is already active.
         attendancePoller.currentStatus = {
           dayStarted: !!status.dayStarted,
           dayEndedToday: !!status.dayEndedToday,
@@ -544,8 +605,11 @@ app.whenReady().then(async () => {
         appState.isDayStarted = true;
         await beginTracking(status.attendanceId, status.startTime, true);
       }
-    } catch (err) {
-      console.log('⚠️ Saved token expired, attempting automatic re-login...');
+
+      updateTrayMenu();
+      // The window was created before this restore ran, so tell the renderer
+      // to flip from the login screen to the dashboard now that we are in.
+      sendToRenderer('show-dashboard', { user: appState.user });
     }
   }
 
@@ -571,14 +635,14 @@ app.whenReady().then(async () => {
           appState.isDayStarted = true;
           await beginTracking(status.attendanceId);
         }
+
+        updateTrayMenu();
+        sendToRenderer('show-dashboard', { user: appState.user });
       }
     } catch (err) {
       console.error('❌ Automatic login error:', err.message);
     }
   }
-
-  createWindow();
-  createTray();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

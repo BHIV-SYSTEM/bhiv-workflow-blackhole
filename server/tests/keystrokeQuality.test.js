@@ -49,15 +49,24 @@ describe('keystrokeQuality analyzer', () => {
     expect(result.meanIntervalMs).toBeLessThan(55);
   });
 
-  test('marks tiny fragments as insufficient', () => {
-    const result = analyzeKeystrokeSegment({
-      text: 'ok',
-      keyCount: 2,
-      backspaceCount: 0
-    });
+  test('classifies short but real words as valuable (size is not a quality signal)', () => {
+    // "hello", "bye", "ok" etc. are small but meaningful — they must
+    // never be judged invaluable just because they are short.
+    for (const text of ['ok', 'bye', 'hello', 'hi there', 'thanks']) {
+      const result = analyzeKeystrokeSegment({ text, keyCount: text.length });
+      expect(result.classification).toBe('valuable');
+      expect(result.score).toBeGreaterThan(0);
+    }
+  });
 
-    expect(result.classification).toBe('insufficient');
-    expect(result.score).toBe(0);
+  test('marks empty or single-junk-char fragments as insufficient', () => {
+    expect(
+      analyzeKeystrokeSegment({ text: '', keyCount: 0 }).classification
+    ).toBe('insufficient');
+    // A lone non-word character is too little to judge either way.
+    expect(
+      analyzeKeystrokeSegment({ text: 'z', keyCount: 1 }).classification
+    ).toBe('insufficient');
   });
 
   test('classifies weak but partially readable text as low_value', () => {

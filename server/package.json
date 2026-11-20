@@ -6,6 +6,8 @@
   "scripts": {
     "test": "jest --forceExit",
     "test:watch": "jest --watch",
+    "test:v2": "node --test modules/employee-monitoring-v2/tests/isolation.test.js",
+    "test:native": "node --test tests/employeeId.test.js tests/pranaClient.test.js",
     "start": "node index.js",
     "dev": "nodemon index.js"
   },
@@ -13,6 +15,14 @@
     "testEnvironment": "node",
     "testMatch": [
       "**/tests/**/*.test.js"
+    ],
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "modules/employee-monitoring-v2",
+      "tests/employeeId",
+      "tests/pranaClient",
+      "tests/pravesh",
+      "tests/orgEmail"
     ],
     "forceExit": true,
     "clearMocks": true

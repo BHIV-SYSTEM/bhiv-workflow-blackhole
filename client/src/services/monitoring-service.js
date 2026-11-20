@@ -44,7 +44,13 @@ class MonitoringService {
       const hidden = document.hidden;
       this._pushSignal('browser_hidden', hidden, { visibilityState: document.visibilityState });
     };
-    this._onBeforeUnload = () => this._flush(true);
+    this._onBeforeUnload = () => {
+      // Ship the live typing buffer too — the page is going away.
+      if (this._textCapture && this._textCapture.hasPending() && this._tFeedEnabled) {
+        this._flushTypedText({ final: true }).catch(() => {});
+      }
+      this._flush(true);
+    };
 
     // TRINETRA feed — browser input counters → /agent/activity/ingest
     this._trinetraTimer = null;
@@ -124,7 +130,7 @@ class MonitoringService {
 
     // Best-effort final upload of anything still buffered as typed text.
     if (this._textCapture && this._textCapture.hasPending() && this._tFeedEnabled) {
-      this._flushTypedText().catch(() => {});
+      this._flushTypedText({ final: true }).catch(() => {});
     }
 
     this._flush(true);
@@ -385,12 +391,14 @@ class MonitoringService {
    * Upload reconstructed typed-text segments from the workflow tab to
    * POST /agent/keystroke/ingest (server re-checks consent + workday and
    * classifies each segment: valuable vs key-mashing).
+   * @param {Object} [options]
+   * @param {boolean} [options.final] - Page going away: flush the live segment.
    */
-  async _flushTypedText() {
+  async _flushTypedText({ final = false } = {}) {
     if (!this._employeeId || !this._tFeedEnabled || !this._textCapture.hasPending()) return;
     if (Date.now() < this._tBackoffUntil) return;
 
-    const segments = this._textCapture.drain();
+    const segments = this._textCapture.drain({ final });
     if (segments.length === 0) return;
 
     try {

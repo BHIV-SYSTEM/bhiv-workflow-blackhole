@@ -1,0 +1,139 @@
+name: Pull Request Validation & Quality Gate
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+      - develop
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+  checks: write
+
+jobs:
+  repo-sanity:
+    name: Repository & Secret Sanity Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify no tracked secrets
+        run: |
+          echo "Checking for accidental tracked secrets..."
+          if git ls-files | grep -E '\.env$|\.env\.local$|\.pem$|\.key$' | grep -v '\.env\.example'; then
+            echo "CRITICAL: Sensitive file tracked in Git!"
+            exit 1
+          fi
+          echo "No sensitive secret files tracked in Git."
+
+  frontend-validation:
+    name: Frontend Build, Lint & V2 Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'client/package-lock.json'
+
+      - name: Install client dependencies
+        run: npm ci || npm install --legacy-peer-deps
+
+      - name: Scoped ESLint (V2 & Shared Files)
+        run: |
+          npx eslint \
+            src/modules/employee-monitoring-v2/ \
+            src/App.jsx \
+            src/components/ProtectedRoute.jsx \
+            src/components/dashboard/sidebar.jsx
+
+      - name: Run Frontend V2 Automated Tests
+        run: node --test src/modules/employee-monitoring-v2/tests/phaseBFrontend.test.js
+
+      - name: Production Vite Build
+        run: npm run build
+
+  backend-validation:
+    name: Backend Isolation & Unit Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'server/package-lock.json'
+
+      - name: Install server dependencies
+        run: npm ci || npm install --legacy-peer-deps
+
+      - name: Run Backend V2 Suites (All V2 Contract, Lifecycle & Handoff Tests)
+        run: |
+          node --test modules/employee-monitoring-v2/tests/*.test.js
+
+      - name: Run Native Node Unit Tests
+        run: |
+          node --test tests/employeeId.test.js
+          node --test tests/pranaClient.test.js
+          if [ -f tests/pravesh.test.js ]; then node tests/pravesh.test.js; fi
+          if [ -f tests/orgEmail.test.js ]; then node tests/orgEmail.test.js; fi
+
+      - name: Run Server Jest Suites (Unit & Security)
+        run: |
+          npm test -- \
+            --testPathIgnorePatterns="modules/employee-monitoring-v2|tests/employeeId|tests/pranaClient|tests/pravesh|tests/orgEmail" \
+            --forceExit
+
+  desktop-agent-v2-validation:
+    name: Desktop Agent V2 Lifecycle Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run Agent V2 Lifecycle & Security Tests
+        run: node --test employee-agent-v2/tests/*.test.js
+
+  pr-quality-gate:
+    name: PR Quality Gate Summary
+    needs: [repo-sanity, frontend-validation, backend-validation, desktop-agent-v2-validation]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Evaluate All Checks
+        run: |
+          if [ "${{ needs.repo-sanity.result }}" != "success" ] || \
+             [ "${{ needs.frontend-validation.result }}" != "success" ] || \
+             [ "${{ needs.backend-validation.result }}" != "success" ] || \
+             [ "${{ needs.desktop-agent-v2-validation.result }}" != "success" ]; then
+            echo "PR Quality Gate Failed! One or more validation jobs did not pass."
+            exit 1
+          fi
+          echo "All PR quality gates PASSED! Safe for review and merge."

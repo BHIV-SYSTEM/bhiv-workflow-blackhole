@@ -7,7 +7,12 @@ Karma-Tracker/
 bhiv-bucket/
 bhiv_prana/
 logs/
-storage/
+server/storage/
+docs/employee-monitoring-v2/screenshots/*.mp4
+docs/employee-monitoring-v2/demo-videos/*.mp4
+docs/employee-monitoring-v2/demo-videos/*.webm
+docs/employee-monitoring-v2/demo-videos/*.mkv
+employee-agent-v2/bin/*.exe
 
 # Task internal docs (not for git — sensitive planning artifacts)
 Niyantran Full TANTRA Ecosystem Integration And Production VM Convergence/Niyantran Full TANTRA Ecosystem Integration And Production VM Convergence.md
