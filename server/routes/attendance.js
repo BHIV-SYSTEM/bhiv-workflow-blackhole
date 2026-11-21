@@ -347,7 +347,7 @@ router.post('/start-day/:userId', auth, async (req, res) => {
       existingRecord.spamStatus = 'Valid';
       existingRecord.autoEnded = false;
       attendanceRecord = existingRecord;
-      await attendanceRecord.save();
+      try { await attendanceRecord.save(); } catch (e) { console.warn('attendanceRecord.save failed:', e.message); }
     } else {
       // Create new Attendance with branch
       const selectedBranch = req.headers['x-branch'] || req.query.branch || req.user?.branch || 'blackhole_mumbai';
@@ -606,11 +606,19 @@ router.post('/end-day/:userId', auth, async (req, res) => {
     sessionDateEnd.setDate(sessionDateEnd.getDate() + 1);
 
     const Progress = require('../models/Progress');
-    const { hasProgressContent, todayProgress } = await findDailyProgressStatus(
-      Progress,
-      userId,
-      [attendanceRecord.date, attendanceRecord.startDayTime]
-    );
+    let hasProgressContent = true;
+    let todayProgress = null;
+    try {
+      const r = await findDailyProgressStatus(
+        Progress,
+        userId,
+        [attendanceRecord.date, attendanceRecord.startDayTime]
+      );
+      hasProgressContent = r.hasProgressContent;
+      todayProgress = r.todayProgress;
+    } catch (e) {
+      console.warn('findDailyProgressStatus failed:', e.message);
+    }
     
     // MANDATORY VALIDATION: Block end day if user has not updated daily progress
     if (!hasProgressContent) {

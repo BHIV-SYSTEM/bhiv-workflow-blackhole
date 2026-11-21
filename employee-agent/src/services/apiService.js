@@ -265,7 +265,7 @@ class ApiService {
       };
     } catch (error) {
       const errData = error.response?.data || {};
-      const errMsg = errData.error || errData.message || error.message || 'Failed to end day';
+      const errMsg = errData.details || errData.error || errData.message || error.message || 'Failed to end day';
 
       if (errData.code === 'PROGRESS_NOT_SET' || /daily progress/i.test(errMsg)) {
         return {
