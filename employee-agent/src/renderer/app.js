@@ -565,11 +565,15 @@ function hideQuickProgressCard() {
  */
 async function handleSaveProgressAndEndDay() {
   const saveBtn = document.getElementById('saveProgressEndBtn');
-  const taskId = document.getElementById('progressTaskSelect')?.value;
+  let taskId = document.getElementById('progressTaskSelect')?.value;
   const pct = document.getElementById('progressPercent')?.value || '75';
   const notes = document.getElementById('progressNotes')?.value?.trim() || '';
 
-  if (!taskId) {
+  if (!taskId || taskId === 'undefined' || taskId === 'null') {
+    // Fall back to the first cached task if the dropdown value is unusable
+    if (cachedTasks.length > 0) taskId = cachedTasks[0]._id;
+  }
+  if (!taskId || taskId === 'undefined' || taskId === 'null') {
     showDashboardAlert('error', 'No assigned task available here. Please submit daily progress from the web Progress tab.');
     return;
   }
