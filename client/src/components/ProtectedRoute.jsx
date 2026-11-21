@@ -18,7 +18,7 @@ export const ProtectedRoute = ({ children }) => {
 
   if (user.role === "User") {
     // Allow access to /userdashboard, /knowledge-admin, and /tasks/* (including /tasks/:id)
-     if (location.pathname !== "/userdashboard" && location.pathname !== "/knowledge-admin" && location.pathname !== "/my-tasks" && !location.pathname.startsWith("/tasks/") && location.pathname !== "/progress" && location.pathname !== "/aims" && location.pathname !== "/todaysaim" && location.pathname !== "/leaderboard"&& location.pathname !== "/leave-request"&&!location.pathname.startsWith("/settings") && location.pathname !== "/monitoring-v2/employee" && location.pathname !== "/desktop-agent" ) {
+     if (location.pathname !== "/userdashboard" && location.pathname !== "/knowledge-admin" && location.pathname !== "/my-tasks" && !location.pathname.startsWith("/tasks/") && location.pathname !== "/progress" && location.pathname !== "/aims" && location.pathname !== "/todaysaim" && location.pathname !== "/leaderboard"&& location.pathname !== "/leave-request"&&!location.pathname.startsWith("/settings") && location.pathname !== "/monitoring-v2/employee" ) {
       return <Navigate to="/userdashboard" replace />
     }
   }

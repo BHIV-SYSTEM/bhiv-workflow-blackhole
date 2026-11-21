@@ -86,11 +86,12 @@ export function DashboardSidebar({ onNavigate, isMobile = false } = {}) {
           title: "Main",
           routes: [
             { title: "Dashboard", href: "/userdashboard", icon: LayoutDashboardIcon },
-            { title: "Desktop Agent", href: "/desktop-agent", icon: MonitorDown },
             { title: "My Tasks", href: "/my-tasks", icon: CheckSquare },
+            { title: "Work Session", href: "/userdashboard", icon: ShieldCheck },
             { title: "Set Aims", href: "/aims", icon: Target },
             { title: "Progress", href: "/progress", icon: BarChart },
             { title: "Knowledge Admin", href: "/knowledge-admin", icon: BookOpen },
+          { title: "Work Session", href: "/userdashboard", icon: ShieldCheck },
           ]
         },
         {
@@ -136,8 +137,8 @@ export function DashboardSidebar({ onNavigate, isMobile = false } = {}) {
           title: "Main",
           routes: [
             { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-            { title: "Desktop Agent", href: "/desktop-agent", icon: MonitorDown },
             { title: "AI Optimization", href: "/optimization", icon: Sparkles },
+            { title: "Work Session", href: "/userdashboard", icon: ShieldCheck },
           ]
         },
         {
@@ -229,7 +230,6 @@ export function DashboardSidebar({ onNavigate, isMobile = false } = {}) {
           { title: "Completed Tasks", href: "/completedtask", icon: CheckCircle },
           { title: "Test Tasks", href: "/tested-tasks", icon: FileText },
           { title: "Knowledge Admin", href: "/knowledge-admin", icon: BookOpen },
-          { title: "Desktop Agent", href: "/desktop-agent", icon: MonitorDown },
         ]
       },
       {

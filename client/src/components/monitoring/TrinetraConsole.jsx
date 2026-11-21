@@ -328,23 +328,17 @@ export function TrinetraConsole({
       );
       if (match) return match.employee_id;
     }
-    return list[0]?.employee_id || '';
+    const currentId = currentUser?._id || currentUser?.id;
+    return list[0]?.employee_id || currentId || '';
   }, [selectedEmployeeId, searchQuery, productivity.employees, live.employees]);
 
   const fetchVisual = useCallback(async () => {
     if (!visualEmployeeId) return;
     try {
-      const [shots, tl] = await Promise.all([
-        axios.get(`${API_URL}/trinetra/screenshots`, {
-          headers: authHeaders(),
-          params: { employeeId: visualEmployeeId, date, type: 'periodic', limit: 60 }
-        }),
-        axios.get(`${API_URL}/trinetra/timeline/${visualEmployeeId}`, {
-          headers: authHeaders(),
-          params: { date }
-        })
-      ]);
-      setScreenshots(shots.data.screenshots || []);
+      const tl = await axios.get(`${API_URL}/trinetra/timeline/${visualEmployeeId}`, {
+        headers: authHeaders(),
+        params: { date }
+      });
       setTimeline({
         segments: tl.data.segments || [],
         idle_clusters: tl.data.idle_clusters || [],
@@ -497,8 +491,9 @@ export function TrinetraConsole({
     }));
     // Admin-role users are excluded from team rosters by design; always offer
     // the signed-in user's own telemetry so they can watch their own feed.
-    if (currentUser && !options.some((option) => option.id === currentUser.id)) {
-      options.unshift({ id: currentUser.id, name: `${currentUser.name} (you)`, email: currentUser.email });
+    const currentId = currentUser?._id || currentUser?.id;
+    if (currentId && !options.some((option) => option.id === currentId)) {
+      options.unshift({ id: currentId, name: `${currentUser?.name || 'You'} (you)`, email: currentUser?.email });
     }
     return options;
   }, [live.employees, productivity.employees, currentUser]);

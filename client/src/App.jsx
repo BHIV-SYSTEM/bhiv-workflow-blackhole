@@ -61,7 +61,6 @@ const TesterAlerts = lazy(() => import("./pages/TesterAlerts"));
 const TestedTasks = lazy(() => import("./pages/TestedTasks"));
 const EmployeeMonitoringV2Page = lazy(() => import("./modules/employee-monitoring-v2/pages/EmployeeMonitoringV2Page"));
 const MiniWindowPage = lazy(() => import("./modules/employee-monitoring-v2/pages/MiniWindowPage"));
-const DesktopAgentPage = lazy(() => import("./pages/DesktopAgentPage"));
 
 function PageLoader() {
   return (
@@ -407,22 +406,6 @@ function AppContent() {
                   element={
                     <ProtectedRoute>
                       <MiniWindowPage />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/desktop-agent"
-                  element={
-                    <ProtectedRoute>
-                      <DesktopAgentPage />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/monitoring-v2/desktop-agent"
-                  element={
-                    <ProtectedRoute>
-                      <DesktopAgentPage />
                     </ProtectedRoute>
                   }
                 />
