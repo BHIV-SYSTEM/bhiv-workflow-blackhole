@@ -7,10 +7,10 @@ import React from 'react';
 
 const VARIANTS = {
   primary: 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm shadow-indigo-500/20 active:translate-y-px',
-  secondary: 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 active:translate-y-px',
-  outline: 'bg-transparent hover:bg-slate-800 text-slate-300 border border-slate-700 active:translate-y-px',
+  secondary: 'bg-secondary hover:bg-secondary/80 text-secondary-foreground border border-border active:translate-y-px',
+  outline: 'bg-transparent hover:bg-accent text-foreground border border-border active:translate-y-px',
   danger: 'bg-rose-600 hover:bg-rose-500 text-white shadow-sm shadow-rose-500/20 active:translate-y-px',
-  ghost: 'bg-transparent hover:bg-slate-800 text-slate-400 hover:text-slate-200',
+  ghost: 'bg-transparent hover:bg-accent text-muted-foreground hover:text-foreground',
   success: 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm shadow-emerald-500/20 active:translate-y-px',
 };
 
