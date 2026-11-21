@@ -59,7 +59,6 @@ const TesterTasks = lazy(() => import("./pages/TesterTasks"));
 const TesterEvaluation = lazy(() => import("./pages/TesterEvaluation"));
 const TesterAlerts = lazy(() => import("./pages/TesterAlerts"));
 const TestedTasks = lazy(() => import("./pages/TestedTasks"));
-const AdminMonitoringV2Page = lazy(() => import("./modules/employee-monitoring-v2/pages/AdminMonitoringV2Page"));
 const EmployeeMonitoringV2Page = lazy(() => import("./modules/employee-monitoring-v2/pages/EmployeeMonitoringV2Page"));
 const MiniWindowPage = lazy(() => import("./modules/employee-monitoring-v2/pages/MiniWindowPage"));
 const DesktopAgentPage = lazy(() => import("./pages/DesktopAgentPage"));
@@ -392,14 +391,6 @@ function AppContent() {
                   element={
                     <ProtectedRoute>
                       <EmployeeMonitoring />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/monitoring-v2/admin"
-                  element={
-                    <ProtectedRoute>
-                      <AdminMonitoringV2Page />
                     </ProtectedRoute>
                   }
                 />
