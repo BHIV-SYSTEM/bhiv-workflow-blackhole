@@ -231,7 +231,8 @@ router.post(
       }
 
       // Check if task exists and belongs to user
-      const taskDoc = await Task.findById(task);
+      let taskDoc = null;
+      try { taskDoc = await Task.findById(task); } catch (e) { return res.status(400).json({ msg: "Invalid task id" }); }
       if (!taskDoc) {
         return res.status(404).json({ msg: "Task not found" });
       }
@@ -387,7 +388,7 @@ router.put("/:id", auth, async (req, res) => {
     await progress.save();
 
     // Update task progress and auto-change status if needed
-    const task = await Task.findById(progress.task);
+    const task = await Task.findById(progress.task).catch(() => null);
     if (task) {
       const taskStatusChanged = await syncTaskWithProgress(task, progressPercentage);
 
