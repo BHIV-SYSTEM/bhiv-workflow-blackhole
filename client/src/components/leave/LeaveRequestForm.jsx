@@ -54,7 +54,7 @@ const LeaveRequestForm = ({ onSuccess, onCancel }) => {
     { value: 'Emergency', label: 'Emergency', color: 'bg-orange-100 text-orange-800' },
     { value: 'Maternity', label: 'Maternity Leave', color: 'bg-pink-100 text-pink-800' },
     { value: 'Paternity', label: 'Paternity Leave', color: 'bg-purple-100 text-purple-800' },
-    { value: 'Other', label: 'Other', color: 'bg-gray-100 text-gray-800 dark:text-gray-200' }
+    { value: 'Other', label: 'Other', color: 'bg-gray-100 text-gray-800' }
   ];
 
   const priorityLevels = [

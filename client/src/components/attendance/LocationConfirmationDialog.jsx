@@ -115,7 +115,7 @@ const LocationConfirmationDialog = ({
                   </div>
                   <div>
                     <h3 className={`font-medium ${
-                      isWithinOfficeRadius ? 'text-gray-900 dark:text-gray-100' : 'text-gray-400'
+                      isWithinOfficeRadius ? 'text-gray-900' : 'text-gray-400'
                     }`}>
                       Work from Office
                     </h3>
@@ -164,7 +164,7 @@ const LocationConfirmationDialog = ({
                     <Home className="h-4 w-4 text-blue-600" />
                   </div>
                   <div>
-                    <h3 className="font-medium text-gray-900 dark:text-gray-100">Work from Home</h3>
+                    <h3 className="font-medium text-gray-900">Work from Home</h3>
                     <p className="text-xs text-gray-600">
                       Remote work from your current location
                     </p>

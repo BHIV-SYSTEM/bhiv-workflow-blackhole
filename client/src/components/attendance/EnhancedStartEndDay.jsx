@@ -638,7 +638,7 @@ const EnhancedStartEndDay = () => {
         animate={{ opacity: 1, y: 0 }}
         className="text-center mb-8"
       >
-        <div className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+        <div className="text-4xl font-bold text-gray-900 mb-2">
           {currentTime.toLocaleTimeString('en-US', {
             hour: '2-digit',
             minute: '2-digit',
@@ -662,7 +662,7 @@ const EnhancedStartEndDay = () => {
           <CardHeader className="pb-4">
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                <CardTitle className="text-2xl font-bold text-gray-900">
                   Today's Attendance
                 </CardTitle>
                 <CardDescription className="text-lg">
@@ -689,7 +689,7 @@ const EnhancedStartEndDay = () => {
                 <div className="text-center p-4 bg-blue-50 rounded-xl">
                   <Clock className="w-8 h-8 text-blue-600 mx-auto mb-2" />
                   <p className="text-sm text-gray-600">Start Time</p>
-                  <p className="text-lg font-bold text-gray-900 dark:text-gray-100">
+                  <p className="text-lg font-bold text-gray-900">
                     {formatTime(todayStatus.startTime)}
                   </p>
                 </div>
@@ -698,7 +698,7 @@ const EnhancedStartEndDay = () => {
                   <div className="text-center p-4 bg-green-50 rounded-xl">
                     <CheckCircle className="w-8 h-8 text-green-600 mx-auto mb-2" />
                     <p className="text-sm text-gray-600">End Time</p>
-                    <p className="text-lg font-bold text-gray-900 dark:text-gray-100">
+                    <p className="text-lg font-bold text-gray-900">
                       {formatTime(todayStatus.endTime)}
                     </p>
                   </div>
@@ -706,7 +706,7 @@ const EnhancedStartEndDay = () => {
                   <div className="text-center p-4 bg-orange-50 rounded-xl">
                     <Timer className="w-8 h-8 text-orange-600 mx-auto mb-2" />
                     <p className="text-sm text-gray-600">Current Hours</p>
-                    <p className="text-lg font-bold text-gray-900 dark:text-gray-100">
+                    <p className="text-lg font-bold text-gray-900">
                       {formatDuration(todayStatus.currentHours || 0)}
                     </p>
                   </div>
@@ -715,7 +715,7 @@ const EnhancedStartEndDay = () => {
                 <div className="text-center p-4 bg-purple-50 rounded-xl">
                   <DollarSign className="w-8 h-8 text-purple-600 mx-auto mb-2" />
                   <p className="text-sm text-gray-600">Earned Today</p>
-                  <p className="text-lg font-bold text-gray-900 dark:text-gray-100">
+                  <p className="text-lg font-bold text-gray-900">
                     ₹{Math.round((todayStatus.earnedAmount || 0) * 100) / 100}
                   </p>
                 </div>

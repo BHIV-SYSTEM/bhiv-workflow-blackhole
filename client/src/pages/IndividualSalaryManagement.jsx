@@ -185,7 +185,7 @@ const IndividualSalaryManagement = () => {
         <div className="max-w-2xl mx-auto">
           <Card className="text-center p-8">
             <CardContent>
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">Access Denied</h2>
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">Access Denied</h2>
               <p className="text-gray-600 mb-6">You need admin privileges to access salary management.</p>
               <Button onClick={() => navigate('/dashboard')}>
                 <ArrowLeft className="w-4 h-4 mr-2" />
@@ -273,7 +273,7 @@ const IndividualSalaryManagement = () => {
           ) : sortedFilteredUsers.length === 0 ? (
             <div className="col-span-full text-center py-12">
               <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No employees found</h3>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No employees found</h3>
               <p className="text-gray-600">Try adjusting your search or filter criteria.</p>
             </div>
           ) : (
@@ -288,7 +288,7 @@ const IndividualSalaryManagement = () => {
                       </AvatarFallback>
                     </Avatar>
                     <div className="flex-1">
-                      <h3 className="font-semibold text-gray-900 dark:text-gray-100">{employee.name}</h3>
+                      <h3 className="font-semibold text-gray-900">{employee.name}</h3>
                       <p className="text-sm text-gray-600">{employee.email}</p>
                     </div>
                   </div>

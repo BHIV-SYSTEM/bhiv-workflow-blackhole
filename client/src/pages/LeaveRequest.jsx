@@ -74,7 +74,7 @@ const LeaveRequest = () => {
       case 'Pending':
         return 'bg-yellow-100 text-yellow-800 border-yellow-200';
       default:
-        return 'bg-gray-100 text-gray-800 dark:text-gray-200 border-gray-200';
+        return 'bg-gray-100 text-gray-800 border-gray-200';
     }
   };
 
@@ -208,7 +208,7 @@ const LeaveRequest = () => {
                           </div>
                           
                           <div>
-                            <h3 className="font-medium text-gray-900 dark:text-gray-100">
+                            <h3 className="font-medium text-gray-900">
                               {leave.leaveType} Leave
                             </h3>
                             <p className="text-sm text-gray-600">
@@ -251,7 +251,7 @@ const LeaveRequest = () => {
                 ) : (
                   <div className="text-center py-8">
                     <Calendar className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No Leave Requests</h3>
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">No Leave Requests</h3>
                     <p className="text-gray-600 mb-4">You haven't submitted any leave requests yet.</p>
                     <Button
                       onClick={() => setShowLeaveForm(true)}
@@ -316,12 +316,12 @@ const LeaveRequest = () => {
               <div className="space-y-4">
                 <div>
                   <label className="text-sm font-medium text-gray-600">Leave Type</label>
-                  <p className="text-gray-900 dark:text-gray-100">{selectedLeave.leaveType}</p>
+                  <p className="text-gray-900">{selectedLeave.leaveType}</p>
                 </div>
                 
                 <div>
                   <label className="text-sm font-medium text-gray-600">Duration</label>
-                  <p className="text-gray-900 dark:text-gray-100">
+                  <p className="text-gray-900">
                     {formatDate(selectedLeave.startDate)} - {formatDate(selectedLeave.endDate)}
                   </p>
                   <p className="text-sm text-gray-600">{selectedLeave.totalDays} day{selectedLeave.totalDays !== 1 ? 's' : ''}</p>
@@ -329,7 +329,7 @@ const LeaveRequest = () => {
                 
                 <div>
                   <label className="text-sm font-medium text-gray-600">Reason</label>
-                  <p className="text-gray-900 dark:text-gray-100">{selectedLeave.reason}</p>
+                  <p className="text-gray-900">{selectedLeave.reason}</p>
                 </div>
                 
                 <div>

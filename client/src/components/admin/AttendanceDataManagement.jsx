@@ -165,7 +165,7 @@ const AttendanceDataManagement = () => {
             <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <Shield className="w-8 h-8 text-red-600" />
             </div>
-            <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">Access Denied</h3>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">Access Denied</h3>
             <p className="text-gray-600 mb-4">
               Only administrators can access the attendance data management tools.
             </p>
@@ -252,7 +252,7 @@ const AttendanceDataManagement = () => {
                   <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg p-6 border border-blue-200">
                     <div className="flex items-center justify-between">
                       <div>
-                        <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100">Total Records</h3>
+                        <h3 className="text-xl font-bold text-gray-900">Total Records</h3>
                         <p className="text-gray-600">All attendance-related data</p>
                       </div>
                       <div className="text-right">
@@ -281,7 +281,7 @@ const AttendanceDataManagement = () => {
                               <IconComponent className="w-5 h-5 text-gray-600" />
                             </div>
                             <div>
-                              <div className="text-lg font-bold text-gray-900 dark:text-gray-100">{count.toLocaleString()}</div>
+                              <div className="text-lg font-bold text-gray-900">{count.toLocaleString()}</div>
                               <div className="text-xs text-gray-500">{getDataLabel(key)}</div>
                             </div>
                           </div>
@@ -293,7 +293,7 @@ const AttendanceDataManagement = () => {
                   {/* Date Range Info */}
                   {dataStats.dateRange && (
                     <div className="bg-gray-50 rounded-lg p-4 border">
-                      <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">Data Date Range</h4>
+                      <h4 className="font-semibold text-gray-900 mb-2">Data Date Range</h4>
                       <div className="text-sm text-gray-600">
                         <p>Oldest Record: {dataStats.dateRange.oldest ? formatDate(dataStats.dateRange.oldest) : 'N/A'}</p>
                         <p>Newest Record: {dataStats.dateRange.newest ? formatDate(dataStats.dateRange.newest) : 'N/A'}</p>
@@ -450,7 +450,7 @@ const AttendanceDataManagement = () => {
               </div>
 
               <div>
-                <Label className="text-gray-900 dark:text-gray-100 font-medium">
+                <Label className="text-gray-900 font-medium">
                   Type the confirmation code to proceed:
                 </Label>
                 <div className="mt-2">

@@ -51,7 +51,7 @@ const SalaryCard = ({ data, onEdit }) => {
       'Freelancer': 'bg-purple-100 text-purple-800 border-purple-200',
       'Consultant': 'bg-pink-100 text-pink-800 border-pink-200'
     };
-    return colors[tag] || 'bg-gray-100 text-gray-800 dark:text-gray-200 border-gray-200';
+    return colors[tag] || 'bg-gray-100 text-gray-800 border-gray-200';
   };
 
   // Get attendance color
@@ -134,7 +134,7 @@ const SalaryCard = ({ data, onEdit }) => {
               </motion.div>
               
               <div>
-                <h3 className="font-semibold text-gray-900 dark:text-gray-100 text-lg">
+                <h3 className="font-semibold text-gray-900 text-lg">
                   {user.name || 'Unknown Employee'}
                 </h3>
                 <p className="text-sm text-gray-600">{user.email}</p>
@@ -180,7 +180,7 @@ const SalaryCard = ({ data, onEdit }) => {
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium text-gray-600">Base Salary</span>
               <motion.span 
-                className="text-lg font-bold text-gray-900 dark:text-gray-100"
+                className="text-lg font-bold text-gray-900"
                 animate={{ scale: showSalary ? [1, 1.1, 1] : 1 }}
                 transition={{ duration: 0.3 }}
               >
@@ -269,7 +269,7 @@ const SalaryCard = ({ data, onEdit }) => {
                 {/* Salary Breakdown */}
                 {salary?.calculated && showSalary && (
                   <div className="space-y-2">
-                    <h4 className="font-medium text-gray-900 dark:text-gray-100">Salary Breakdown</h4>
+                    <h4 className="font-medium text-gray-900">Salary Breakdown</h4>
                     <div className="space-y-1 text-sm">
                       <div className="flex justify-between">
                         <span className="text-gray-600">Base Pay</span>

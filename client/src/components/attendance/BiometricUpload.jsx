@@ -205,7 +205,7 @@ EMP003,2024-01-15,08:45:00,17:15:00,DEVICE_01,Main Gate`;
                 <CardContent>
                   <div className="border-2 border-dashed rounded-lg p-8 text-center border-gray-300 hover:border-gray-400 transition-colors">
                     <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">
                       Upload Excel or CSV file
                     </h3>
                     <p className="text-gray-600 mb-4">
@@ -448,7 +448,7 @@ EMP003,2024-01-15,08:45:00,17:15:00,DEVICE_01,Main Gate`;
               className="text-center py-8"
             >
               <CheckCircle className="w-16 h-16 text-green-600 mx-auto mb-4" />
-              <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">Upload Complete!</h3>
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">Upload Complete!</h3>
               <p className="text-gray-600 mb-6">
                 Biometric data has been successfully imported and processed.
               </p>

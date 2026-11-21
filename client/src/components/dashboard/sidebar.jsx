@@ -78,6 +78,8 @@ export function DashboardSidebar({ onNavigate, isMobile = false } = {}) {
   const getNavigationSections = () => {
     let role = user?.role;
     if (!role && import.meta.env.DEV) {
+      if (location.pathname.startsWith('/monitoring-v2/admin')) role = 'Admin';
+      else if (location.pathname.startsWith('/monitoring-v2/employee')) role = 'User';
     }
 
     if (role === "User") {
@@ -91,6 +93,7 @@ export function DashboardSidebar({ onNavigate, isMobile = false } = {}) {
             { title: "Set Aims", href: "/aims", icon: Target },
             { title: "Progress", href: "/progress", icon: BarChart },
             { title: "Knowledge Admin", href: "/knowledge-admin", icon: BookOpen },
+            { title: "Work Session", href: "/monitoring-v2/employee", icon: ShieldCheck },
           ]
         },
         {
@@ -138,6 +141,7 @@ export function DashboardSidebar({ onNavigate, isMobile = false } = {}) {
             { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
             { title: "Desktop Agent", href: "/desktop-agent", icon: MonitorDown },
             { title: "AI Optimization", href: "/optimization", icon: Sparkles },
+            { title: "My Work Session", href: "/monitoring-v2/employee", icon: ShieldCheck },
           ]
         },
         {
@@ -157,6 +161,7 @@ export function DashboardSidebar({ onNavigate, isMobile = false } = {}) {
           routes: [
             { title: "User Management", href: "/user-management", icon: UserCog },
             { title: "Employee Monitoring", href: "/monitoring", icon: Monitor },
+            { title: "Employee Monitoring V2", href: "/monitoring-v2/admin", icon: ShieldCheck },
             { title: "Leaderboard", href: "/leaderboard", icon: Sparkles },
           ]
         },
@@ -230,6 +235,7 @@ export function DashboardSidebar({ onNavigate, isMobile = false } = {}) {
           { title: "Test Tasks", href: "/tested-tasks", icon: FileText },
           { title: "Knowledge Admin", href: "/knowledge-admin", icon: BookOpen },
           { title: "Desktop Agent", href: "/desktop-agent", icon: MonitorDown },
+          { title: "Work Session", href: "/monitoring-v2/employee", icon: ShieldCheck },
         ]
       },
       {

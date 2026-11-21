@@ -147,7 +147,7 @@ const ModernSalaryHub = () => {
             <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
               <Shield className="w-10 h-10 text-red-600" />
             </div>
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">Access Restricted</h2>
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">Access Restricted</h2>
             <p className="text-gray-600 mb-6">
               You need administrator privileges to access the salary management hub.
             </p>
@@ -254,7 +254,7 @@ const ModernSalaryHub = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-gray-600 text-sm font-medium">Total Payroll</p>
-                    <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">
+                    <p className="text-3xl font-bold text-gray-900">
                       {showSalaryAmounts ? `₹${salaryData.summary.totalPayroll.toLocaleString()}` : '••••••'}
                     </p>
                     <p className="text-green-600 text-xs mt-1 flex items-center">
@@ -275,7 +275,7 @@ const ModernSalaryHub = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-gray-600 text-sm font-medium">Employees</p>
-                    <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{salaryData.summary.totalEmployees}</p>
+                    <p className="text-3xl font-bold text-gray-900">{salaryData.summary.totalEmployees}</p>
                     <p className="text-blue-600 text-xs mt-1">Active employees</p>
                   </div>
                   <div className="p-3 bg-blue-100 rounded-2xl">
@@ -291,7 +291,7 @@ const ModernSalaryHub = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-gray-600 text-sm font-medium">Average Salary</p>
-                    <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">
+                    <p className="text-3xl font-bold text-gray-900">
                       {showSalaryAmounts ? `₹${Math.round(salaryData.summary.averageSalary).toLocaleString()}` : '••••••'}
                     </p>
                     <p className="text-purple-600 text-xs mt-1">Per employee</p>
@@ -309,7 +309,7 @@ const ModernSalaryHub = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-gray-600 text-sm font-medium">Avg Attendance</p>
-                    <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">
+                    <p className="text-3xl font-bold text-gray-900">
                       {Math.round(salaryData.summary.averageAttendance)}%
                     </p>
                     <p className="text-orange-600 text-xs mt-1">This month</p>
@@ -461,7 +461,7 @@ const ModernSalaryHub = () => {
                             </span>
                           </div>
                           <div>
-                            <h3 className="text-gray-900 dark:text-gray-100 font-semibold">{card.user.name}</h3>
+                            <h3 className="text-gray-900 font-semibold">{card.user.name}</h3>
                             <p className="text-gray-500 text-sm">{card.user.department}</p>
                           </div>
                         </div>
@@ -483,12 +483,12 @@ const ModernSalaryHub = () => {
                       <div className="grid grid-cols-2 gap-4">
                         <div className="text-center p-3 bg-gray-50 rounded-xl border border-gray-200">
                           <p className="text-gray-600 text-xs font-medium">Attendance</p>
-                          <p className="text-gray-900 dark:text-gray-100 font-bold text-lg">{card.attendance.attendanceRate}%</p>
+                          <p className="text-gray-900 font-bold text-lg">{card.attendance.attendanceRate}%</p>
                           <p className="text-gray-500 text-xs">{card.attendance.presentDays}/{card.attendance.workingDays} days</p>
                         </div>
                         <div className="text-center p-3 bg-gray-50 rounded-xl border border-gray-200">
                           <p className="text-gray-600 text-xs font-medium">Hours</p>
-                          <p className="text-gray-900 dark:text-gray-100 font-bold text-lg">{card.attendance.totalHours}h</p>
+                          <p className="text-gray-900 font-bold text-lg">{card.attendance.totalHours}h</p>
                           <p className="text-gray-500 text-xs">+{card.attendance.overtimeHours}h OT</p>
                         </div>
                       </div>
@@ -497,7 +497,7 @@ const ModernSalaryHub = () => {
                       <div className="space-y-3">
                         <div className="flex justify-between items-center">
                           <span className="text-gray-600 text-sm">Gross Salary</span>
-                          <span className="text-gray-900 dark:text-gray-100 font-semibold">
+                          <span className="text-gray-900 font-semibold">
                             {showSalaryAmounts ? `₹${card.salary.grossSalary.toLocaleString()}` : '••••••'}
                           </span>
                         </div>
@@ -515,8 +515,8 @@ const ModernSalaryHub = () => {
                         </div>
                         <div className="border-t border-gray-200 pt-3">
                           <div className="flex justify-between items-center">
-                            <span className="text-gray-900 dark:text-gray-100 font-medium">Net Salary</span>
-                            <span className="text-gray-900 dark:text-gray-100 font-bold text-lg">
+                            <span className="text-gray-900 font-medium">Net Salary</span>
+                            <span className="text-gray-900 font-bold text-lg">
                               {showSalaryAmounts ? `₹${card.salary.netSalary.toLocaleString()}` : '••••••'}
                             </span>
                           </div>
@@ -575,7 +575,7 @@ const ModernSalaryHub = () => {
             >
               <Card className="bg-white shadow-lg border-0">
                 <CardHeader>
-                  <CardTitle className="text-gray-900 dark:text-gray-100 flex items-center">
+                  <CardTitle className="text-gray-900 flex items-center">
                     <BarChart3 className="w-5 h-5 mr-2 text-blue-600" />
                     Salary Distribution
                   </CardTitle>
@@ -592,7 +592,7 @@ const ModernSalaryHub = () => {
 
               <Card className="bg-white shadow-lg border-0">
                 <CardHeader>
-                  <CardTitle className="text-gray-900 dark:text-gray-100 flex items-center">
+                  <CardTitle className="text-gray-900 flex items-center">
                     <PieChart className="w-5 h-5 mr-2 text-purple-600" />
                     Department Breakdown
                   </CardTitle>
@@ -617,7 +617,7 @@ const ModernSalaryHub = () => {
             >
               <Card className="bg-white shadow-lg border-0">
                 <CardHeader>
-                  <CardTitle className="text-gray-900 dark:text-gray-100 flex items-center">
+                  <CardTitle className="text-gray-900 flex items-center">
                     <Award className="w-5 h-5 mr-2 text-yellow-600" />
                     Performance Analytics
                   </CardTitle>
@@ -645,7 +645,7 @@ const ModernSalaryHub = () => {
             >
               <Card className="bg-white shadow-lg border-0">
                 <CardHeader>
-                  <CardTitle className="text-gray-900 dark:text-gray-100 flex items-center">
+                  <CardTitle className="text-gray-900 flex items-center">
                     <FileText className="w-5 h-5 mr-2 text-green-600" />
                     Salary Reports
                   </CardTitle>

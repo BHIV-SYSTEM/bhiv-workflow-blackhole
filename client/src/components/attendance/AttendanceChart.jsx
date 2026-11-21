@@ -79,7 +79,7 @@ const AttendanceChart = ({ data }) => {
           animate={{ opacity: 1, scale: 1 }}
           className="bg-white p-4 rounded-lg shadow-lg border border-gray-200"
         >
-          <p className="font-medium text-gray-900 dark:text-gray-100 mb-2">{label}</p>
+          <p className="font-medium text-gray-900 mb-2">{label}</p>
           {payload.map((entry, index) => (
             <div key={index} className="flex items-center gap-2 text-sm">
               <div 

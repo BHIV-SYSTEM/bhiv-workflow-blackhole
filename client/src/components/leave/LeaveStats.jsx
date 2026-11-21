@@ -134,7 +134,7 @@ const LeaveStats = ({ data }) => {
                       stiffness: 200,
                       damping: 15
                     }}
-                    className="text-2xl font-bold text-gray-900 dark:text-gray-100"
+                    className="text-2xl font-bold text-gray-900"
                   >
                     {card.value}
                   </motion.div>

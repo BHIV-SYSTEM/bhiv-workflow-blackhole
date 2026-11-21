@@ -31,7 +31,7 @@ import {
   Monitor,
   Download,
 } from "lucide-react"
-import { downloadAgentInstaller } from "@/services/agentInstallerDownload"
+import { downloadAgentInstaller } from "@/modules/employee-monitoring-v2/services/installerDownload"
 import { useNavigate } from "react-router-dom"
 import { useToast } from "../hooks/use-toast"
 import { useAuth } from "../context/auth-context"
