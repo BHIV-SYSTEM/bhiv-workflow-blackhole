@@ -5,7 +5,7 @@
  */
 
 import React, { useState } from 'react';
-import { downloadAgentInstaller } from '../modules/employee-monitoring-v2/services/installerDownload.js';
+import { downloadAgentInstaller, openInstaller } from '../services/agentInstallerDownload.js';
 import { Button } from '../modules/employee-monitoring-v2/components/ui/Button.jsx';
 import { Download } from 'lucide-react';
 import PrivacyShieldBadge from '../modules/employee-monitoring-v2/components/common/PrivacyShieldBadge.jsx';
@@ -13,11 +13,13 @@ import { Card, CardHeader, CardTitle, CardContent } from '../modules/employee-mo
 
 export const DesktopAgentPage = () => {
   const [status, setStatus] = useState(null); // null | 'downloading' | 'success' | 'error'
+  const [installerUrl, setInstallerUrl] = useState(null);
 
   const handleDownload = async () => {
     setStatus('downloading');
     try {
-      await downloadAgentInstaller('exe');
+      const res = await downloadAgentInstaller('exe');
+      setInstallerUrl(res.url);
       setStatus('success');
     } catch (err) {
       console.error('Agent download failed:', err);
