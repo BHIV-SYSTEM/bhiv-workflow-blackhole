@@ -352,7 +352,7 @@ function UserDashboard() {
                     Niyantran Desktop Agent (Windows)
                   </h3>
                   <Badge className="bg-purple-600/30 text-purple-300 border-purple-500/40 text-[10px]">
-                    v2.0.0
+                    v1.0.0
                   </Badge>
                 </div>
                 <p className="text-xs sm:text-sm text-muted-foreground">
