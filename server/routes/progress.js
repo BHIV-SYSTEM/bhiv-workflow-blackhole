@@ -224,7 +224,8 @@ router.post(
       const targetUserId = (user && user !== "undefined" && user !== "null") ? user : (req.user?.id || req.user?._id);
 
       // Check if user is active
-      const userDoc = await User.findById(targetUserId);
+      let userDoc = null;
+      try { userDoc = await User.findById(targetUserId); } catch (e) { return res.status(400).json({ error: "Invalid user id" }); }
       if (!userDoc || userDoc.stillExist === 0) {
         return res.status(404).json({ error: "User not found or no longer active" });
       }
