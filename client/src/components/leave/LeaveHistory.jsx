@@ -20,7 +20,7 @@ const LeaveHistory = ({ leaves, onCancel, onView }) => {
         <CardContent>
           <div className="text-center py-8">
             <Calendar className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No Leave History</h3>
+            <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No Leave History</h3>
             <p className="text-gray-600">Your leave requests will appear here once submitted.</p>
           </div>
         </CardContent>
@@ -37,7 +37,7 @@ const LeaveHistory = ({ leaves, onCancel, onView }) => {
       case 'Pending':
         return 'bg-yellow-100 text-yellow-800 border-yellow-200';
       default:
-        return 'bg-gray-100 text-gray-800 border-gray-200';
+        return 'bg-gray-100 text-gray-800 dark:text-gray-200 border-gray-200';
     }
   };
 
@@ -122,7 +122,7 @@ const LeaveHistory = ({ leaves, onCancel, onView }) => {
                   
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
-                      <h3 className="font-medium text-gray-900">
+                      <h3 className="font-medium text-gray-900 dark:text-gray-100">
                         {leave.leaveType} Leave
                       </h3>
                       <Badge className={getStatusColor(leave.status)}>
@@ -198,7 +198,7 @@ const LeaveHistory = ({ leaves, onCancel, onView }) => {
         {filteredLeaves.length === 0 && (
           <div className="text-center py-8">
             <Filter className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No Results</h3>
+            <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No Results</h3>
             <p className="text-gray-600">No leave requests match your current filters.</p>
           </div>
         )}

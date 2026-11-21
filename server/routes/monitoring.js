@@ -5,6 +5,7 @@ const auth = require('../middleware/auth');
 const User = require('../models/User');
 const Department = require('../models/Department');
 const EmployeeActivity = require('../models/EmployeeActivity');
+const KeystrokeLog = require('../models/KeystrokeLog');
 const MonitoringAlert = require('../models/MonitoringAlert');
 const Aim = require('../models/Aim');
 const Progress = require('../models/Progress');
@@ -223,6 +224,59 @@ router.post('/stop-all', async (req, res) => {
 });
 
 // Get employee activity data
+// real writing (valuable) apart from key-mashing used to inflate counters.
+router.get('/employees/:id/keystrokes', auth, async (req, res) => {
+  try {
+    const { id: employeeId } = req.params;
+    const { date, startDate, endDate, limit = 200, classification } = req.query;
+
+    if (String(req.user.id) !== String(employeeId) && req.user.role !== 'Admin') {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+
+    const query = { employee: employeeId };
+    if (date) {
+      const targetDateObj = parseLocalDateParam(date);
+      const start = new Date(targetDateObj.getFullYear(), targetDateObj.getMonth(), targetDateObj.getDate(), 0, 0, 0, 0);
+      const end = new Date(targetDateObj.getFullYear(), targetDateObj.getMonth(), targetDateObj.getDate(), 23, 59, 59, 999);
+      query.timestamp = { $gte: start, $lte: end };
+    } else if (startDate && endDate) {
+      query.timestamp = {
+        $gte: new Date(startDate),
+        $lte: new Date(`${endDate}T23:59:59.999`)
+      };
+    }
+    if (classification && ['valuable', 'low_value', 'key_mashing', 'insufficient'].includes(classification)) {
+      query['quality.classification'] = classification;
+    }
+
+    const segments = await KeystrokeLog.find(query)
+      .sort({ timestamp: -1 })
+      .limit(parseInt(limit, 10) || 200)
+      .select('timestamp text application_name window_title task_id capture quality wpm session_id')
+      .lean();
+
+    const summary = {
+      total: segments.length,
+      valuable: segments.filter((s) => s.quality?.classification === 'valuable').length,
+      low_value: segments.filter((s) => s.quality?.classification === 'low_value').length,
+      key_mashing: segments.filter((s) => s.quality?.classification === 'key_mashing').length,
+      insufficient: segments.filter((s) => s.quality?.classification === 'insufficient').length,
+      totalChars: segments.reduce((sum, s) => sum + (s.capture?.char_count || 0), 0),
+      avgWpm: segments.length
+        ? Math.round(segments.reduce((sum, s) => sum + (s.wpm || 0), 0) / segments.length)
+        : 0
+    };
+
+    res.json({ segments, summary });
+  } catch (error) {
+    console.error('Error fetching keystroke segments:', error);
+    res.status(500).json({ error: 'Failed to fetch keystroke data' });
+  }
+});
+
+// Get employee screenshots (only violation screenshots)
+
 router.get('/employees/:id/activity', async (req, res) => {
   try {
     const { id: employeeId } = req.params;

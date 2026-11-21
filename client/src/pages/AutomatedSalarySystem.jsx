@@ -166,7 +166,7 @@ const AutomatedSalarySystem = () => {
         animate={{ opacity: 1, y: 0 }}
         className="text-center mb-8"
       >
-        <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
+        <h1 className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-gray-100 mb-4">
           Automated Salary Analysis System
         </h1>
         <p className="text-xl text-gray-600 max-w-3xl mx-auto">
@@ -307,7 +307,7 @@ const AutomatedSalarySystem = () => {
                     <CardContent>
                       <p className="text-gray-600 mb-4">{feature.description}</p>
                       <div className="space-y-2">
-                        <h4 className="font-semibold text-sm text-gray-900">Key Features:</h4>
+                        <h4 className="font-semibold text-sm text-gray-900 dark:text-gray-100">Key Features:</h4>
                         <ul className="space-y-1">
                           {feature.details.map((detail, i) => (
                             <li key={i} className="flex items-center gap-2 text-sm text-gray-600">

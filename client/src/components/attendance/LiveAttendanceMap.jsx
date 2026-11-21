@@ -610,7 +610,7 @@ const LiveAttendanceMap = ({ attendance }) => {
                                 </AvatarFallback>
                               </Avatar>
                               <div className="flex-1">
-                                <p className="font-semibold text-sm text-gray-900">
+                                <p className="font-semibold text-sm text-gray-900 dark:text-gray-100">
                                   {employee.name || employee.user?.name || 'Unknown Employee'}
                                 </p>
                                 {employee.employeeId && (
@@ -648,7 +648,7 @@ const LiveAttendanceMap = ({ attendance }) => {
                                         {details ? (
                                           <>
                                             {details.road !== 'N/A' && details.houseNumber !== 'N/A' && (
-                                              <p className="text-gray-800 font-semibold mb-1">
+                                              <p className="text-gray-800 dark:text-gray-200 font-semibold mb-1">
                                                 {details.houseNumber} {details.road}
                                               </p>
                                             )}
@@ -731,7 +731,7 @@ const LiveAttendanceMap = ({ attendance }) => {
                               {employee.hoursWorked > 0 && (
                                 <div className="flex items-center justify-between pt-2 border-t">
                                   <span className="text-gray-600">Hours Worked:</span>
-                                  <span className="font-semibold text-gray-900">{employee.hoursWorked.toFixed(1)}h</span>
+                                  <span className="font-semibold text-gray-900 dark:text-gray-100">{employee.hoursWorked.toFixed(1)}h</span>
                 </div>
                               )}
               </div>

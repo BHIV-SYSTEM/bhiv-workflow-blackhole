@@ -553,7 +553,7 @@ const RealTimeTracker = () => {
       {/* Header */}
       <div className="text-center">
         <div className="flex items-center justify-center gap-4 mb-2">
-          <h1 className="text-3xl font-bold text-gray-900">Real-Time Attendance</h1>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Real-Time Attendance</h1>
           <Button
             onClick={fetchTodayAttendance}
             disabled={refreshing}
@@ -598,7 +598,7 @@ const RealTimeTracker = () => {
             <div className="text-center mb-6">
               <div className="flex items-center justify-center gap-2 mb-3">
                 {getStatusIcon()}
-                <span className="text-lg font-semibold text-gray-900">
+                <span className="text-lg font-semibold text-gray-900 dark:text-gray-100">
                   {todayStats.status}
                 </span>
                 {isTracking && (
@@ -621,7 +621,7 @@ const RealTimeTracker = () => {
                   />
                   <div className={`absolute inset-0 rounded-full ${getProgressColor()} opacity-20`} />
                 </div>
-                <div className="text-lg font-bold text-gray-900">
+                <div className="text-lg font-bold text-gray-900 dark:text-gray-100">
                   {Math.min(100, Math.round((todayStats.hoursWorked / todayStats.targetHours) * 100))}% Complete
                 </div>
               </div>
@@ -673,14 +673,14 @@ const RealTimeTracker = () => {
             <div className="grid grid-cols-2 gap-4 mb-6">
               <div className="text-center p-3 bg-gray-50 rounded-lg">
                 <div className="text-sm text-gray-600 mb-1">Start Time</div>
-                <div className="text-lg font-semibold text-gray-900">
+                <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">
                   {todayStats.startTime ? formatTime(todayStats.startTime) : '--:--'}
                 </div>
               </div>
 
               <div className="text-center p-3 bg-gray-50 rounded-lg">
                 <div className="text-sm text-gray-600 mb-1">End Time</div>
-                <div className="text-lg font-semibold text-gray-900">
+                <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">
                   {todayStats.endTime ? formatTime(todayStats.endTime) : '--:--'}
                 </div>
               </div>

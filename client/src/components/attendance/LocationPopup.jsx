@@ -172,7 +172,7 @@ const LocationPopup = ({ isOpen, onClose, onLocationConfirmed, loading }) => {
         <div className="space-y-6">
           {/* Current Time */}
           <div className="text-center p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-blue-200">
-            <div className="flex items-center justify-center gap-2 text-lg font-semibold text-gray-900">
+            <div className="flex items-center justify-center gap-2 text-lg font-semibold text-gray-900 dark:text-gray-100">
               <Clock className="w-5 h-5 text-blue-600" />
               {new Date().toLocaleTimeString('en-US', {
                 hour: '2-digit',
@@ -276,7 +276,7 @@ const LocationPopup = ({ isOpen, onClose, onLocationConfirmed, loading }) => {
           {/* Work Location Options */}
           {location && (
             <div className="space-y-3">
-              <h4 className="font-medium text-gray-900">Choose Work Location:</h4>
+              <h4 className="font-medium text-gray-900 dark:text-gray-100">Choose Work Location:</h4>
               
               <div className="grid grid-cols-2 gap-3">
                 <Button

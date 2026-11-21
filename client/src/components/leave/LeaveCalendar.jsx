@@ -135,7 +135,7 @@ const LeaveCalendar = ({ leaves = [] }) => {
                   }`}
                 >
                   <div className={`text-sm font-medium ${
-                    isToday ? 'text-blue-600' : 'text-gray-900'
+                    isToday ? 'text-blue-600' : 'text-gray-900 dark:text-gray-100'
                   }`}>
                     {day}
                   </div>
@@ -183,7 +183,7 @@ const LeaveCalendar = ({ leaves = [] }) => {
           {/* Upcoming Leaves */}
           {leaves.length > 0 && (
             <div className="pt-4 border-t">
-              <h4 className="font-medium text-gray-900 mb-3">Upcoming Leaves</h4>
+              <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-3">Upcoming Leaves</h4>
               <div className="space-y-2">
                 {leaves
                   .filter(leave => new Date(leave.startDate) >= new Date())

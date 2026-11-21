@@ -191,7 +191,7 @@ const TopPerformers = ({ data }) => {
                   {/* Employee Info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <h3 className="font-medium text-gray-900 truncate">
+                      <h3 className="font-medium text-gray-900 dark:text-gray-100 truncate">
                         {performer.name || 'Unknown Employee'}
                       </h3>
                       {index < 3 && (

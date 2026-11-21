@@ -271,7 +271,7 @@ const ExcelUpload = ({ isOpen, onClose, onUpload }) => {
                   </motion.div>
                   
                   <div>
-                    <h3 className="font-medium text-gray-900">
+                    <h3 className="font-medium text-gray-900 dark:text-gray-100">
                       {dragActive ? 'Drop your file here' : 'Drag & drop your Excel file'}
                     </h3>
                     <p className="text-sm text-gray-600">

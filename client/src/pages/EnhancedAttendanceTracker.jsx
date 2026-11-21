@@ -388,7 +388,7 @@ const EnhancedAttendanceTracker = () => {
           className="text-center mb-8"
         >
           <div className="inline-block bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
-            <div className="text-5xl font-bold text-gray-900 mb-2 font-mono">
+            <div className="text-5xl font-bold text-gray-900 dark:text-gray-100 mb-2 font-mono">
               {currentTime.toLocaleTimeString('en-US', {
                 hour: '2-digit',
                 minute: '2-digit',
@@ -420,7 +420,7 @@ const EnhancedAttendanceTracker = () => {
                       <StatusIcon className="w-8 h-8 text-white" />
                     </div>
                     <div>
-                      <CardTitle className="text-2xl font-bold text-gray-900">
+                      <CardTitle className="text-2xl font-bold text-gray-900 dark:text-gray-100">
                         Today's Status
                       </CardTitle>
                       <CardDescription className="text-lg text-gray-600">
@@ -447,7 +447,7 @@ const EnhancedAttendanceTracker = () => {
                     <div className="text-center p-4 bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl border border-blue-200">
                       <Clock className="w-8 h-8 text-blue-600 mx-auto mb-2" />
                       <p className="text-sm text-gray-600 font-medium">Start Time</p>
-                      <p className="text-lg font-bold text-gray-900">
+                      <p className="text-lg font-bold text-gray-900 dark:text-gray-100">
                         {formatTime(todayStatus.startTime)}
                       </p>
                     </div>
@@ -456,7 +456,7 @@ const EnhancedAttendanceTracker = () => {
                       <div className="text-center p-4 bg-gradient-to-br from-green-50 to-green-100 rounded-xl border border-green-200">
                         <CheckCircle className="w-8 h-8 text-green-600 mx-auto mb-2" />
                         <p className="text-sm text-gray-600 font-medium">End Time</p>
-                        <p className="text-lg font-bold text-gray-900">
+                        <p className="text-lg font-bold text-gray-900 dark:text-gray-100">
                           {formatTime(todayStatus.endTime)}
                         </p>
                       </div>
@@ -464,7 +464,7 @@ const EnhancedAttendanceTracker = () => {
                       <div className="text-center p-4 bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl border border-orange-200">
                         <Timer className="w-8 h-8 text-orange-600 mx-auto mb-2" />
                         <p className="text-sm text-gray-600 font-medium">Current Hours</p>
-                        <p className="text-lg font-bold text-gray-900">
+                        <p className="text-lg font-bold text-gray-900 dark:text-gray-100">
                           {formatDuration(todayStatus.currentHours || 0)}
                         </p>
                       </div>
@@ -473,7 +473,7 @@ const EnhancedAttendanceTracker = () => {
                     <div className="text-center p-4 bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl border border-purple-200">
                       <DollarSign className="w-8 h-8 text-purple-600 mx-auto mb-2" />
                       <p className="text-sm text-gray-600 font-medium">Earned Today</p>
-                      <p className="text-lg font-bold text-gray-900">
+                      <p className="text-lg font-bold text-gray-900 dark:text-gray-100">
                         ₹{Math.round((todayStatus.earnedAmount || 0) * 100) / 100}
                       </p>
                     </div>
@@ -718,7 +718,7 @@ const EnhancedAttendanceTracker = () => {
                       </span>
                     </div>
                     <div className="text-right">
-                      <div className="text-sm font-medium text-gray-900">
+                      <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
                         {record.hoursWorked}h
                       </div>
                       <div className="text-xs text-gray-500">

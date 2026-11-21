@@ -106,7 +106,7 @@ const SalaryManagement = () => {
               <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
                 <UserCheck className="w-8 h-8 text-red-600" />
               </div>
-              <h2 className="text-xl font-semibold text-gray-900 mb-2">Access Restricted</h2>
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">Access Restricted</h2>
               <p className="text-gray-600">
                 You need administrator privileges to access salary management.
               </p>

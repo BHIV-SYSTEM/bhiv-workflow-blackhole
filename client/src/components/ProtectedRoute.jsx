@@ -10,15 +10,12 @@ export const ProtectedRoute = ({ children }) => {
   }
 
   if (!user) {
-    if (import.meta.env.DEV && location.pathname.startsWith('/monitoring-v2')) {
-      return children;
-    }
     return <Navigate to="/login" state={{ from: location }} replace />
   }
 
   if (user.role === "User") {
     // Allow access to /userdashboard, /knowledge-admin, and /tasks/* (including /tasks/:id)
-     if (location.pathname !== "/userdashboard" && location.pathname !== "/knowledge-admin" && location.pathname !== "/my-tasks" && !location.pathname.startsWith("/tasks/") && location.pathname !== "/progress" && location.pathname !== "/aims" && location.pathname !== "/todaysaim" && location.pathname !== "/leaderboard"&& location.pathname !== "/leave-request"&&!location.pathname.startsWith("/settings") && location.pathname !== "/monitoring-v2/employee" ) {
+     if (location.pathname !== "/userdashboard" && location.pathname !== "/knowledge-admin" && location.pathname !== "/my-tasks" && !location.pathname.startsWith("/tasks/") && location.pathname !== "/progress" && location.pathname !== "/aims" && location.pathname !== "/todaysaim" && location.pathname !== "/leaderboard"&& location.pathname !== "/leave-request"&&!location.pathname.startsWith("/settings")) {
       return <Navigate to="/userdashboard" replace />
     }
   }

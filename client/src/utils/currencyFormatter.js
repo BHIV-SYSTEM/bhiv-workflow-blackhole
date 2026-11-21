@@ -308,7 +308,7 @@ export const SALARY_STYLES = {
   container: 'flex flex-col gap-4 p-4 bg-white rounded-lg shadow',
   row: 'flex justify-between items-center py-2 border-b border-gray-200 last:border-0',
   label: 'text-gray-600 text-sm font-medium',
-  amount: 'text-gray-900 font-semibold text-lg',
+  amount: 'text-gray-900 dark:text-gray-100 font-semibold text-lg',
   positive: 'text-green-600',
   negative: 'text-red-600',
   card: 'bg-gradient-to-r from-blue-50 to-blue-100 p-4 rounded-lg border border-blue-200',

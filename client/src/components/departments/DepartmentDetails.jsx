@@ -363,7 +363,7 @@ export function DepartmentDetails({ department, onBack }) {
                               <Badge variant="outline" className="rounded-lg">{user.role}</Badge>
                             </TableCell>
                             <TableCell>
-                              <Badge className={isPresent ? "bg-green-100 text-green-800 border-green-200 rounded-lg" : "bg-gray-100 text-gray-800 border-gray-200 rounded-lg"}>
+                              <Badge className={isPresent ? "bg-green-100 text-green-800 border-green-200 rounded-lg" : "bg-gray-100 text-gray-800 dark:text-gray-200 border-gray-200 rounded-lg"}>
                                 {isPresent ? "Present" : "Absent"}
                               </Badge>
                             </TableCell>

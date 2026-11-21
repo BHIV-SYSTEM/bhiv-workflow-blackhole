@@ -10,7 +10,7 @@ const EnhancedAimCard = ({ aim }) => {
       case 'MVP Achieved':
         return 'bg-yellow-100 text-yellow-800';
       default:
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-gray-100 text-gray-800 dark:text-gray-200';
     }
   };
 
@@ -35,7 +35,7 @@ const EnhancedAimCard = ({ aim }) => {
       {/* Header with user info and tags */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <span className="font-medium text-gray-900">
+          <span className="font-medium text-gray-900 dark:text-gray-100">
             {aim.user?.name || "Unknown User"}
           </span>
           
@@ -85,7 +85,7 @@ const EnhancedAimCard = ({ aim }) => {
 
       {/* Main aim content */}
       <div className="mb-3">
-        <p className="text-sm text-gray-800 whitespace-pre-line leading-relaxed">
+        <p className="text-sm text-gray-800 dark:text-gray-200 whitespace-pre-line leading-relaxed">
           {aim.aims}
         </p>
       </div>
