@@ -373,7 +373,7 @@ function UserDashboard() {
               </Button>
               <Button
                 variant="outline"
-                onClick={() => navigate('/desktop-agent')}
+                onClick={() => { window.location.href = 'niyantran://open'; }}
                 className="border-purple-500/30 hover:bg-purple-500/10 text-purple-300 text-xs rounded-xl"
               >
                 Open Agent Hub

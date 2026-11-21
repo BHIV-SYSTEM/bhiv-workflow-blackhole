@@ -18,7 +18,7 @@ const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (event, argv) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.show();
@@ -476,7 +476,9 @@ ipcMain.handle('capture-now', async () => {
 });
 
 // App lifecycle
+app.on('open-url', (event) => { event.preventDefault(); if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.show(); mainWindow.focus(); } });
 app.whenReady().then(async () => {
+  try { app.setAsDefaultProtocolClient('niyantran'); } catch (e) { console.warn('protocol register failed', e && e.message); }
   if (!gotSingleInstanceLock) return;
 
   // 1. Setup auto-start with Windows on PC boot

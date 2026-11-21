@@ -87,11 +87,10 @@ export function DashboardSidebar({ onNavigate, isMobile = false } = {}) {
           routes: [
             { title: "Dashboard", href: "/userdashboard", icon: LayoutDashboardIcon },
             { title: "My Tasks", href: "/my-tasks", icon: CheckSquare },
-            { title: "Work Session", href: "/userdashboard", icon: ShieldCheck },
+            { title: "Work Session", href: "/monitoring-v2/employee", icon: ShieldCheck },
             { title: "Set Aims", href: "/aims", icon: Target },
             { title: "Progress", href: "/progress", icon: BarChart },
             { title: "Knowledge Admin", href: "/knowledge-admin", icon: BookOpen },
-          { title: "Work Session", href: "/userdashboard", icon: ShieldCheck },
           ]
         },
         {
@@ -138,7 +137,6 @@ export function DashboardSidebar({ onNavigate, isMobile = false } = {}) {
           routes: [
             { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
             { title: "AI Optimization", href: "/optimization", icon: Sparkles },
-            { title: "Work Session", href: "/userdashboard", icon: ShieldCheck },
           ]
         },
         {

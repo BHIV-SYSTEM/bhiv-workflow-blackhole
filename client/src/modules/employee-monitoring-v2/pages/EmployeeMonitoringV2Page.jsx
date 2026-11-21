@@ -6,7 +6,7 @@
  * Zero access to administrative telemetry, team rankings, or peers.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MonitoringV2Provider, useMonitoringV2Context } from '../context/MonitoringV2Context';
 import PrivacyShieldBadge from '../components/common/PrivacyShieldBadge';
 import DeviceSwitcherModal from '../components/common/DeviceSwitcherModal';
@@ -44,6 +44,18 @@ function EmployeeMonitoringV2Content() {
   } = useMonitoringV2Context();
 
   const [activeTab, setActiveTab] = useState('session');
+  const [v1Active, setV1Active] = useState(false);
+  useEffect(() => {
+    const check = async () => {
+      try {
+        const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/attendance/status`, { headers: { Authorization: `Bearer ${localStorage.getItem('WorkflowToken') || localStorage.getItem('token')}` } });
+        if (res.ok) { const d = await res.json(); setV1Active(!!d.dayStarted); }
+      } catch (_) { setV1Active(false); }
+    };
+    check();
+    const t = setInterval(check, 30000);
+    return () => clearInterval(t);
+  }, []);
 
   const isLaptop = employeeSession.currentDeviceMode === 'LAPTOP_PC';
   const isPhone = employeeSession.currentDeviceMode === 'PHONE';
@@ -128,17 +140,11 @@ function EmployeeMonitoringV2Content() {
           </div>
 
           <Badge
-            variant={
-              employeeSession.status === 'ACTIVE'
-                ? 'success'
-                : employeeSession.status === 'PAUSED'
-                ? 'warning'
-                : 'neutral'
-            }
+            variant={v1Active ? 'success' : 'neutral'}
             className="hidden sm:inline-flex"
           >
             <Circle className="w-2 h-2 fill-current animate-pulse" />
-            <span>{employeeSession.status}</span>
+            <span>{v1Active ? 'ACTIVE' : 'INACTIVE'}</span>
           </Badge>
         </div>
       </div>
