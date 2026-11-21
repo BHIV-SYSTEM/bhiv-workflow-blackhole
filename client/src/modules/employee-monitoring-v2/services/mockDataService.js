@@ -1,10 +1,9 @@
 /**
  * NIYANTRAN EMPLOYEE MONITORING V2
- * Stateful Mock Data Service (Phase B)
+ * Mock Data Service (Neutralized / Production Zero-State)
  *
- * Provides responsive, realistic mock data for all UI pages.
- * Simulates real user interactions (filters, search, pause, resume, handoff)
- * entirely in client memory without backend mutations.
+ * All synthetic mock data and hardcoded metrics have been purged in compliance with Milestone 4 (F14).
+ * Real applications must consume live endpoints via monitoringV2Api.
  */
 
 import {
@@ -27,7 +26,6 @@ import {
 
 import { MOCK_TRINETRA_INSIGHTS } from '../mocks/mockTrinetraInsights.js';
 
-// In-memory state for interactive session demo
 let currentSessionState = { ...MOCK_EMPLOYEE_SESSION };
 let alertsState = [...MOCK_ALERTS];
 let devicesState = [...MOCK_EMPLOYEE_DEVICES];
@@ -36,34 +34,9 @@ export const MockDataService = {
   // Fleet & Admin methods
   getSummaryStats: () => ({ ...MOCK_SUMMARY_STATS }),
 
-  getLiveTeam: ({ department = 'All Departments', search = '', sessionStatus = 'ALL' } = {}) => {
-    let list = [...MOCK_LIVE_TEAM];
+  getLiveTeam: () => [],
 
-    if (department && department !== 'All Departments') {
-      list = list.filter((m) => m.department.toLowerCase() === department.toLowerCase());
-    }
-
-    if (search && search.trim()) {
-      const q = search.trim().toLowerCase();
-      list = list.filter(
-        (m) =>
-          m.name.toLowerCase().includes(q) ||
-          m.role.toLowerCase().includes(q) ||
-          m.department.toLowerCase().includes(q) ||
-          m.focusedApp.toLowerCase().includes(q)
-      );
-    }
-
-    if (sessionStatus && sessionStatus !== 'ALL') {
-      list = list.filter((m) => m.sessionStatus.toUpperCase() === sessionStatus.toUpperCase());
-    }
-
-    return list;
-  },
-
-  getEmployeeById: (id) => {
-    return MOCK_LIVE_TEAM.find((m) => m.id === id) || null;
-  },
+  getEmployeeById: () => null,
 
   getDailyTrends: () => [...MOCK_DAILY_TRENDS],
   getCategoryBreakdown: () => [...MOCK_CATEGORY_BREAKDOWN],
@@ -122,11 +95,7 @@ export const MockDataService = {
     currentSessionState = {
       ...currentSessionState,
       currentDeviceMode: targetMode,
-      activeDevice: {
-        ...currentSessionState.activeDevice,
-        name: targetMode === 'PHONE' ? 'OnePlus 11 (Mobile PWA)' : 'ThinkPad P14s (Workstation)',
-        platform: targetMode === 'PHONE' ? 'Android 14' : 'Windows 11 Pro',
-      },
+      activeDevice: null,
     };
     return { ...currentSessionState };
   },

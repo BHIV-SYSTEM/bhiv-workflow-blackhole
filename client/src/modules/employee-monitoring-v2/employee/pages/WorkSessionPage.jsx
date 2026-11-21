@@ -3,12 +3,13 @@
  * Employee Workspace — Main Work Session Page
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import api from '../../../../lib/api';
 import { useMonitoringV2Context } from '../../context/MonitoringV2Context.jsx';
 import { useAgentDetection } from '../../hooks/useAgentDetection.js';
 import { downloadAgentInstaller } from '../../services/installerDownload.js';
-import MockDataService from '../../services/mockDataService.js';
+import monitoringV2Api from '../../services/monitoringV2Api.js';
 import Card, { CardHeader, CardTitle, CardDescription, CardContent } from '../../components/ui/Card.jsx';
 import Button from '../../components/ui/Button.jsx';
 import Badge from '../../components/ui/Badge.jsx';
@@ -60,6 +61,63 @@ export const WorkSessionPage = () => {
   const navigate = useNavigate();
   const [isDownloadingAgent, setIsDownloadingAgent] = useState(false);
 
+  // Workday Attendance Synchronization (Milestone 3 - F10, F11, F12)
+  const [workdayAttendance, setWorkdayAttendance] = useState({
+    dayStarted: false,
+    dayEndedToday: false,
+    startTime: null,
+    monitoringConsent: false,
+    monitoringStatus: 'Disconnected / Not Monitored'
+  });
+
+  const fetchWorkdayStatus = useCallback(async () => {
+    try {
+      const res = await api.get('/attendance/status');
+      if (res) {
+        setWorkdayAttendance({
+          dayStarted: res.dayStarted ?? false,
+          dayEndedToday: res.dayEndedToday ?? false,
+          startTime: res.startTime ?? null,
+          monitoringConsent: res.monitoringConsent ?? false,
+          monitoringStatus: res.monitoringStatus ?? 'Disconnected / Not Monitored'
+        });
+      }
+    } catch {
+      // Non-fatal
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchWorkdayStatus();
+    const handleAttendanceChange = () => fetchWorkdayStatus();
+    window.addEventListener('attendance-updated', handleAttendanceChange);
+    window.addEventListener('monitoring-session-state', handleAttendanceChange);
+    return () => {
+      window.removeEventListener('attendance-updated', handleAttendanceChange);
+      window.removeEventListener('monitoring-session-state', handleAttendanceChange);
+    };
+  }, [fetchWorkdayStatus]);
+
+  // 60-Second Renewable Lease Countdown
+  const [remainingLeaseSeconds, setRemainingLeaseSeconds] = useState(0);
+
+  useEffect(() => {
+    if (!employeeSession.leaseExpiresAt || employeeSession.status !== 'ACTIVE') {
+      setRemainingLeaseSeconds(0);
+      return;
+    }
+
+    const updateCountdown = () => {
+      const expires = new Date(employeeSession.leaseExpiresAt).getTime();
+      const diff = Math.max(0, Math.floor((expires - Date.now()) / 1000));
+      setRemainingLeaseSeconds(diff);
+    };
+
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 1000);
+    return () => clearInterval(interval);
+  }, [employeeSession.leaseExpiresAt, employeeSession.status]);
+
   const handleDownloadAgent = async (format = 'exe') => {
     setIsDownloadingAgent(true);
     try {
@@ -74,7 +132,25 @@ export const WorkSessionPage = () => {
     }
   };
 
-  const timeline = MockDataService.getPersonalTimeline();
+  const [timeline, setTimeline] = useState([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchTimeline = async () => {
+      try {
+        const res = await monitoringV2Api.getDailyTimeline();
+        if (isMounted && res?.data?.timeline) {
+          setTimeline(res.data.timeline);
+        }
+      } catch {
+        if (isMounted) setTimeline([]);
+      }
+    };
+    fetchTimeline();
+    return () => {
+      isMounted = false;
+    };
+  }, [employeeSession.sessionId, employeeSession.status]);
   const isActive = employeeSession.status === 'ACTIVE';
   const isPaused = employeeSession.status === 'PAUSED';
   const isLaptopMode = employeeSession.currentDeviceMode === 'LAPTOP_PC';
@@ -265,20 +341,75 @@ export const WorkSessionPage = () => {
         </div>
       )}
 
+      {/* Attendance Not Started Warning (Milestone 3 - F10, F11) */}
+      {!workdayAttendance.dayStarted && (
+        <div className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-200 text-xs flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+            <span>Workday attendance is not started. Please punch in on the Attendance Dashboard to record official hours.</span>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => navigate('/start-day')}
+            className="border-amber-500/40 text-amber-300 hover:bg-amber-500/10 text-xs whitespace-nowrap"
+          >
+            Go to Start Day
+          </Button>
+        </div>
+      )}
+
       {/* Primary Session Card */}
       <Card className="border-indigo-500/20 bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950/20">
         <CardContent className="p-6">
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
             {/* Status & Timer */}
             <div className="space-y-2">
-              <div className="flex items-center gap-2.5">
+              <div className="flex flex-wrap items-center gap-2.5">
+                {/* Unified Workday Status Badge */}
                 <Badge
-                  variant={isActive ? 'success' : isPaused ? 'warning' : 'neutral'}
+                  variant={workdayAttendance.dayStarted ? 'default' : 'neutral'}
+                  className={`text-xs px-2.5 py-1 ${
+                    workdayAttendance.dayStarted 
+                      ? 'border-emerald-500/40 text-emerald-300 bg-emerald-950/40' 
+                      : 'border-slate-700 text-slate-400 bg-slate-900/60'
+                  }`}
+                >
+                  {workdayAttendance.dayStarted ? 'Workday Active' : 'Workday Not Started'}
+                </Badge>
+
+                {/* Monitoring Session State Badge */}
+                <Badge
+                  variant={isActive && isAgentRunning && remainingLeaseSeconds > 0 ? 'success' : isPaused ? 'warning' : 'neutral'}
                   className="text-xs px-3 py-1 font-semibold"
                 >
                   <span className="w-2 h-2 rounded-full bg-current animate-pulse inline-block" />
-                  <span>SESSION {employeeSession.status}</span>
+                  <span>
+                    {workdayAttendance.dayStarted && (!isAgentRunning || remainingLeaseSeconds === 0)
+                      ? 'Disconnected / Not Monitored'
+                      : `SESSION ${employeeSession.status}`}
+                  </span>
                 </Badge>
+
+                {/* 60-Second Renewable Lease Countdown */}
+                {isActive && (
+                  <Badge
+                    variant="default"
+                    className={`font-mono text-xs px-2.5 py-1 ${
+                      remainingLeaseSeconds > 15
+                        ? 'border-emerald-500/40 text-emerald-300 bg-emerald-950/40'
+                        : remainingLeaseSeconds > 0
+                        ? 'border-amber-500/40 text-amber-300 bg-amber-950/40 animate-pulse'
+                        : 'border-rose-500/40 text-rose-300 bg-rose-950/40'
+                    }`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full mr-1.5 inline-block ${
+                      remainingLeaseSeconds > 15 ? 'bg-emerald-400' : remainingLeaseSeconds > 0 ? 'bg-amber-400' : 'bg-rose-400'
+                    }`} />
+                    {remainingLeaseSeconds > 0 ? `Lease: ${remainingLeaseSeconds}s remaining (Renewable)` : 'Lease Expired'}
+                  </Badge>
+                )}
+
                 {employeeSession.pauseReason && (
                   <span className="text-xs text-amber-300">
                     ({employeeSession.pauseReason})

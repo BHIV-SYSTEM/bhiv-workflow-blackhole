@@ -22,32 +22,7 @@ export function WorkspaceSettings() {
     logo: "/placeholder.svg?height=100&width=100",
   })
   
-  const [members, setMembers] = useState([
-    {
-      id: "user-1",
-      name: "John Doe",
-      email: "john.doe@example.com",
-      role: "Admin",
-      avatar: "/placeholder.svg?height=32&width=32",
-      initials: "JD",
-    },
-    {
-      id: "user-2",
-      name: "Jane Smith",
-      email: "jane.smith@example.com",
-      role: "Manager",
-      avatar: "/placeholder.svg?height=32&width=32",
-      initials: "JS",
-    },
-    {
-      id: "user-3",
-      name: "Mike Johnson",
-      email: "mike.johnson@example.com",
-      role: "User",
-      avatar: "/placeholder.svg?height=32&width=32",
-      initials: "MJ",
-    },
-  ])
+  const [members, setMembers] = useState(workspace?.members || [])
   
   const [inviteEmail, setInviteEmail] = useState("")
   

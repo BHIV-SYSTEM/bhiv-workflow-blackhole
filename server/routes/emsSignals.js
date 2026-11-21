@@ -152,20 +152,8 @@ router.post('/signals', async (req, res) => {
     // Get current state
     const currentState = emsSignals.getSignalState(employeeId);
 
-    // KARMA signals based on processed signal types
-    const types = signals.map(s => s.type);
-    if (types.includes('browser_hidden')) {
-      signalExcessiveIdle(String(employeeId)).catch(() => {});
-    } else if (types.includes('keystroke') || types.includes('keystroke_rate')) {
-      const anomalyScore = currentState?.statistics?.keystrokeAnomalyScore || 0;
-      if (anomalyScore > 0.3) {
-        signalKeystrokeAnomaly(String(employeeId), anomalyScore).catch(() => {});
-      } else {
-        throttledSignalNormalActivity(String(employeeId));
-      }
-    } else if (types.includes('window_focus') || types.includes('mouse_movement') || types.includes('task_tab_active')) {
-      throttledSignalNormalActivity(String(employeeId));
-    }
+    // KARMA normal activity signal (zero automated penalties under V2 privacy boundaries)
+    throttledSignalNormalActivity(String(employeeId));
 
     // PRANA Telemetry Propagation (asynchronous / non-blocking)
     const traceId = req.headers['x-trace-id'] || req.headers['x-request-id'];

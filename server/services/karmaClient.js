@@ -117,37 +117,21 @@ async function publishSignal({
 }
 
 async function signalExcessiveIdle(userId, idleMinutes, traceId) {
-  const severity = Math.min(1.0, Math.round((idleMinutes / 60) * 100) / 100);
-  return publishSignal({
-    subjectId: userId,
-    signal: idleMinutes >= 30 ? SIGNALS.RESTRICT : SIGNALS.NUDGE,
-    severity,
-    ttl: 600,
-    opaqueReasonCode: REASON_CODES.EXCESSIVE_IDLE,
-    traceId,
-  });
+  // Automated behavioral penalties (nudge, restrict, escalate) permanently excised under V2 privacy boundaries.
+  console.log(`[KARMA] Automated idle penalty neutralized for user ${userId} (${idleMinutes}m idle). Zero automated penalties.`);
+  return { success: true, signal: SIGNALS.ALLOW, neutralized: true };
 }
 
 async function signalDisallowedSite(userId, traceId) {
-  return publishSignal({
-    subjectId: userId,
-    signal: SIGNALS.RESTRICT,
-    severity: 0.8,
-    ttl: 300,
-    opaqueReasonCode: REASON_CODES.DISALLOWED_SITE,
-    traceId,
-  });
+  // Automated behavioral penalties excised under V2 privacy boundaries.
+  console.log(`[KARMA] Disallowed site penalty neutralized for user ${userId}. Zero automated penalties.`);
+  return { success: true, signal: SIGNALS.ALLOW, neutralized: true };
 }
 
 async function signalKeystrokeAnomaly(userId, anomalyScore, traceId) {
-  return publishSignal({
-    subjectId: userId,
-    signal: anomalyScore >= 0.7 ? SIGNALS.ESCALATE : SIGNALS.NUDGE,
-    severity: Math.min(1.0, anomalyScore),
-    ttl: 300,
-    opaqueReasonCode: REASON_CODES.KEYSTROKE_ANOMALY,
-    traceId,
-  });
+  // Automated behavioral penalties excised under V2 privacy boundaries.
+  console.log(`[KARMA] Keystroke anomaly penalty neutralized for user ${userId}. Zero automated penalties.`);
+  return { success: true, signal: SIGNALS.ALLOW, neutralized: true };
 }
 
 async function signalNormalActivity(userId, traceId) {

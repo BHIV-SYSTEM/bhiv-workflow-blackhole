@@ -233,6 +233,7 @@ async function endSession(sessionId, employeeId, requestingUserRole = 'Employee'
   const now = new Date();
   session.state = SESSION_STATES.COMPLETED;
   session.ended_at = now;
+  session.lease_expires_at = now;
   await session.save();
 
   await DeviceAuditLog.create({
@@ -285,6 +286,52 @@ async function renewLease(sessionId, deviceId) {
   }
 
   const now = new Date();
+
+  // If HR Attendance has been finalized, do not allow lease renewal
+  try {
+    const Attendance = require('../../../models/Attendance');
+    const overnightCutoff = new Date(now.getTime() - 18 * 60 * 60 * 1000);
+    const closedRecord = await Attendance.findOne({
+      user: session.employee,
+      $or: [
+        { date: { $gte: overnightCutoff } },
+        { startDayTime: { $gte: overnightCutoff } }
+      ],
+      $and: [
+        { $or: [{ endDayTime: { $ne: null } }, { endTime: { $ne: null } }] }
+      ]
+    }).sort({ endDayTime: -1, endTime: -1 }).lean();
+
+    if (closedRecord && (closedRecord.endDayTime || closedRecord.endTime)) {
+      const openRecord = await Attendance.findOne({
+        user: session.employee,
+        $or: [
+          { date: { $gte: overnightCutoff } },
+          { startDayTime: { $gte: overnightCutoff } }
+        ],
+        startDayTime: { $ne: null },
+        $and: [
+          { $or: [{ endDayTime: null }, { endDayTime: { $exists: false } }] },
+          { $or: [{ endTime: null }, { endTime: { $exists: false } }] }
+        ]
+      }).lean();
+
+      if (!openRecord) {
+        session.state = SESSION_STATES.COMPLETED;
+        session.ended_at = now;
+        session.lease_expires_at = now;
+        await session.save();
+        const error = new Error('Cannot renew lease: Workday attendance has ended');
+        error.statusCode = 400;
+        error.code = 'WORKDAY_ENDED';
+        throw error;
+      }
+    }
+  } catch (attErr) {
+    if (attErr.code === 'WORKDAY_ENDED') throw attErr;
+    // Otherwise non-fatal error reading attendance
+  }
+
   const leaseExpiresAt = new Date(now.getTime() + SESSION_LEASE_SECONDS * 1000);
   session.lease_expires_at = leaseExpiresAt;
   await session.save();
@@ -293,8 +340,38 @@ async function renewLease(sessionId, deviceId) {
     renewed: true,
     sessionId: session.session_id,
     leaseExpiresAt: leaseExpiresAt.toISOString(),
-    remainingSeconds: SESSION_LEASE_SECONDS
+    remainingSeconds: SESSION_LEASE_SECONDS,
+    state: session.state
   };
+}
+
+/**
+ * Ends all active, paused, or initializing sessions for an employee.
+ * Revokes leases immediately.
+ */
+async function endActiveSessionsForEmployee(employeeId, requestingUserRole = 'Employee', reason = 'Workday Ended') {
+  const activeSessions = await MonitoringSessionV2.find({
+    employee: employeeId,
+    state: { $in: [SESSION_STATES.ACTIVE, SESSION_STATES.PAUSED, SESSION_STATES.INITIALIZING] }
+  });
+  const now = new Date();
+  const results = [];
+  for (const session of activeSessions) {
+    session.state = SESSION_STATES.COMPLETED;
+    session.ended_at = now;
+    session.lease_expires_at = now;
+    await session.save();
+
+    await DeviceAuditLog.create({
+      employee: session.employee,
+      device_id: session.active_device,
+      event_type: AUDIT_EVENTS.SESSION_ENDED,
+      metadata: { sessionId: session.session_id, endedBy: employeeId, role: requestingUserRole, reason }
+    }).catch(() => {});
+
+    results.push(session.session_id);
+  }
+  return results;
 }
 
 /**
@@ -312,6 +389,7 @@ module.exports = {
   pauseSession,
   resumeSession,
   endSession,
+  endActiveSessionsForEmployee,
   renewLease,
   getCurrentSession
 };

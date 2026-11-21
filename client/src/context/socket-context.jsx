@@ -79,6 +79,18 @@ export const SocketProvider = ({ children }) => {
         window.dispatchEvent(new CustomEvent('attendance-updated', { detail: data }));
       });
 
+      // Monitoring V2 event handlers (Milestone 3 - F10, F12, F13)
+      socketInstance.on('monitoring:session-state', (data) => {
+        console.log('🔄 Monitoring session state received:', data);
+        window.dispatchEvent(new CustomEvent('monitoring-session-state', { detail: data }));
+      });
+
+      socketInstance.on('monitoring:session-ended', (data) => {
+        console.log('🛑 Monitoring session ended received:', data);
+        window.dispatchEvent(new CustomEvent('monitoring-session-ended', { detail: data }));
+        window.dispatchEvent(new CustomEvent('attendance-updated', { detail: data }));
+      });
+
       // Aim event handlers
       socketInstance.on('aim-updated', (data) => {
         console.log('🎯 Aim updated event:', data);

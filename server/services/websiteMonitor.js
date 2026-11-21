@@ -59,20 +59,7 @@ class WebsiteMonitor {
   }
 
   loadDisallowedSites() {
-    try {
-      const filePath = path.join(__dirname, '../disallowed_sites.json');
-      if (fs.existsSync(filePath)) {
-        const data = fs.readFileSync(filePath, 'utf8');
-        this.disallowedSites = JSON.parse(data);
-        console.log('🚫 Disallowed sites loaded:', this.disallowedSites);
-      } else {
-        this.disallowedSites = [];
-        console.log('🚫 No disallowed sites file found.');
-      }
-    } catch (error) {
-      console.error('Error loading disallowed sites:', error);
-      this.disallowedSites = [];
-    }
+    this.disallowedSites = [];
   }
 
   /**
@@ -710,127 +697,19 @@ class WebsiteMonitor {
   }
 
   /**
-   * Check URL compliance against whitelist
+   * Check URL compliance against whitelist (DEPRECATED & EXCISED under V2 privacy boundaries)
    */
   async checkUrlCompliance(sessionData, url, title, application, io) {
-    try {
-      // Check if the site is disallowed
-      const isDisallowed = this.disallowedSites.some(site => url.includes(site));
-
-      if (isDisallowed) {
-        await MonitoringAlert.createAlert({
-          employee: sessionData.employeeId,
-          alert_type: 'unauthorized_website',
-          severity: 'critical',
-          title: 'Disallowed Website Access',
-          description: `Employee accessed a disallowed website: ${url}`,
-          data: {
-            website_url: url,
-            website_title: title,
-            application_name: application,
-          },
-          session_id: sessionData.sessionId
-        });
-
-        // TANTRA ecosystem: publish event to the bus (fire-and-forget — must never break monitoring)
-        try {
-          const eventBus = require('./eventBus');
-          eventBus.publish('disallowed_site', {
-            employeeId: sessionData.employeeId,
-            url
-          }).catch(err => console.warn('[eventBus] Publish disallowed_site failed (non-fatal):', err.message));
-        } catch (e) { /* eventBus load failure is non-fatal */ }
-
-        await screenCaptureService.triggerCapture(
-          sessionData.employeeId,
-          sessionData.sessionId,
-          'disallowed_site',
-          {
-            active_application: { name: application, title, url },
-            is_flagged: true,
-            flag_reason: 'disallowed_website'
-          }
-        );
-        io.to(`user_${sessionData.employeeId}`).emit('monitoring-alert', {
-          title: 'Disallowed Website Access',
-          description: `Employee accessed a disallowed website: ${url}`,
-        });
-        return; // Stop further processing
-      }
-
-      const whitelistCheck = await WebsiteWhitelist.isWhitelisted(url, sessionData.employeeId);
-      
-      if (!whitelistCheck.allowed) {
-        // Create alert for unauthorized website
-        await MonitoringAlert.createAlert({
-          employee: sessionData.employeeId,
-          alert_type: 'unauthorized_website',
-          severity: this.calculateSeverity(url),
-          title: 'Unauthorized Website Access',
-          description: `Employee accessed non-whitelisted website: ${url}`,
-          data: {
-            website_url: url,
-            website_title: title,
-            application_name: application,
-            whitelist_reason: whitelistCheck.reason
-          },
-          session_id: sessionData.sessionId
-        });
-
-        // Trigger immediate screenshot for unauthorized sites
-        await screenCaptureService.triggerCapture(
-          sessionData.employeeId,
-          sessionData.sessionId,
-          'unauthorized_site',
-          {
-            active_application: { name: application, title, url },
-            is_flagged: true,
-            flag_reason: 'unauthorized_website'
-          }
-        );
-      } else if (whitelistCheck.entry && whitelistCheck.entry.auto_screenshot) {
-        // Take screenshot for monitored whitelisted sites
-        await screenCaptureService.triggerCapture(
-          sessionData.employeeId,
-          sessionData.sessionId,
-          'activity_change',
-          {
-            active_application: { name: application, title, url },
-            monitoring_level: whitelistCheck.monitoring_level
-          }
-        );
-      }
-      
-      // Check for suspicious patterns
-      await this.checkSuspiciousPatterns(sessionData, url, title);
-      
-    } catch (error) {
-      console.error('Error checking URL compliance:', error);
-    }
+    // Browsing history, URL tracking, disallowed sites, and screen captures are eradicated.
+    return;
   }
 
   /**
-   * Check for suspicious URL patterns
+   * Check for suspicious URL patterns (DEPRECATED & EXCISED under V2 privacy boundaries)
    */
   async checkSuspiciousPatterns(sessionData, url, title) {
-    for (const pattern of this.suspiciousPatterns) {
-      if (pattern.test(url) || pattern.test(title)) {
-        await MonitoringAlert.createAlert({
-          employee: sessionData.employeeId,
-          alert_type: 'suspicious_activity',
-          severity: 'medium',
-          title: 'Suspicious Website Pattern Detected',
-          description: `Employee accessed website matching suspicious pattern: ${url}`,
-          data: {
-            website_url: url,
-            website_title: title,
-            pattern_matched: pattern.toString()
-          },
-          session_id: sessionData.sessionId
-        });
-        break;
-      }
-    }
+    // Deprecated & Excised.
+    return;
   }
 
   /**

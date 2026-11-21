@@ -9,6 +9,9 @@ import { API_URL } from '@/lib/api';
  */
 export async function downloadAgentInstaller(format = 'exe') {
   const token = localStorage.getItem('WorkflowToken') || localStorage.getItem('token');
+  if (!token) {
+    throw new Error('Authentication required: Please log in to your Niyantran account before downloading the desktop agent.');
+  }
   const targetFormat = format === 'zip' ? 'zip' : 'exe';
   const defaultFileName = targetFormat === 'zip' ? 'Niyantran-Agent-V2-Setup.zip' : 'NiyantranMonitoringAgentV2-Setup.exe';
 

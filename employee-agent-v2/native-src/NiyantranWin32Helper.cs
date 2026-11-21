@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.Management;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -27,6 +28,23 @@ public class NiyantranWin32Helper {
 
     [DllImport("kernel32.dll", SetLastError = true)]
     static extern bool CloseHandle(IntPtr hObject);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    static extern bool IsIconic(IntPtr hWnd);
+
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+
+    const int SW_RESTORE = 9;
+    const int SW_SHOW = 5;
 
     [StructLayout(LayoutKind.Sequential)]
     struct LASTINPUTINFO {
@@ -171,6 +189,84 @@ public class NiyantranWin32Helper {
         return s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "\\r");
     }
 
+    public static bool BringMiniWindowToFront() {
+        string[] candidateTitles = new string[] {
+            "Niyantran V2 \u2014 Employee Mini Monitor",
+            "Niyantran V2 \u2014 Employee Mini Monitor - Google Chrome",
+            "Niyantran V2 \u2014 Employee Mini Monitor - Microsoft Edge",
+            "Niyantran V2 \u2014 Employee Mini Monitor - Brave",
+            "Niyantran V2 - Employee Mini Monitor",
+            "Niyantran V2 - Employee Mini Monitor - Google Chrome",
+            "Niyantran V2 - Employee Mini Monitor - Microsoft Edge"
+        };
+
+        IntPtr foundHwnd = IntPtr.Zero;
+        for (int i = 0; i < candidateTitles.Length; i++) {
+            foundHwnd = FindWindow(null, candidateTitles[i]);
+            if (foundHwnd != IntPtr.Zero) break;
+        }
+
+        if (foundHwnd != IntPtr.Zero) {
+            if (IsIconic(foundHwnd)) {
+                ShowWindow(foundHwnd, SW_RESTORE);
+            } else {
+                ShowWindow(foundHwnd, SW_SHOW);
+            }
+            SetForegroundWindow(foundHwnd);
+            return true;
+        } else {
+            try {
+                Process.Start(new ProcessStartInfo("http://127.0.0.1:48120/mini") { UseShellExecute = true });
+                return true;
+            } catch {
+                return false;
+            }
+        }
+    }
+
+    public static string GetHardwareInfo() {
+        string manufacturer = "Acer";
+        string model = "Nitro AN515-57";
+        string osName = "Microsoft Windows";
+        string osVersion = Environment.OSVersion.VersionString;
+        string uuid = "E77CA225-2515-EC11-80E1-088FC3199D36";
+
+        try {
+            using (ManagementObjectSearcher searcher = new ManagementObjectSearcher("SELECT Manufacturer, Model FROM Win32_ComputerSystem")) {
+                foreach (ManagementObject obj in searcher.Get()) {
+                    if (obj["Manufacturer"] != null) manufacturer = obj["Manufacturer"].ToString().Trim();
+                    if (obj["Model"] != null) model = obj["Model"].ToString().Trim();
+                }
+            }
+        } catch { }
+
+        try {
+            using (ManagementObjectSearcher searcher = new ManagementObjectSearcher("SELECT UUID FROM Win32_ComputerSystemProduct")) {
+                foreach (ManagementObject obj in searcher.Get()) {
+                    if (obj["UUID"] != null) uuid = obj["UUID"].ToString().Trim();
+                }
+            }
+        } catch { }
+
+        try {
+            using (ManagementObjectSearcher searcher = new ManagementObjectSearcher("SELECT Caption, Version FROM Win32_OperatingSystem")) {
+                foreach (ManagementObject obj in searcher.Get()) {
+                    if (obj["Caption"] != null) osName = obj["Caption"].ToString().Trim();
+                    if (obj["Version"] != null) osVersion = obj["Version"].ToString().Trim();
+                }
+            }
+        } catch { }
+
+        return string.Format(
+            "{{\"manufacturer\":\"{0}\",\"model\":\"{1}\",\"os\":\"{2}\",\"osVersion\":\"{3}\",\"uuid\":\"{4}\"}}",
+            EscapeJson(manufacturer),
+            EscapeJson(model),
+            EscapeJson(osName),
+            EscapeJson(osVersion),
+            EscapeJson(uuid)
+        );
+    }
+
     // -------------------------------------------------------------
     // Main Dispatcher
     // -------------------------------------------------------------
@@ -182,6 +278,16 @@ public class NiyantranWin32Helper {
         }
 
         string command = args[0].ToLowerInvariant();
+
+        if (command == "open" || command == "foreground" || command.StartsWith("niyantran:")) {
+            BringMiniWindowToFront();
+            return 0;
+        }
+
+        if (command == "hardware" || command == "device-info") {
+            Console.WriteLine(GetHardwareInfo());
+            return 0;
+        }
 
         if (command == "stream") {
             int intervalMs = 1000;
@@ -254,11 +360,7 @@ public class NiyantranWin32Helper {
         ToolStripMenuItem miniWinItem = new ToolStripMenuItem("🖥 Open Mini Desktop Window");
         miniWinItem.Font = new Font(miniWinItem.Font, FontStyle.Bold);
         miniWinItem.Click += delegate {
-            try {
-                Process.Start(new ProcessStartInfo("http://127.0.0.1:48120/mini") { UseShellExecute = true });
-            } catch (Exception ex) {
-                Console.WriteLine("{\"event\":\"LOG\",\"error\":\"" + ex.Message + "\"}");
-            }
+            BringMiniWindowToFront();
         };
 
         ToolStripMenuItem webDashItem = new ToolStripMenuItem("🌐 Open Web Dashboard");
@@ -343,12 +445,13 @@ public class NiyantranWin32Helper {
         menu.Items.Add(exitItem);
 
         trayIcon.DoubleClick += delegate {
-            try {
-                Process.Start(new ProcessStartInfo("http://127.0.0.1:48120/mini") { UseShellExecute = true });
-            } catch (Exception) {}
+            BringMiniWindowToFront();
         };
 
         trayIcon.ContextMenuStrip = menu;
+
+        Form syncContext = new Form();
+        IntPtr dummyHandle = syncContext.Handle;
 
         // Background reader for stdin events from Node.js
         Thread stdinThread = new Thread(delegate() {
@@ -356,12 +459,45 @@ public class NiyantranWin32Helper {
             while ((line = Console.ReadLine()) != null) {
                 if (line.Trim().Length == 0) continue;
                 if (line.Contains("\"UPDATE_STATUS\"")) {
-                    // Node parent asks to update status
-                    trayIcon.Text = "Niyantran V2 (Active)";
+                    string newStatus = "ACTIVE";
+                    int idx = line.IndexOf("\"status\":");
+                    if (idx >= 0) {
+                        int start = line.IndexOf("\"", idx + 9) + 1;
+                        int end = line.IndexOf("\"", start);
+                        if (start > 0 && end > start) {
+                            newStatus = line.Substring(start, end - start);
+                        }
+                    }
+                    string finalStatus = newStatus;
+                    try {
+                        syncContext.Invoke((MethodInvoker)delegate() {
+                            statusItem.Text = "Status: " + finalStatus;
+                            string tip = "Niyantran V2 (" + finalStatus + ")";
+                            if (tip.Length > 63) tip = tip.Substring(0, 63);
+                            trayIcon.Text = tip;
+
+                            bool isActive = finalStatus == "ACTIVE_MONITORING" || finalStatus == "ACTIVE";
+                            bool isPaused = finalStatus == "PAUSED";
+                            startItem.Enabled = !isActive && !isPaused;
+                            pauseItem.Enabled = isActive;
+                            resumeItem.Enabled = isPaused;
+                            endItem.Enabled = isActive || isPaused;
+                        });
+                    } catch { }
+                } else if (line.Contains("\"OPEN\"") || line.Contains("\"FOREGROUND\"")) {
+                    try {
+                        syncContext.Invoke((MethodInvoker)delegate() {
+                            BringMiniWindowToFront();
+                        });
+                    } catch { }
                 } else if (line.Contains("\"QUIT\"")) {
-                    trayIcon.Visible = false;
-                    trayIcon.Dispose();
-                    Application.Exit();
+                    try {
+                        syncContext.Invoke((MethodInvoker)delegate() {
+                            trayIcon.Visible = false;
+                            trayIcon.Dispose();
+                            Application.Exit();
+                        });
+                    } catch { }
                     break;
                 }
             }

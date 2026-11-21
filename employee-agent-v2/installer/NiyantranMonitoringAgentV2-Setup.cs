@@ -273,8 +273,9 @@ public class NiyantranInstallerForm : Form {
                 CreateShortcut(lnkPath, exePath, "tray DEV-INSTALLED", targetDir, "Niyantran Employee Monitoring V2 Desktop Agent");
             }
 
-            UpdateStatus(85, "Registering in Windows Add/Remove Programs...");
+            UpdateStatus(85, "Registering in Windows Add/Remove Programs & URI Protocol...");
             RegisterUninstall(targetDir);
+            RegisterProtocolHandler(targetDir);
 
             UpdateStatus(100, "Installation complete!");
 
@@ -360,6 +361,23 @@ public class NiyantranInstallerForm : Form {
                             appKey.SetValue("NoModify", 1, RegistryValueKind.DWord);
                             appKey.SetValue("NoRepair", 1, RegistryValueKind.DWord);
                             appKey.SetValue("EstimatedSize", 1024, RegistryValueKind.DWord);
+                        }
+                    }
+                }
+            }
+        } catch { }
+    }
+
+    private void RegisterProtocolHandler(string installDir) {
+        try {
+            string helperExe = Path.Combine(installDir, @"bin\NiyantranWin32Helper.exe");
+            using (RegistryKey key = Registry.CurrentUser.CreateSubKey(@"Software\Classes\niyantran")) {
+                if (key != null) {
+                    key.SetValue("", "URL:Niyantran Protocol");
+                    key.SetValue("URL Protocol", "");
+                    using (RegistryKey cmdKey = key.CreateSubKey(@"shell\open\command")) {
+                        if (cmdKey != null) {
+                            cmdKey.SetValue("", string.Format("\"{0}\" open \"%1\"", helperExe));
                         }
                     }
                 }

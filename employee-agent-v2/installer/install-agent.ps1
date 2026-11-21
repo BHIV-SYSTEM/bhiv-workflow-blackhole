@@ -52,18 +52,27 @@ $sourceRoot = Split-Path -Parent $PSScriptRoot
 if (-not (Test-Path "$sourceRoot\bin\NiyantranWin32Helper.exe")) {
     Write-Host "      Compiling NiyantranWin32Helper.exe..." -ForegroundColor Cyan
     $cscPath = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
-    & $cscPath /nologo /r:System.Security.dll /r:System.Windows.Forms.dll /r:System.Drawing.dll /out:"$sourceRoot\bin\NiyantranWin32Helper.exe" "$sourceRoot\native-src\NiyantranWin32Helper.cs"
+    & $cscPath /nologo /r:System.Security.dll /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.Management.dll /out:"$sourceRoot\bin\NiyantranWin32Helper.exe" "$sourceRoot\native-src\NiyantranWin32Helper.cs"
+}
+
+if (-not (Test-Path "$sourceRoot\bin\Uninstall.exe")) {
+    Write-Host "      Compiling Uninstall.exe..." -ForegroundColor Cyan
+    $cscPath = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+    & $cscPath /nologo /r:System.Windows.Forms.dll /r:System.Drawing.dll /out:"$sourceRoot\bin\Uninstall.exe" "$sourceRoot\installer\Uninstall.cs"
 }
 
 Copy-Item "$sourceRoot\bin\NiyantranWin32Helper.exe" "$TargetDir\bin\" -Force
+if (Test-Path "$sourceRoot\bin\Uninstall.exe") {
+    Copy-Item "$sourceRoot\bin\Uninstall.exe" "$TargetDir\bin\" -Force
+}
 Copy-Item "$sourceRoot\src\*" "$TargetDir\src\" -Recurse -Force
 Copy-Item "$sourceRoot\package.json" "$TargetDir\" -Force
 
 Write-Host "      Binaries and modules copied successfully." -ForegroundColor Green
 
-# 5. Generate Start Menu Shortcut
+# 5. Generate Start Menu and Desktop Shortcuts
 if (-not $SkipShortcut) {
-    Write-Host "[5/6] Creating Start Menu Shortcut..." -ForegroundColor Yellow
+    Write-Host "[5/7] Creating Start Menu & Desktop Shortcuts..." -ForegroundColor Yellow
     $startMenuDir = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Niyantran"
     if (-not (Test-Path $startMenuDir)) {
         New-Item -ItemType Directory -Path $startMenuDir -Force | Out-Null
@@ -77,11 +86,47 @@ if (-not $SkipShortcut) {
     $shortcut.Description = "Niyantran Employee Monitoring V2 Desktop Agent"
     $shortcut.WorkingDirectory = $TargetDir
     $shortcut.Save()
-    Write-Host "      Shortcut created at: $shortcutPath" -ForegroundColor Green
+    Write-Host "      Start Menu shortcut created at: $shortcutPath" -ForegroundColor Green
+
+    $desktopDir = [Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)
+    $desktopLnk = "$desktopDir\Niyantran Employee Monitoring V2.lnk"
+    $dShortcut = $wshell.CreateShortcut($desktopLnk)
+    $dShortcut.TargetPath = "$TargetDir\bin\NiyantranWin32Helper.exe"
+    $dShortcut.Arguments = "tray DEV-INSTALLED"
+    $dShortcut.Description = "Niyantran Employee Monitoring V2 Desktop Agent"
+    $dShortcut.WorkingDirectory = $TargetDir
+    $dShortcut.Save()
+    Write-Host "      Desktop shortcut created at: $desktopLnk" -ForegroundColor Green
 }
 
-# 6. Generate Clean Uninstaller
-Write-Host "[6/6] Generating Uninstaller Script..." -ForegroundColor Yellow
+# 6. Register Custom Protocol (niyantran://) & Windows Uninstall Entry
+Write-Host "[6/7] Registering Custom Protocol (niyantran://) & Windows Uninstall Entry..." -ForegroundColor Yellow
+try {
+    $protocolKey = "HKCU:\Software\Classes\niyantran"
+    New-Item -Path $protocolKey -Force | Out-Null
+    Set-ItemProperty -Path $protocolKey -Name "(Default)" -Value "URL:Niyantran Protocol"
+    Set-ItemProperty -Path $protocolKey -Name "URL Protocol" -Value ""
+    $cmdKey = "$protocolKey\shell\open\command"
+    New-Item -Path $cmdKey -Force | Out-Null
+    Set-ItemProperty -Path $cmdKey -Name "(Default)" -Value "`"$TargetDir\bin\NiyantranWin32Helper.exe`" open `"%1`""
+
+    $uninstallRegPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\NiyantranMonitoringV2"
+    New-Item -Path $uninstallRegPath -Force | Out-Null
+    Set-ItemProperty -Path $uninstallRegPath -Name "DisplayName" -Value "Niyantran Employee Monitoring V2"
+    Set-ItemProperty -Path $uninstallRegPath -Name "DisplayVersion" -Value "2.0.0"
+    Set-ItemProperty -Path $uninstallRegPath -Name "Publisher" -Value "Blackhole Infiverse"
+    Set-ItemProperty -Path $uninstallRegPath -Name "InstallLocation" -Value $TargetDir
+    Set-ItemProperty -Path $uninstallRegPath -Name "UninstallString" -Value "`"$TargetDir\bin\Uninstall.exe`""
+    Set-ItemProperty -Path $uninstallRegPath -Name "DisplayIcon" -Value "`"$TargetDir\bin\NiyantranWin32Helper.exe`""
+    Set-ItemProperty -Path $uninstallRegPath -Name "NoModify" -Value 1 -Type DWord
+    Set-ItemProperty -Path $uninstallRegPath -Name "NoRepair" -Value 1 -Type DWord
+    Write-Host "      Protocol and Add/Remove Programs registered." -ForegroundColor Green
+} catch {
+    Write-Host "      Warning: Registry configuration encountered: $($_.Exception.Message)" -ForegroundColor DarkYellow
+}
+
+# 7. Generate Clean Uninstaller Script
+Write-Host "[7/7] Generating Uninstaller Script..." -ForegroundColor Yellow
 $uninstallScript = @"
 Write-Host 'Uninstalling Niyantran Employee Monitoring V2...' -ForegroundColor Yellow
 Get-Process -Name 'NiyantranWin32Helper' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
@@ -89,6 +134,18 @@ Start-Sleep -Seconds 1
 `$startMenuDir = "`$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Niyantran"
 if (Test-Path "`$startMenuDir") {
     Remove-Item "`$startMenuDir" -Recurse -Force -ErrorAction SilentlyContinue
+}
+`$desktopDir = [Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)
+`$desktopLnk = "`$desktopDir\Niyantran Employee Monitoring V2.lnk"
+if (Test-Path "`$desktopLnk") {
+    Remove-Item "`$desktopLnk" -Force -ErrorAction SilentlyContinue
+}
+if (Test-Path "HKCU:\Software\Classes\niyantran") {
+    Remove-Item "HKCU:\Software\Classes\niyantran" -Recurse -Force -ErrorAction SilentlyContinue
+}
+`$uninstallKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\NiyantranMonitoringV2"
+if (Test-Path "`$uninstallKey") {
+    Remove-Item "`$uninstallKey" -Recurse -Force -ErrorAction SilentlyContinue
 }
 `$target = "$TargetDir"
 if (Test-Path "`$target") {

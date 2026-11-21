@@ -7,7 +7,7 @@
  * 2. Session lifecycle & Single Active Lease Rule (60s lease, 90s autonomous expiry boundary)
  * 3. Live HMAC-SHA256 signed telemetry ingestion
  * 4. Clock skew tolerance and replay attack prevention (120s max drift)
- * 5. Anti-Surveillance Gate (rejection of text, keystrokes, screenshot, image, base64, clipboard, url, windowTitle)
+ * 5. Anti-Surveillance Gate (rejection of text, keystrokes, screenshot, image, base64, clipboard, url, windowTitle, tabTitle, and nested app title/url/path)
  * 6. Device revocation and session rollback propagation
  * 7. Horizontal privilege escalation prevention (ScopeGuard)
  * 8. Live team analytics and daily timeline rollups
@@ -743,7 +743,7 @@ test('telemetryService: rejects telemetry when session lease has expired (403 LE
   );
 });
 
-test('Anti-Surveillance Gate: rejects all 8 forbidden surveillance fields', async () => {
+test('Anti-Surveillance Gate: rejects all 9 forbidden surveillance fields and nested app tracking fields', async () => {
   resetDb();
   const employeeId = makeEmployeeId();
   const { code } = deviceService.generateEnrollmentCode(employeeId);
@@ -763,7 +763,8 @@ test('Anti-Surveillance Gate: rejects all 8 forbidden surveillance fields', asyn
     { base64: 'SGVsbG8gV29ybGQ=' },
     { clipboard: 'sensitive api key secret' },
     { url: 'https://internal.bank.com/account/details' },
-    { windowTitle: 'Executive Compensation Plan - Microsoft Excel' }
+    { windowTitle: 'Executive Compensation Plan - Microsoft Excel' },
+    { tabTitle: 'Sensitive Bank Portal - Chrome' }
   ];
 
   for (const violation of forbiddenCases) {
@@ -789,6 +790,41 @@ test('Anti-Surveillance Gate: rejects all 8 forbidden surveillance fields', asyn
       },
       (err) => err.statusCode === 400 && err.code === 'PRIVACY_VIOLATION',
       `Failed to reject forbidden field: ${Object.keys(violation)[0]}`
+    );
+  }
+
+  // Nested app records privacy invariant: reject title, url, path, tabTitle, windowTitle
+  const forbiddenAppCases = [
+    { apps: [{ name: 'chrome.exe', durationSeconds: 60, title: 'Secret Executive Memo' }] },
+    { apps: [{ name: 'msedge.exe', durationSeconds: 60, url: 'https://intranet.bank.com/salary' }] },
+    { apps: [{ name: 'notepad.exe', durationSeconds: 60, path: 'C:\\Users\\user\\confidential\\keys.txt' }] },
+    { apps: [{ name: 'chrome.exe', durationSeconds: 60, tabTitle: 'Banking Dashboard' }] },
+    { apps: [{ name: 'excel.exe', durationSeconds: 60, windowTitle: 'Payroll.xlsx' }] }
+  ];
+
+  for (const appViolation of forbiddenAppCases) {
+    const rawBody = JSON.stringify({
+      sessionId: session.sessionId,
+      deviceId,
+      keyPressCount: 10,
+      mouseActivityDelta: 5,
+      hardwareIdleSeconds: 0,
+      ...appViolation
+    });
+    const timestamp = Date.now().toString();
+    const signature = crypto.createHmac('sha256', deviceKey).update(`${timestamp}:${rawBody}`).digest('hex');
+
+    await assert.rejects(
+      async () => {
+        await telemetryService.ingestTelemetry({
+          deviceId,
+          rawBody,
+          signature,
+          timestamp
+        });
+      },
+      (err) => err.statusCode === 400 && err.code === 'PRIVACY_VIOLATION',
+      `Failed to reject nested app privacy violation in: ${JSON.stringify(appViolation)}`
     );
   }
 });

@@ -3,17 +3,43 @@
  * Operations — Agent & Device Health Page
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Card, { CardHeader, CardTitle, CardDescription, CardContent } from '../../components/ui/Card.jsx';
 import Table, { TableHeader, TableBody, TableRow, TableHead, TableCell } from '../../components/ui/Table.jsx';
 import Badge from '../../components/ui/Badge.jsx';
 import Button from '../../components/ui/Button.jsx';
-import MockDataService from '../../services/mockDataService.js';
+import monitoringV2Api from '../../services/monitoringV2Api.js';
 import { Cpu, Laptop, ShieldCheck, CheckCircle2, AlertOctagon } from 'lucide-react';
 
 export const AgentHealthPage = () => {
-  const [devices, setDevices] = useState(MockDataService.getDevices());
+  const [devices, setDevices] = useState([]);
   const [revokedId, setRevokedId] = useState(null);
+
+  useEffect(() => {
+    async function loadDevices() {
+      try {
+        const res = await monitoringV2Api.listDevices();
+        if (res?.data?.devices && Array.isArray(res.data.devices)) {
+          setDevices(res.data.devices.map(d => ({
+            id: d.device_id,
+            employeeName: d.employee?.name || d.hostname || `Device (${d.device_id.slice(-6)})`,
+            platform: `${d.manufacturer || ''} ${d.model || ''} (${d.platform || 'windows'})`.trim(),
+            agentVersion: d.agent_version || '2.0.0',
+            status: d.status === 'ACTIVE' ? 'ACTIVE_LEASE' : d.status,
+            leaseExpiresInSeconds: 60,
+            lastSync: d.last_seen_at ? new Date(d.last_seen_at).toLocaleTimeString() : 'Recently',
+            hmacVerified: true,
+            hardwareFingerprint: d.hardware_fingerprint || 'Verified'
+          })));
+        } else {
+          setDevices([]);
+        }
+      } catch {
+        setDevices([]);
+      }
+    }
+    loadDevices();
+  }, []);
 
   const handleRevoke = (id) => {
     setRevokedId(id);

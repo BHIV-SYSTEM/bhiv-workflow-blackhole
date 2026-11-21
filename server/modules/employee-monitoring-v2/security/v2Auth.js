@@ -22,5 +22,11 @@ module.exports = function v2Auth(req, res, next) {
     return next();
   }
 
+  // Support token passed in query parameter (e.g. direct browser download links)
+  if (!req.header('x-auth-token') && !req.header('Authorization') && req.query && req.query.token) {
+    req.headers = req.headers || {};
+    req.headers['x-auth-token'] = req.query.token;
+  }
+
   return baseAuth(req, res, next);
 };

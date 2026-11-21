@@ -3,17 +3,33 @@
  * Administration — Device & Session Audit Logs Page
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Card, { CardHeader, CardTitle, CardDescription, CardContent } from '../../components/ui/Card.jsx';
 import Table, { TableHeader, TableBody, TableRow, TableHead, TableCell } from '../../components/ui/Table.jsx';
 import Badge from '../../components/ui/Badge.jsx';
-import MockDataService from '../../services/mockDataService.js';
+import monitoringV2Api from '../../services/monitoringV2Api.js';
 import SearchInput from '../../components/ui/SearchInput.jsx';
 import { FileText, Shield, Clock } from 'lucide-react';
 
 export const AuditLogsPage = () => {
   const [search, setSearch] = useState('');
-  const allLogs = MockDataService.getAuditLogs();
+  const [allLogs, setAllLogs] = useState([]);
+
+  useEffect(() => {
+    async function loadLogs() {
+      try {
+        const res = await monitoringV2Api.getAuditLogs();
+        if (res?.data?.logs && Array.isArray(res.data.logs)) {
+          setAllLogs(res.data.logs);
+        } else {
+          setAllLogs([]);
+        }
+      } catch {
+        setAllLogs([]);
+      }
+    }
+    loadLogs();
+  }, []);
 
   const filtered = allLogs.filter(
     (l) =>

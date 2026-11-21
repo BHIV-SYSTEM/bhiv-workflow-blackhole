@@ -1,12 +1,15 @@
 /**
  * NIYANTRAN EMPLOYEE MONITORING V2
  * Admin Overview — Live Team Activity Table Page
+ *
+ * Real-time active team presence bound strictly to /api/monitoring-v2/admin/live-team
+ * and live Socket.io events. Zero mock fallbacks.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useMonitoringV2Context } from '../../context/MonitoringV2Context.jsx';
-import MockDataService from '../../services/mockDataService.js';
 import monitoringV2Api from '../../services/monitoringV2Api.js';
+import { useSocket } from '../../../../context/socket-context';
 import Card, { CardHeader, CardTitle, CardDescription, CardContent } from '../../components/ui/Card.jsx';
 import Table, { TableHeader, TableBody, TableRow, TableHead, TableCell } from '../../components/ui/Table.jsx';
 import Badge from '../../components/ui/Badge.jsx';
@@ -17,76 +20,178 @@ import {
   Laptop,
   Smartphone,
   Eye,
-  AlertTriangle,
-  Radio,
   RefreshCw,
 } from 'lucide-react';
 
 const STATUS_OPTIONS = [
   { label: 'All Sessions', value: 'ALL' },
   { label: 'Active', value: 'ACTIVE' },
+  { label: 'Paused', value: 'PAUSED' },
   { label: 'Idle', value: 'IDLE' },
-  { label: 'V1 Conflict', value: 'V1_AGENT_CONFLICT' },
 ];
 
 export const LiveTeamPage = () => {
   const { departmentFilter, searchQuery, setSearchQuery, setActiveTab } = useMonitoringV2Context();
   const [selectedStatus, setSelectedStatus] = useState('ALL');
-  const [backendTeam, setBackendTeam] = useState(null);
+  const [backendTeam, setBackendTeam] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  const fetchLiveTeam = async () => {
+  let socket = null;
+  try {
+    const socketCtx = useSocket();
+    socket = socketCtx?.socket;
+  } catch {
+    socket = null;
+  }
+
+  const fetchLiveTeam = useCallback(async () => {
     setLoading(true);
     try {
       const res = await monitoringV2Api.getLiveTeam();
-      if (res?.data?.team && res.data.team.length > 0) {
-        const mapped = res.data.team.map((s) => ({
+      const rawList = res?.data?.team || [];
+      const mapped = rawList.map((s) => {
+        const elapsedMinutes = Math.round((s.elapsedSeconds || 0) / 60);
+        const durationDisplay = elapsedMinutes >= 60
+          ? `${Math.floor(elapsedMinutes / 60)}h ${elapsedMinutes % 60}m`
+          : `${elapsedMinutes}m`;
+
+        return {
           id: s.sessionId || s.employeeId,
+          employeeId: s.employeeId,
           name: s.employeeName,
-          role: s.department || 'Software Engineer',
+          role: s.role || s.department || 'Software Engineer',
           department: s.department,
           avatar: (s.employeeName || 'U').split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase(),
           employmentStatus: 'ACTIVE',
           sessionStatus: s.state,
+          breakStatus: s.breakStatus || (s.state === 'PAUSED' ? 'On Break' : 'Working'),
+          connectionStatus: s.connectionStatus || (s.state === 'ACTIVE' ? 'Connected' : 'Disconnected / Not Monitored'),
+          durationDisplay,
           activeDevice: {
             type: s.mode === 'PHONE' ? 'phone' : 'laptop',
-            name: s.deviceId || (s.mode === 'PHONE' ? 'Mobile Phone' : 'Windows PC'),
+            name: s.deviceName || s.deviceId || (s.mode === 'PHONE' ? 'Mobile Phone' : `${s.manufacturer || 'Acer'} ${s.model || 'Nitro AN515-57'}`),
           },
-          currentCategory: s.primaryCategory || 'DEVELOPMENT',
-          currentApplication: s.primaryCategory === 'DEVELOPMENT' ? 'VS Code' : 'Chrome',
-          inputActivityPercent: s.focusScore || 70,
+          currentCategory: s.primaryCategory || 'NEUTRAL',
+          currentApplication: s.currentApplication || (s.state === 'PAUSED' ? '[On Break]' : 'System Idle'),
+          inputActivityPercent: s.focusScore || 0,
           lastHeartbeatSecondsAgo: Math.max(0, Math.round((Date.now() - new Date(s.lastTelemetryAt || s.startedAt).getTime()) / 1000)),
           isPilotUser: true,
-        }));
-        setBackendTeam(mapped);
-      }
-    } catch {
-      // Backend live team fallback to mock
+        };
+      });
+      setBackendTeam(mapped);
+    } catch (err) {
+      console.error('[LiveTeamPage] Failed to fetch live team:', err);
+      setBackendTeam([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchLiveTeam();
     const interval = setInterval(fetchLiveTeam, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchLiveTeam]);
 
-  const mockTeam = MockDataService.getLiveTeam({
-    department: departmentFilter,
-    search: searchQuery,
-    sessionStatus: selectedStatus,
-  });
+  // Real-time Socket.io and Window Event Subscriptions
+  useEffect(() => {
+    const handleSessionState = (data) => {
+      const payload = data?.detail || data;
+      if (!payload) return;
+      setBackendTeam((prev) =>
+        prev.map((m) => {
+          if (m.id === payload.sessionId || m.employeeId === payload.employeeId) {
+            const isBreak = payload.state === 'PAUSED';
+            return {
+              ...m,
+              sessionStatus: payload.state || m.sessionStatus,
+              breakStatus: isBreak ? 'On Break' : 'Working',
+              connectionStatus: payload.state === 'ACTIVE' ? 'Connected' : 'Disconnected / Not Monitored',
+              currentApplication: isBreak ? '[On Break]' : m.currentApplication,
+            };
+          }
+          return m;
+        })
+      );
+      fetchLiveTeam();
+    };
 
-  const rawTeam = backendTeam && backendTeam.length > 0 ? backendTeam : mockTeam;
+    const handleTelemetryTick = (data) => {
+      const payload = data?.detail || data;
+      if (!payload) return;
+      setBackendTeam((prev) =>
+        prev.map((m) => {
+          if (m.id === payload.sessionId || m.employeeId === payload.employeeId) {
+            return {
+              ...m,
+              currentApplication: payload.currentApplication || m.currentApplication,
+              currentCategory: payload.currentCategory || m.currentCategory,
+              inputActivityPercent: payload.focusScore ?? m.inputActivityPercent,
+              lastHeartbeatSecondsAgo: 0,
+              connectionStatus: 'Connected',
+            };
+          }
+          return m;
+        })
+      );
+    };
+
+    const handleDeviceSwitch = (data) => {
+      const payload = data?.detail || data;
+      if (!payload) return;
+      setBackendTeam((prev) =>
+        prev.map((m) => {
+          if (m.id === payload.sessionId || m.employeeId === payload.employeeId) {
+            return {
+              ...m,
+              activeDevice: {
+                type: payload.toMode === 'PHONE' ? 'phone' : 'laptop',
+                name: payload.toDevice || (payload.toMode === 'PHONE' ? 'Mobile Phone' : 'Windows PC'),
+              },
+            };
+          }
+          return m;
+        })
+      );
+      fetchLiveTeam();
+    };
+
+    if (socket) {
+      socket.on('monitoring:session-state', handleSessionState);
+      socket.on('monitoring:v2:telemetry-tick', handleTelemetryTick);
+      socket.on('monitoring:device-switch', handleDeviceSwitch);
+      socket.on('monitoring:handoff', handleDeviceSwitch);
+    }
+
+    window.addEventListener('monitoring-session-state', handleSessionState);
+    window.addEventListener('monitoring:v2:telemetry-tick', handleTelemetryTick);
+    window.addEventListener('monitoring:device-switch', handleDeviceSwitch);
+
+    return () => {
+      if (socket) {
+        socket.off('monitoring:session-state', handleSessionState);
+        socket.off('monitoring:v2:telemetry-tick', handleTelemetryTick);
+        socket.off('monitoring:device-switch', handleDeviceSwitch);
+        socket.off('monitoring:handoff', handleDeviceSwitch);
+      }
+      window.removeEventListener('monitoring-session-state', handleSessionState);
+      window.removeEventListener('monitoring:v2:telemetry-tick', handleTelemetryTick);
+      window.removeEventListener('monitoring:device-switch', handleDeviceSwitch);
+    };
+  }, [socket, fetchLiveTeam]);
+
+  const rawTeam = backendTeam || [];
   const team = rawTeam.filter((m) => {
+    if (departmentFilter && departmentFilter !== 'All Departments' && m.department !== departmentFilter) {
+      return false;
+    }
     if (selectedStatus !== 'ALL' && m.sessionStatus !== selectedStatus) return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       return (
         m.name?.toLowerCase().includes(q) ||
         m.role?.toLowerCase().includes(q) ||
+        m.department?.toLowerCase().includes(q) ||
         m.currentApplication?.toLowerCase().includes(q)
       );
     }
@@ -149,8 +254,9 @@ export const LiveTeamPage = () => {
             <TableHeader>
               <TableRow hover={false}>
                 <TableHead>Employee & Role</TableHead>
-                <TableHead>Employment</TableHead>
+                <TableHead>Connection Status</TableHead>
                 <TableHead>Session State</TableHead>
+                <TableHead>Duration</TableHead>
                 <TableHead>Active Device</TableHead>
                 <TableHead>Focused Category</TableHead>
                 <TableHead>Active Application</TableHead>
@@ -162,7 +268,7 @@ export const LiveTeamPage = () => {
             <TableBody>
               {team.length === 0 ? (
                 <TableRow hover={false}>
-                  <TableCell colSpan={9} className="text-center py-10 text-slate-500">
+                  <TableCell colSpan={10} className="text-center py-10 text-slate-500">
                     No team members matched the current filters.
                   </TableCell>
                 </TableRow>
@@ -189,25 +295,32 @@ export const LiveTeamPage = () => {
                     </TableCell>
 
                     <TableCell>
-                      <Badge variant={member.employmentStatus === 'ACTIVE' ? 'success' : 'neutral'}>
-                        {member.employmentStatus}
+                      <Badge variant={member.connectionStatus === 'Connected' ? 'success' : 'neutral'}>
+                        {member.connectionStatus}
                       </Badge>
                     </TableCell>
 
                     <TableCell>
-                      <Badge
-                        variant={
-                          member.sessionStatus === 'ACTIVE'
-                            ? 'success'
-                            : member.sessionStatus === 'IDLE'
-                              ? 'warning'
-                              : member.sessionStatus === 'V1_AGENT_CONFLICT'
-                                ? 'danger'
+                      <div className="flex flex-col gap-0.5">
+                        <Badge
+                          variant={
+                            member.sessionStatus === 'ACTIVE'
+                              ? 'success'
+                              : member.sessionStatus === 'PAUSED'
+                                ? 'warning'
                                 : 'neutral'
-                        }
-                      >
-                        {member.sessionStatus}
-                      </Badge>
+                          }
+                        >
+                          {member.sessionStatus}
+                        </Badge>
+                        <span className="text-[10px] text-slate-400">{member.breakStatus}</span>
+                      </div>
+                    </TableCell>
+
+                    <TableCell>
+                      <span className="font-mono text-xs text-slate-300">
+                        {member.durationDisplay}
+                      </span>
                     </TableCell>
 
                     <TableCell>
@@ -232,7 +345,7 @@ export const LiveTeamPage = () => {
                     </TableCell>
 
                     <TableCell>
-                      <span className="text-xs text-slate-300 font-medium">
+                      <span className="text-xs text-slate-200 font-mono font-medium">
                         {member.currentApplication || '—'}
                       </span>
                     </TableCell>

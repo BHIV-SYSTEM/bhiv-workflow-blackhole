@@ -64,11 +64,19 @@ public class NiyantranUninstaller {
             }
         } catch { }
 
-        // 4. Remove Registry Uninstall entry
+        // 4. Remove Registry Uninstall entry & Protocol Handler
         try {
             using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall", true)) {
                 if (key != null) {
                     key.DeleteSubKeyTree("NiyantranMonitoringV2", false);
+                }
+            }
+        } catch { }
+
+        try {
+            using (RegistryKey classesKey = Registry.CurrentUser.OpenSubKey(@"Software\Classes", true)) {
+                if (classesKey != null) {
+                    classesKey.DeleteSubKeyTree("niyantran", false);
                 }
             }
         } catch { }

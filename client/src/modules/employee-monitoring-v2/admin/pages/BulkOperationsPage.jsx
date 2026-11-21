@@ -3,17 +3,41 @@
  * Administration — Bulk Operations & Pilot Enrollment Page
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Card, { CardHeader, CardTitle, CardDescription, CardContent } from '../../components/ui/Card.jsx';
 import Table, { TableHeader, TableBody, TableRow, TableHead, TableCell } from '../../components/ui/Table.jsx';
 import Badge from '../../components/ui/Badge.jsx';
 import Button from '../../components/ui/Button.jsx';
-import { MOCK_LIVE_TEAM } from '../../mocks/mockFleetData.js';
+import monitoringV2Api from '../../services/monitoringV2Api.js';
 import { Layers, UserCheck, Shield, CheckCircle2 } from 'lucide-react';
 
 export const BulkOperationsPage = () => {
-  const [team, setTeam] = useState(MOCK_LIVE_TEAM);
+  const [team, setTeam] = useState([]);
   const [successNotice, setSuccessNotice] = useState(null);
+
+  useEffect(() => {
+    async function loadTeam() {
+      try {
+        const res = await monitoringV2Api.getLiveTeam();
+        if (res?.data?.team && Array.isArray(res.data.team)) {
+          setTeam(res.data.team.map(m => ({
+            id: m.sessionId || m.employeeId,
+            name: m.employeeName,
+            avatar: (m.employeeName || 'U').split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase(),
+            department: m.department,
+            role: m.role || 'Software Engineer',
+            employmentStatus: 'ACTIVE',
+            isPilotUser: true
+          })));
+        } else {
+          setTeam([]);
+        }
+      } catch {
+        setTeam([]);
+      }
+    }
+    loadTeam();
+  }, []);
 
   const togglePilot = (empId) => {
     setTeam((prev) =>
@@ -74,7 +98,14 @@ export const BulkOperationsPage = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {team.map((emp) => (
+              {team.length === 0 ? (
+                <TableRow hover={false}>
+                  <TableCell colSpan={5} className="text-center py-6 text-slate-500">
+                    No active team members available for pilot enrollment.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                team.map((emp) => (
                 <TableRow key={emp.id}>
                   <TableCell className="font-semibold text-slate-200">
                     <div className="flex items-center gap-2">
@@ -108,7 +139,7 @@ export const BulkOperationsPage = () => {
                     </Button>
                   </TableCell>
                 </TableRow>
-              ))}
+              )))}
             </TableBody>
           </Table>
         </CardContent>

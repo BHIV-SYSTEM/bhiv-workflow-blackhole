@@ -31,7 +31,17 @@ async function getLiveTeam() {
       .sort({ minute_timestamp: -1 })
       .lean();
 
+    const device = session.active_device
+      ? await RegisteredDevice.findOne({ device_id: session.active_device }).lean()
+      : null;
+
     const elapsedSeconds = Math.max(0, Math.round((Date.now() - new Date(session.started_at).getTime()) / 1000));
+    const isConnected = session.state === SESSION_STATES.ACTIVE &&
+      session.lease_expires_at &&
+      (new Date(session.lease_expires_at).getTime() > Date.now() - 30000);
+    const connectionStatus = isConnected ? 'Connected' : 'Disconnected / Not Monitored';
+    const breakStatus = session.state === SESSION_STATES.PAUSED ? 'On Break' : 'Working';
+    const currentApplication = latestTelemetry?.current_application || (session.state === SESSION_STATES.PAUSED ? '[On Break]' : 'System Idle');
 
     results.push({
       sessionId: session.session_id,
@@ -39,9 +49,16 @@ async function getLiveTeam() {
       employeeName: session.employee?.name || 'Unknown Employee',
       employeeEmail: session.employee?.email || '',
       department: session.employee?.department || 'Engineering',
+      role: session.employee?.role || 'Software Engineer',
       mode: session.mode,
       deviceId: session.active_device,
+      deviceName: device?.device_name || session.active_device || (session.mode === 'PHONE' ? 'Mobile Phone' : 'Workstation'),
+      manufacturer: device?.manufacturer || 'Acer',
+      model: device?.model || 'Nitro AN515-57',
       state: session.state,
+      connectionStatus,
+      breakStatus,
+      currentApplication,
       startedAt: session.started_at,
       leaseExpiresAt: session.lease_expires_at,
       elapsedSeconds,

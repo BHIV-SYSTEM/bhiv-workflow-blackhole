@@ -80,6 +80,22 @@ const dailyAttendanceSchema = new mongoose.Schema({
     default: 0, // in minutes
     min: 0
   },
+  // Workday & Monitoring Lifecycle (Milestone 3 - F10, F11)
+  monitoringConsent: {
+    type: Boolean,
+    default: false,
+    index: true
+  },
+  monitoringStatus: {
+    type: String,
+    enum: ['Active', 'Disconnected / Not Monitored'],
+    default: 'Disconnected / Not Monitored',
+    index: true
+  },
+  activeSessionId: {
+    type: String,
+    default: null
+  },
   
   // Status and Verification
   status: {
@@ -545,6 +561,11 @@ dailyAttendanceSchema.statics.calculateMonthlySalary = async function(userId, ye
   const officeHours = attendanceRecords.reduce((sum, record) => sum + (record.officeHours || 0), 0);
   const remoteHours = attendanceRecords.reduce((sum, record) => sum + (record.remoteHours || 0), 0);
   
+  const user = await mongoose.model('User').findById(userId).select('hourlyRate').lean();
+  const userHourlyRate = user?.hourlyRate || 25;
+  const overtimePay = Math.round(overtimeHours * userHourlyRate * 1.5 * 100) / 100;
+  const regularPay = Math.round((totalEarnings - overtimePay) * 100) / 100;
+
   return {
     period: { year, month, startDate, endDate },
     attendance: {
@@ -563,8 +584,8 @@ dailyAttendanceSchema.statics.calculateMonthlySalary = async function(userId, ye
     },
     salary: {
       totalEarnings: Math.round(totalEarnings * 100) / 100,
-      regularPay: Math.round((totalEarnings - (overtimeHours * 32.25 * 1.5)) * 100) / 100,
-      overtimePay: Math.round(overtimeHours * 32.25 * 1.5 * 100) / 100
+      regularPay,
+      overtimePay
     }
   };
 };

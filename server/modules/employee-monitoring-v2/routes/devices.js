@@ -33,13 +33,16 @@ router.post('/enrollment-code', v2Auth, (req, res) => {
 // POST /api/monitoring-v2/devices/pair
 router.post('/pair', async (req, res) => {
   try {
-    const { pairingCode, deviceName, platform, osVersion, agentVersion } = req.body;
+    const { pairingCode, deviceName, platform, osVersion, agentVersion, manufacturer, model, machineUuid, machine_uuid } = req.body;
     const result = await deviceService.pairDevice({
       pairingCode,
       deviceName,
       platform,
       osVersion,
       agentVersion,
+      manufacturer,
+      model,
+      machineUuid: machineUuid || machine_uuid,
       ip: req.ip,
       userAgent: req.get('User-Agent')
     });

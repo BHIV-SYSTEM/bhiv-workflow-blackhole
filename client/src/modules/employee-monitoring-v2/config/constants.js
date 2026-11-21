@@ -33,3 +33,12 @@ export const PRIVACY_STANDARDS = Object.freeze({
   NO_CLIPBOARD: 'Clipboard inspection and file scanning permanently disabled',
   LOCAL_AGGREGATION: 'Telemetry aggregated into 60-second activity counts only',
 });
+
+export const DEPARTMENTS = Object.freeze([
+  'All Departments',
+  'Engineering',
+  'Product',
+  'Design',
+  'Customer Operations',
+  'Quality Assurance',
+]);

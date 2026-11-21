@@ -30,6 +30,11 @@ async function main() {
     agent.shutdown();
     process.exit(0);
   });
+
+  agent.on('shutdown_complete', () => {
+    console.log('[Agent Daemon] Shutdown complete. Exiting process.');
+    process.exit(0);
+  });
 }
 
 main().catch((err) => {

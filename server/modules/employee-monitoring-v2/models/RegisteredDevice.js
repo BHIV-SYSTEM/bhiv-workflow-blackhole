@@ -31,6 +31,22 @@ const registeredDeviceSchema = new mongoose.Schema({
     enum: ['windows', 'macos', 'linux', 'ios_pwa', 'android_pwa'],
     required: true
   },
+  manufacturer: {
+    type: String,
+    trim: true,
+    default: 'Acer'
+  },
+  model: {
+    type: String,
+    trim: true,
+    default: 'Nitro AN515-57'
+  },
+  machine_uuid: {
+    type: String,
+    trim: true,
+    default: null,
+    index: true
+  },
   os_version: {
     type: String,
     default: 'Unknown'

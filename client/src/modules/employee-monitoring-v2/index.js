@@ -7,7 +7,6 @@ export * from './config/flags.js';
 export * from './config/constants.js';
 export * from './config/navigation.js';
 export * from './services/monitoringV2Api.js';
-export * from './services/mockDataService.js';
 export * from './context/MonitoringV2Context.jsx';
 export * from './hooks/useMonitoringV2.js';
 

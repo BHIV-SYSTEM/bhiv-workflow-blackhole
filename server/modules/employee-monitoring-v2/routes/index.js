@@ -28,6 +28,7 @@ router.use('/devices', require('./devices'));
 router.use('/sessions', require('./sessions'));
 router.use('/telemetry', require('./telemetry'));
 router.use('/admin', require('./admin'));
+router.use('/analytics', require('./admin'));
 router.use('/installer', require('./installer'));
 
 module.exports = router;

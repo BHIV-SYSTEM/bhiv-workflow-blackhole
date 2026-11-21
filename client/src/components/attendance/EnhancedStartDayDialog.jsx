@@ -15,7 +15,8 @@ import {
   MapPinned,
   Smartphone,
   Target,
-  Star
+  Star,
+  ShieldCheck
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Button } from '../ui/button';
@@ -33,13 +34,15 @@ const OFFICE_COORDINATES = {
 const OFFICE_RADIUS = 2000; // meters
 const OFFICE_ADDRESS = 'Blackhole Infiverse LLP, Road Number 3, near Hathi Circle, above Bright Connection, Kala Galli, Motilal Nagar II, Goregaon West, Mumbai, Maharashtra';
 
-const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess }) => {
-  const { user } = useAuth();
+const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess, onStartDay, user: propUser }) => {
+  const { user: authUser } = useAuth();
+  const user = propUser || authUser;
   const [step, setStep] = useState('location'); // location, validation, confirmation
   const [loading, setLoading] = useState(false);
   const [location, setLocation] = useState(null);
   const [locationError, setLocationError] = useState(null);
   const [workFromHome, setWorkFromHome] = useState(false);
+  const [monitoringConsent, setMonitoringConsent] = useState(true);
   const [deviceInfo, setDeviceInfo] = useState({});
   const [isInOfficeRange, setIsInOfficeRange] = useState(false);
   const [distanceFromOffice, setDistanceFromOffice] = useState(null);
@@ -73,6 +76,7 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess }) => {
     setLocation(null);
     setLocationError(null);
     setWorkFromHome(false);
+    setMonitoringConsent(true);
     setIsInOfficeRange(false);
     setDistanceFromOffice(null);
   };
@@ -450,7 +454,9 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess }) => {
         accuracy: location.accuracy,
         workFromHome,
         workLocation: workFromHome ? 'Home' : 'Office',
+        workLocationType: workFromHome ? 'Work From Home' : 'Work From Office',
         address: workFromHome ? 'Work From Home' : 'Blackhole Infiverse LLP Office',
+        monitoringConsent: Boolean(monitoringConsent),
         deviceInfo: {
           ...deviceInfo,
           deviceType: isMobileDevice ? 'Mobile' : 'Desktop'
@@ -469,7 +475,8 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess }) => {
           },
         });
         
-        onSuccess && onSuccess(response);
+        const callback = onSuccess || onStartDay;
+        if (callback) callback(response);
         onClose();
 
         setTimeout(() => {
@@ -802,6 +809,82 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess }) => {
                         <div className="absolute top-2 right-2 w-2.5 h-2.5 bg-blue-400 rounded-full animate-pulse shadow-lg"></div>
                       )}
                     </Button>
+                  </div>
+                </div>
+
+                {/* Workday Monitoring Authorization (Milestone 3 - F10, F11) */}
+                <div className="bg-gray-700/60 backdrop-blur-sm rounded-xl p-4 shadow-lg border border-gray-600/50 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2.5">
+                      <div className={`p-2 rounded-lg ${monitoringConsent ? 'bg-indigo-500/20 text-indigo-400' : 'bg-gray-600/40 text-gray-400'}`}>
+                        <ShieldCheck className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-semibold text-white flex items-center gap-1.5">
+                          Workday Monitoring Authorization
+                          <Badge variant="outline" className="text-[10px] py-0 px-1.5 border-indigo-400/50 text-indigo-300">
+                            Privacy Shield Active
+                          </Badge>
+                        </h4>
+                        <p className="text-xs text-gray-300">
+                          Explicit employee consent for desktop work telemetry
+                        </p>
+                      </div>
+                    </div>
+                    
+                    {/* Consent Toggle */}
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        id="monitoring-consent-toggle"
+                        checked={monitoringConsent}
+                        onChange={(e) => setMonitoringConsent(e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                    </label>
+                  </div>
+
+                  {/* Privacy Disclosures (What IS and is NOT monitored) */}
+                  <div className="pt-2 border-t border-gray-600/40 space-y-2 text-xs">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {/* What is collected */}
+                      <div className="bg-emerald-950/30 border border-emerald-500/20 rounded-lg p-2.5 space-y-1">
+                        <div className="font-semibold text-emerald-400 flex items-center gap-1 text-[11px]">
+                          <CheckCircle className="w-3.5 h-3.5" /> Disclosed Telemetry:
+                        </div>
+                        <ul className="text-emerald-200/80 text-[10px] space-y-0.5 list-disc list-inside">
+                          <li>Active application name & category</li>
+                          <li>Focus duration & active work time</li>
+                          <li>60-second activity input counts</li>
+                        </ul>
+                      </div>
+
+                      {/* What is strictly blocked */}
+                      <div className="bg-rose-950/30 border border-rose-500/20 rounded-lg p-2.5 space-y-1">
+                        <div className="font-semibold text-rose-400 flex items-center gap-1 text-[11px]">
+                          <AlertTriangle className="w-3.5 h-3.5" /> Strictly Excluded & Blocked:
+                        </div>
+                        <ul className="text-rose-200/80 text-[10px] space-y-0.5 list-disc list-inside">
+                          <li>NO keystroke text or typing logs</li>
+                          <li>NO screenshots or OCR analysis</li>
+                          <li>NO URLs, browser history, or window titles</li>
+                        </ul>
+                      </div>
+                    </div>
+
+                    {!monitoringConsent ? (
+                      <div className="p-2 rounded bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] flex items-center gap-1.5">
+                        <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
+                        <span>
+                          <strong>Decoupled Attendance:</strong> Attendance hours will record accurately. Monitoring status will display as <em>"Disconnected / Not Monitored"</em>.
+                        </span>
+                      </div>
+                    ) : (
+                      <p className="text-[10px] text-gray-400 italic">
+                        Telemetry is governed by a renewable 60s lease and stops immediately upon End Day.
+                      </p>
+                    )}
                   </div>
                 </div>
 

@@ -27,16 +27,13 @@ export const DeviceManagementPage = () => {
         setPairingCode(res.data.code);
         setCodeExpiresAt(res.data.expiresAt);
       } else {
-        // Fallback for offline demo
-        const mockCode = Math.floor(100000 + Math.random() * 900000).toString();
-        setPairingCode(mockCode);
-        setCodeExpiresAt(new Date(Date.now() + 600000).toISOString());
+        setPairingCode(null);
+        setCodeExpiresAt(null);
       }
-    } catch {
-      // In offline/mock mode, provide immediate functional demo code
-      const mockCode = Math.floor(100000 + Math.random() * 900000).toString();
-      setPairingCode(mockCode);
-      setCodeExpiresAt(new Date(Date.now() + 600000).toISOString());
+    } catch (err) {
+      console.error('Failed to generate enrollment code:', err);
+      setPairingCode(null);
+      setCodeExpiresAt(null);
     } finally {
       setIsGenerating(false);
     }

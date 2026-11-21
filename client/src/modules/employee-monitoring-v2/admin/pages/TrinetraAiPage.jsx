@@ -3,11 +3,10 @@
  * Analytics — TRINETRA AI Non-Invasive Insights Page
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import Card, { CardHeader, CardTitle, CardDescription, CardContent } from '../../components/ui/Card.jsx';
 import Badge from '../../components/ui/Badge.jsx';
 import Button from '../../components/ui/Button.jsx';
-import MockDataService from '../../services/mockDataService.js';
 import {
   Sparkles,
   ShieldCheck,
@@ -19,7 +18,7 @@ import {
 } from 'lucide-react';
 
 export const TrinetraAiPage = () => {
-  const insights = MockDataService.getTrinetraInsights();
+  const [insights] = useState([]);
 
   return (
     <div className="space-y-6">
@@ -51,50 +50,58 @@ export const TrinetraAiPage = () => {
       </div>
 
       {/* Insights Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {insights.map((insight) => (
-          <Card key={insight.id} className="flex flex-col justify-between">
-            <CardHeader className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Badge
-                  variant={
-                    insight.trend === 'positive'
-                      ? 'success'
-                      : insight.trend === 'warning'
-                      ? 'warning'
-                      : 'info'
-                  }
-                >
-                  {insight.category.replace('_', ' ')}
-                </Badge>
-                <span className="text-[11px] font-mono text-slate-400">
-                  Confidence: {Math.round(insight.confidence * 100)}%
-                </span>
-              </div>
-              <CardTitle className="text-sm font-bold text-slate-100">
-                {insight.headline}
-              </CardTitle>
-              <CardDescription className="text-xs text-slate-300">
-                {insight.description}
-              </CardDescription>
-            </CardHeader>
+      {insights.length === 0 ? (
+        <Card>
+          <CardContent className="p-8 text-center text-slate-500 text-xs">
+            No cognitive insights or anomaly patterns flagged for the active telemetry streams.
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {insights.map((insight) => (
+            <Card key={insight.id} className="flex flex-col justify-between">
+              <CardHeader className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Badge
+                    variant={
+                      insight.trend === 'positive'
+                        ? 'success'
+                        : insight.trend === 'warning'
+                        ? 'warning'
+                        : 'info'
+                    }
+                  >
+                    {insight.category.replace('_', ' ')}
+                  </Badge>
+                  <span className="text-[11px] font-mono text-slate-400">
+                    Confidence: {Math.round(insight.confidence * 100)}%
+                  </span>
+                </div>
+                <CardTitle className="text-sm font-bold text-slate-100">
+                  {insight.headline}
+                </CardTitle>
+                <CardDescription className="text-xs text-slate-300">
+                  {insight.description}
+                </CardDescription>
+              </CardHeader>
 
-            <CardContent className="space-y-3 pt-0">
-              <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
-                <span className="text-[10px] uppercase font-bold text-indigo-400 block tracking-wider">
-                  Recommendation
-                </span>
-                <p className="text-xs text-slate-300">{insight.recommendation}</p>
-              </div>
+              <CardContent className="space-y-3 pt-0">
+                <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
+                  <span className="text-[10px] uppercase font-bold text-indigo-400 block tracking-wider">
+                    Recommendation
+                  </span>
+                  <p className="text-xs text-slate-300">{insight.recommendation}</p>
+                </div>
 
-              <div className="flex items-center gap-1.5 text-[10px] text-emerald-400 font-mono">
-                <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-                <span>{insight.privacyNote}</span>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+                <div className="flex items-center gap-1.5 text-[10px] text-emerald-400 font-mono">
+                  <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                  <span>{insight.privacyNote}</span>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

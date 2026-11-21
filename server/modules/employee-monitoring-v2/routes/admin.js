@@ -37,6 +37,34 @@ router.get('/summary', async (req, res) => {
   }
 });
 
+// GET /api/monitoring-v2/admin/reports
+router.get('/reports', async (req, res) => {
+  try {
+    const { startDate, endDate, employeeId, department } = req.query;
+    const DailyActivityReport = require('../models/DailyActivityReport');
+    const query = {};
+    if (employeeId) query.employee = employeeId;
+    if (startDate || endDate) {
+      query.date = {};
+      if (startDate) query.date.$gte = startDate;
+      if (endDate) query.date.$lte = endDate;
+    }
+
+    let reports = await DailyActivityReport.find(query)
+      .populate('employee', 'name email department role employeeId')
+      .sort({ date: -1 })
+      .lean();
+
+    if (department && department !== 'All Departments') {
+      reports = reports.filter((r) => r.employee?.department === department);
+    }
+
+    return res.json({ success: true, count: reports.length, reports });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/monitoring-v2/admin/audit-logs
 router.get('/audit-logs', async (req, res) => {
   try {

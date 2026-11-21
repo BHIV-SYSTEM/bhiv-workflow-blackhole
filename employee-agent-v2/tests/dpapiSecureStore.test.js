@@ -51,7 +51,7 @@ test('WindowsDPAPIAdapter: encrypts with real DPAPI and persists non-plaintext c
   // Clean up test directory
   try {
     fs.rmSync(tempDir, { recursive: true, force: true });
-  } catch (_) {}
+  } catch (_) { }
 });
 
 test('SecureStore: factory instantiates WindowsDPAPIAdapter on Windows platform', () => {

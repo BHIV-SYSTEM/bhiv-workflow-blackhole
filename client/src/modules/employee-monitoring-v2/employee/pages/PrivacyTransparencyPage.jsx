@@ -3,11 +3,11 @@
  * Employee Workspace — Privacy Transparency Portal
  */
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Card, { CardHeader, CardTitle, CardDescription, CardContent } from '../../components/ui/Card.jsx';
 import Table, { TableHeader, TableBody, TableRow, TableHead, TableCell } from '../../components/ui/Table.jsx';
 import Badge from '../../components/ui/Badge.jsx';
-import MockDataService from '../../services/mockDataService.js';
+import monitoringV2Api from '../../services/monitoringV2Api.js';
 import {
   ShieldCheck,
   EyeOff,
@@ -18,7 +18,29 @@ import {
 } from 'lucide-react';
 
 export const PrivacyTransparencyPage = () => {
-  const auditLogs = MockDataService.getPersonalTransparencyAudit();
+  const [auditLogs, setAuditLogs] = useState([]);
+
+  useEffect(() => {
+    async function loadLogs() {
+      try {
+        const res = await monitoringV2Api.getDailyTimeline();
+        if (res?.data?.timeline && Array.isArray(res.data.timeline)) {
+          setAuditLogs(res.data.timeline.map((s, idx) => ({
+            id: `audit-${idx}`,
+            timestamp: s.time || (s.timestamp ? new Date(s.timestamp).toLocaleTimeString() : '—'),
+            dataCollected: `Input keys (${s.keyCount ?? 0}), Mouse (${s.mouseCount ?? 0}), Category (${s.category || 'NEUTRAL'})`,
+            dataExcluded: '❌ Keystroke characters, ❌ Screen visuals, ❌ Clipboard text, ❌ Personal URLs',
+            status: 'Verified Privacy-Compliant'
+          })));
+        } else {
+          setAuditLogs([]);
+        }
+      } catch {
+        setAuditLogs([]);
+      }
+    }
+    loadLogs();
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -141,22 +163,30 @@ export const PrivacyTransparencyPage = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {auditLogs.map((log) => (
-                <TableRow key={log.id}>
-                  <TableCell className="font-mono text-slate-300 text-xs">{log.timestamp}</TableCell>
-                  <TableCell className="text-xs text-slate-200 font-medium">
-                    {log.dataCollected}
-                  </TableCell>
-                  <TableCell className="text-xs text-rose-300/80 font-mono">
-                    {log.dataExcluded}
-                  </TableCell>
-                  <TableCell>
-                    <span className="inline-flex items-center gap-1 text-xs text-emerald-400 font-medium">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Verified
-                    </span>
+              {auditLogs.length === 0 ? (
+                <TableRow hover={false}>
+                  <TableCell colSpan={4} className="text-center py-6 text-slate-500">
+                    No telemetry payloads recorded for today.
                   </TableCell>
                 </TableRow>
-              ))}
+              ) : (
+                auditLogs.map((log) => (
+                  <TableRow key={log.id}>
+                    <TableCell className="font-mono text-slate-300 text-xs">{log.timestamp}</TableCell>
+                    <TableCell className="text-xs text-slate-200 font-medium">
+                      {log.dataCollected}
+                    </TableCell>
+                    <TableCell className="text-xs text-rose-300/80 font-mono">
+                      {log.dataExcluded}
+                    </TableCell>
+                    <TableCell>
+                      <span className="inline-flex items-center gap-1 text-xs text-emerald-400 font-medium">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Verified
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
         </CardContent>

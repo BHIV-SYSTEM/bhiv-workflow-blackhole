@@ -147,7 +147,7 @@
 //                 <Input
 //                   id="name"
 //                   name="name"
-//                   placeholder="John Doe"
+//                   placeholder="Full Name"
 //                   value={formData.name}
 //                   onChange={handleChange}
 //                   disabled={loading || success}
@@ -574,7 +574,7 @@ export default function Register() {
                     id="name"
                     name="name"
                     autoComplete="name"
-                    placeholder="John Doe"
+                    placeholder="Full Name"
                     value={formData.name}
                     onChange={handleChange}
                     disabled={loading || success}

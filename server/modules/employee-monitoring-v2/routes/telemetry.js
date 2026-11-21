@@ -36,7 +36,8 @@ router.post('/', async (req, res) => {
       rawBody,
       signature,
       timestamp,
-      ip: req.ip
+      ip: req.ip,
+      io: req.app?.get('io')
     });
 
     return res.status(200).json(result);

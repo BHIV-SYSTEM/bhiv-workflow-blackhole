@@ -75,48 +75,18 @@ const ModernSalaryDashboard = () => {
   };
 
   const generateMockSalaryData = () => {
-    const employees = [
-      { id: 1, name: 'John Doe', email: 'john@company.com', department: 'Engineering', type: 'Employee', avatar: null },
-      { id: 2, name: 'Jane Smith', email: 'jane@company.com', department: 'Marketing', type: 'Employee', avatar: null },
-      { id: 3, name: 'Mike Johnson', email: 'mike@company.com', department: 'Engineering', type: 'Intern', avatar: null },
-      { id: 4, name: 'Sarah Wilson', email: 'sarah@company.com', department: 'HR', type: 'Employee', avatar: null },
-      { id: 5, name: 'David Brown', email: 'david@company.com', department: 'Finance', type: 'Employee', avatar: null },
-      { id: 6, name: 'Lisa Davis', email: 'lisa@company.com', department: 'Engineering', type: 'Contractor', avatar: null },
-    ];
-
-    const salaryCards = employees.map(emp => ({
-      user: emp,
-      attendance: {
-        workingDays: 26,
-        presentDays: Math.floor(Math.random() * 4) + 22,
-        attendanceRate: Math.floor(Math.random() * 20) + 80,
-        totalHours: Math.floor(Math.random() * 40) + 180,
-        overtimeHours: Math.floor(Math.random() * 20)
-      },
-      salary: {
-        baseSalary: Math.floor(Math.random() * 30000) + 40000,
-        grossSalary: Math.floor(Math.random() * 35000) + 45000,
-        netSalary: Math.floor(Math.random() * 30000) + 38000,
-        bonuses: Math.floor(Math.random() * 5000),
-        deductions: Math.floor(Math.random() * 3000) + 2000
-      },
-      performance: {
-        score: Math.floor(Math.random() * 30) + 70,
-        rating: ['Excellent', 'Good', 'Average'][Math.floor(Math.random() * 3)],
-        recommendations: Math.floor(Math.random() * 3)
-      },
-      status: ['success', 'warning', 'info'][Math.floor(Math.random() * 3)]
-    }));
+    const employees = [];
+    const salaryCards = [];
 
     return {
       salaryCards,
       summary: {
-        totalEmployees: employees.length,
-        totalPayroll: salaryCards.reduce((sum, card) => sum + card.salary.netSalary, 0),
-        averageSalary: salaryCards.reduce((sum, card) => sum + card.salary.netSalary, 0) / employees.length,
-        averageAttendance: salaryCards.reduce((sum, card) => sum + card.attendance.attendanceRate, 0) / employees.length,
-        totalBonuses: salaryCards.reduce((sum, card) => sum + card.salary.bonuses, 0),
-        totalDeductions: salaryCards.reduce((sum, card) => sum + card.salary.deductions, 0)
+        totalEmployees: 0,
+        totalPayroll: 0,
+        averageSalary: 0,
+        averageAttendance: 0,
+        totalBonuses: 0,
+        totalDeductions: 0
       }
     };
   };

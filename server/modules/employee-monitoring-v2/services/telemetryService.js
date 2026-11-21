@@ -5,7 +5,7 @@
  * Enforces:
  * 1. HMAC-SHA256 signature verification.
  * 2. Clock skew tolerance check (<= 120s drift).
- * 3. Anti-surveillance privacy gate (strictly rejects forbidden text, screenshot, URL, windowTitle).
+ * 3. Anti-surveillance privacy gate (strictly rejects forbidden text, screenshot, URL, windowTitle, tabTitle, and nested app tracking fields).
  * 4. 60-second lease verification with 30-second autonomous grace limit.
  * 5. Isolated persistence to monitoring_v2_telemetry collection.
  */
@@ -43,7 +43,7 @@ function calculateFocusScore(payload) {
 /**
  * Validates, authenticates, and ingests a single telemetry sample batch.
  */
-async function ingestTelemetry({ deviceId, rawBody, signature, timestamp, ip = null }) {
+async function ingestTelemetry({ deviceId, rawBody, signature, timestamp, ip = null, io = null }) {
   if (!deviceId) {
     const error = new Error('Missing x-device-id header');
     error.statusCode = 400;
@@ -118,6 +118,23 @@ async function ingestTelemetry({ deviceId, rawBody, signature, timestamp, ip = n
     throw error;
   }
 
+  // Defense-in-depth: Reject any nested app tracking fields (title, url, path, tabTitle, windowTitle)
+  if (payload.apps && Array.isArray(payload.apps)) {
+    for (const app of payload.apps) {
+      if (app && typeof app === 'object') {
+        const forbiddenAppFields = ['title', 'url', 'path', 'windowTitle', 'tabTitle'];
+        for (const f of forbiddenAppFields) {
+          if (Object.prototype.hasOwnProperty.call(app, f) || app[f] !== undefined) {
+            const error = new Error(`Telemetry rejected by Anti-Surveillance Gate: App record contains forbidden field '${f}'`);
+            error.statusCode = 400;
+            error.code = 'PRIVACY_VIOLATION';
+            throw error;
+          }
+        }
+      }
+    }
+  }
+
   // 6. Active Session & Lease Verification
   const sessionId = payload.sessionId;
   if (!sessionId) {
@@ -140,7 +157,12 @@ async function ingestTelemetry({ deviceId, rawBody, signature, timestamp, ip = n
     throw error;
   }
 
-  if (session.state !== SESSION_STATES.ACTIVE) {
+  const now = new Date();
+  const isRecentlyCompleted = session.state === SESSION_STATES.COMPLETED &&
+    session.ended_at &&
+    (now.getTime() - new Date(session.ended_at).getTime() <= 90000);
+
+  if (session.state !== SESSION_STATES.ACTIVE && !isRecentlyCompleted) {
     const error = new Error(`Monitoring session is not active (current state: ${session.state})`);
     error.statusCode = 403;
     error.code = 'SESSION_NOT_ACTIVE';
@@ -149,9 +171,9 @@ async function ingestTelemetry({ deviceId, rawBody, signature, timestamp, ip = n
   }
 
   // Check 60s lease with 30s grace window (total 90s offline collection)
-  const now = new Date();
+  // For recently completed session during final End Day flush, allow ingestion within the 90s window
   const graceThreshold = new Date(now.getTime() - 30 * 1000);
-  if (session.lease_expires_at < graceThreshold) {
+  if (!isRecentlyCompleted && session.lease_expires_at < graceThreshold) {
     const error = new Error('Monitoring lease has expired. Device must re-authorize session before submitting telemetry.');
     error.statusCode = 403;
     error.code = 'LEASE_EXPIRED';
@@ -160,8 +182,11 @@ async function ingestTelemetry({ deviceId, rawBody, signature, timestamp, ip = n
   }
 
   // 7. Duplicate Event Rejection: Check if minute slice already exists
-  const minuteTimestamp = new Date(now);
+  // Derive slice minute from sample's original timestamp to preserve historical offline queue samples
+  const sampleDate = payload.timestamp ? new Date(payload.timestamp) : now;
+  const minuteTimestamp = new Date(sampleDate);
   minuteTimestamp.setSeconds(0, 0);
+  minuteTimestamp.setMilliseconds(0);
 
   const existingSlice = await AggregatedTelemetryV2.findOne({
     session_id: session.session_id,
@@ -180,6 +205,8 @@ async function ingestTelemetry({ deviceId, rawBody, signature, timestamp, ip = n
   const idleSeconds = payload.hardwareIdleSeconds || 0;
   const activeSeconds = payload.activeSeconds || Math.max(0, duration - idleSeconds);
 
+  const activeApp = payload.apps?.[0]?.name || payload.activeProcessName || payload.currentApplication || null;
+
   const telemetryRecord = new AggregatedTelemetryV2({
     session_id: session.session_id,
     employee: session.employee,
@@ -195,10 +222,27 @@ async function ingestTelemetry({ deviceId, rawBody, signature, timestamp, ip = n
     primary_category: payload.activeProcessCategory || CATEGORIES.NEUTRAL,
     task_id: session.active_task_id || null,
     focus_score: calculateFocusScore(payload),
+    current_application: activeApp,
     sync_type: payload.syncType || 'REALTIME'
   });
 
   await telemetryRecord.save();
+
+  if (io) {
+    io.emit('monitoring:v2:telemetry-tick', {
+      sessionId: session.session_id,
+      employeeId: session.employee,
+      deviceId,
+      currentApplication: activeApp || 'Active Process',
+      currentCategory: payload.activeProcessCategory || CATEGORIES.NEUTRAL,
+      focusScore: calculateFocusScore(payload),
+      activeSeconds,
+      idleSeconds,
+      keyPressCount: payload.keyPressCount || 0,
+      timestamp: minuteTimestamp.toISOString(),
+      connectionStatus: 'Connected',
+    });
+  }
 
   // 9. Update Session accumulated metrics (without extending authorization lease)
   session.accumulated_seconds.active += activeSeconds;

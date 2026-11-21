@@ -23,34 +23,33 @@ const APP_CATEGORIES = [
 ];
 
 const CAPTURE_MODES = ['intelligent', 'periodic', 'both'];
-const MATCH_FIELDS = ['app', 'title', 'any'];
+const MATCH_FIELDS = ['app'];
 
 /**
- * Ordered policy defaults. First match wins, so the list is ordered from most
- * specific/risky to least specific (browser shells last so an in-app title such as
- * "pull request - GitHub" resolves to FOCUS instead of the browser's NEUTRAL).
+ * Ordered policy defaults. First match wins.
+ * Under V2 privacy boundaries, only application executable names are evaluated.
  */
 const DEFAULT_APP_RULES = [
   // Distraction first — explicit signals win over shell containers.
-  { pattern: 'youtube', field: 'any', category: 'DISTRACTION', label: 'YouTube' },
-  { pattern: 'netflix', field: 'any', category: 'DISTRACTION', label: 'Netflix' },
-  { pattern: 'prime video', field: 'any', category: 'DISTRACTION', label: 'Prime Video' },
-  { pattern: 'hotstar', field: 'any', category: 'DISTRACTION', label: 'Hotstar' },
-  { pattern: 'instagram', field: 'any', category: 'DISTRACTION', label: 'Instagram' },
-  { pattern: 'facebook', field: 'any', category: 'DISTRACTION', label: 'Facebook' },
-  { pattern: 'twitter', field: 'any', category: 'DISTRACTION', label: 'Twitter/X' },
-  { pattern: 'tiktok', field: 'any', category: 'DISTRACTION', label: 'TikTok' },
-  { pattern: 'reddit', field: 'any', category: 'DISTRACTION', label: 'Reddit' },
-  { pattern: 'twitch', field: 'any', category: 'DISTRACTION', label: 'Twitch' },
-  { pattern: 'pinterest', field: 'any', category: 'DISTRACTION', label: 'Pinterest' },
-  { pattern: 'spotify', field: 'any', category: 'DISTRACTION', label: 'Spotify' },
-  { pattern: 'snapchat', field: 'any', category: 'DISTRACTION', label: 'Snapchat' },
+  { pattern: 'youtube', field: 'app', category: 'DISTRACTION', label: 'YouTube' },
+  { pattern: 'netflix', field: 'app', category: 'DISTRACTION', label: 'Netflix' },
+  { pattern: 'prime video', field: 'app', category: 'DISTRACTION', label: 'Prime Video' },
+  { pattern: 'hotstar', field: 'app', category: 'DISTRACTION', label: 'Hotstar' },
+  { pattern: 'instagram', field: 'app', category: 'DISTRACTION', label: 'Instagram' },
+  { pattern: 'facebook', field: 'app', category: 'DISTRACTION', label: 'Facebook' },
+  { pattern: 'twitter', field: 'app', category: 'DISTRACTION', label: 'Twitter/X' },
+  { pattern: 'tiktok', field: 'app', category: 'DISTRACTION', label: 'TikTok' },
+  { pattern: 'reddit', field: 'app', category: 'DISTRACTION', label: 'Reddit' },
+  { pattern: 'twitch', field: 'app', category: 'DISTRACTION', label: 'Twitch' },
+  { pattern: 'pinterest', field: 'app', category: 'DISTRACTION', label: 'Pinterest' },
+  { pattern: 'spotify', field: 'app', category: 'DISTRACTION', label: 'Spotify' },
+  { pattern: 'snapchat', field: 'app', category: 'DISTRACTION', label: 'Snapchat' },
 
   // Engineering / delivery evidence.
-  { pattern: 'github', field: 'any', category: 'FOCUS', label: 'GitHub' },
-  { pattern: 'gitlab', field: 'any', category: 'FOCUS', label: 'GitLab' },
-  { pattern: 'bitbucket', field: 'any', category: 'FOCUS', label: 'Bitbucket' },
-  { pattern: 'stack overflow', field: 'any', category: 'FOCUS', label: 'Stack Overflow' },
+  { pattern: 'github', field: 'app', category: 'FOCUS', label: 'GitHub' },
+  { pattern: 'gitlab', field: 'app', category: 'FOCUS', label: 'GitLab' },
+  { pattern: 'bitbucket', field: 'app', category: 'FOCUS', label: 'Bitbucket' },
+  { pattern: 'stack overflow', field: 'app', category: 'FOCUS', label: 'Stack Overflow' },
   { pattern: 'visual studio', field: 'app', category: 'FOCUS', label: 'Visual Studio' },
   { pattern: 'vs code', field: 'app', category: 'FOCUS', label: 'VS Code' },
   { pattern: 'code', field: 'app', category: 'FOCUS', label: 'Code Editor' },
@@ -61,56 +60,56 @@ const DEFAULT_APP_RULES = [
   { pattern: 'sublime', field: 'app', category: 'FOCUS', label: 'Sublime Text' },
   { pattern: 'android studio', field: 'app', category: 'FOCUS', label: 'Android Studio' },
   { pattern: 'xcode', field: 'app', category: 'FOCUS', label: 'Xcode' },
-  { pattern: 'postman', field: 'any', category: 'FOCUS', label: 'Postman' },
+  { pattern: 'postman', field: 'app', category: 'FOCUS', label: 'Postman' },
   { pattern: 'docker', field: 'app', category: 'FOCUS', label: 'Docker' },
   { pattern: 'terminal', field: 'app', category: 'FOCUS', label: 'Terminal' },
   { pattern: 'powershell', field: 'app', category: 'FOCUS', label: 'PowerShell' },
   { pattern: 'command prompt', field: 'app', category: 'FOCUS', label: 'Command Prompt' },
-  { pattern: 'mongodb', field: 'any', category: 'FOCUS', label: 'MongoDB' },
-  { pattern: 'mysql', field: 'any', category: 'FOCUS', label: 'MySQL' },
-  { pattern: 'pgadmin', field: 'any', category: 'FOCUS', label: 'pgAdmin' },
-  { pattern: 'jupyter', field: 'any', category: 'FOCUS', label: 'Jupyter' },
+  { pattern: 'mongodb', field: 'app', category: 'FOCUS', label: 'MongoDB' },
+  { pattern: 'mysql', field: 'app', category: 'FOCUS', label: 'MySQL' },
+  { pattern: 'pgadmin', field: 'app', category: 'FOCUS', label: 'pgAdmin' },
+  { pattern: 'jupyter', field: 'app', category: 'FOCUS', label: 'Jupyter' },
 
   // Documentation / planning.
-  { pattern: 'notion', field: 'any', category: 'DOCUMENTATION', label: 'Notion' },
-  { pattern: 'confluence', field: 'any', category: 'DOCUMENTATION', label: 'Confluence' },
-  { pattern: 'jira', field: 'any', category: 'DOCUMENTATION', label: 'Jira' },
-  { pattern: 'linear', field: 'any', category: 'DOCUMENTATION', label: 'Linear' },
-  { pattern: 'asana', field: 'any', category: 'DOCUMENTATION', label: 'Asana' },
-  { pattern: 'trello', field: 'any', category: 'DOCUMENTATION', label: 'Trello' },
-  { pattern: 'figma', field: 'any', category: 'DOCUMENTATION', label: 'Figma' },
+  { pattern: 'notion', field: 'app', category: 'DOCUMENTATION', label: 'Notion' },
+  { pattern: 'confluence', field: 'app', category: 'DOCUMENTATION', label: 'Confluence' },
+  { pattern: 'jira', field: 'app', category: 'DOCUMENTATION', label: 'Jira' },
+  { pattern: 'linear', field: 'app', category: 'DOCUMENTATION', label: 'Linear' },
+  { pattern: 'asana', field: 'app', category: 'DOCUMENTATION', label: 'Asana' },
+  { pattern: 'trello', field: 'app', category: 'DOCUMENTATION', label: 'Trello' },
+  { pattern: 'figma', field: 'app', category: 'DOCUMENTATION', label: 'Figma' },
   { pattern: 'word', field: 'app', category: 'DOCUMENTATION', label: 'Word' },
   { pattern: 'excel', field: 'app', category: 'DOCUMENTATION', label: 'Excel' },
   { pattern: 'powerpoint', field: 'app', category: 'DOCUMENTATION', label: 'PowerPoint' },
-  { pattern: 'google docs', field: 'any', category: 'DOCUMENTATION', label: 'Google Docs' },
-  { pattern: 'google sheets', field: 'any', category: 'DOCUMENTATION', label: 'Google Sheets' },
+  { pattern: 'google docs', field: 'app', category: 'DOCUMENTATION', label: 'Google Docs' },
+  { pattern: 'google sheets', field: 'app', category: 'DOCUMENTATION', label: 'Google Sheets' },
   { pattern: 'acrobat', field: 'app', category: 'DOCUMENTATION', label: 'Acrobat' },
   { pattern: 'obsidian', field: 'app', category: 'DOCUMENTATION', label: 'Obsidian' },
 
   // Communication.
-  { pattern: 'slack', field: 'any', category: 'COMMUNICATION', label: 'Slack' },
-  { pattern: 'teams', field: 'any', category: 'COMMUNICATION', label: 'Microsoft Teams' },
-  { pattern: 'outlook', field: 'any', category: 'COMMUNICATION', label: 'Outlook' },
-  { pattern: 'gmail', field: 'any', category: 'COMMUNICATION', label: 'Gmail' },
-  { pattern: 'zoom', field: 'any', category: 'COMMUNICATION', label: 'Zoom' },
-  { pattern: 'google meet', field: 'any', category: 'COMMUNICATION', label: 'Google Meet' },
-  { pattern: 'webex', field: 'any', category: 'COMMUNICATION', label: 'Webex' },
-  { pattern: 'discord', field: 'any', category: 'COMMUNICATION', label: 'Discord' },
-  { pattern: 'whatsapp', field: 'any', category: 'COMMUNICATION', label: 'WhatsApp' },
-  { pattern: 'telegram', field: 'any', category: 'COMMUNICATION', label: 'Telegram' },
+  { pattern: 'slack', field: 'app', category: 'COMMUNICATION', label: 'Slack' },
+  { pattern: 'teams', field: 'app', category: 'COMMUNICATION', label: 'Microsoft Teams' },
+  { pattern: 'outlook', field: 'app', category: 'COMMUNICATION', label: 'Outlook' },
+  { pattern: 'gmail', field: 'app', category: 'COMMUNICATION', label: 'Gmail' },
+  { pattern: 'zoom', field: 'app', category: 'COMMUNICATION', label: 'Zoom' },
+  { pattern: 'google meet', field: 'app', category: 'COMMUNICATION', label: 'Google Meet' },
+  { pattern: 'webex', field: 'app', category: 'COMMUNICATION', label: 'Webex' },
+  { pattern: 'discord', field: 'app', category: 'COMMUNICATION', label: 'Discord' },
+  { pattern: 'whatsapp', field: 'app', category: 'COMMUNICATION', label: 'WhatsApp' },
+  { pattern: 'telegram', field: 'app', category: 'COMMUNICATION', label: 'Telegram' },
 
   // Support / service desks.
-  { pattern: 'servicenow', field: 'any', category: 'SUPPORT', label: 'ServiceNow' },
-  { pattern: 'freshdesk', field: 'any', category: 'SUPPORT', label: 'Freshdesk' },
-  { pattern: 'zendesk', field: 'any', category: 'SUPPORT', label: 'Zendesk' },
+  { pattern: 'servicenow', field: 'app', category: 'SUPPORT', label: 'ServiceNow' },
+  { pattern: 'freshdesk', field: 'app', category: 'SUPPORT', label: 'Freshdesk' },
+  { pattern: 'zendesk', field: 'app', category: 'SUPPORT', label: 'Zendesk' },
 
   // Operating-system surfaces.
-  { pattern: 'task manager', field: 'any', category: 'SYSTEM', label: 'Task Manager' },
-  { pattern: 'settings', field: 'any', category: 'SYSTEM', label: 'System Settings' },
+  { pattern: 'task manager', field: 'app', category: 'SYSTEM', label: 'Task Manager' },
+  { pattern: 'settings', field: 'app', category: 'SYSTEM', label: 'System Settings' },
   { pattern: 'explorer', field: 'app', category: 'SYSTEM', label: 'File Explorer' },
   { pattern: 'finder', field: 'app', category: 'SYSTEM', label: 'Finder' },
   { pattern: 'desktop', field: 'app', category: 'SYSTEM', label: 'Desktop' },
-  { pattern: 'lock screen', field: 'any', category: 'SYSTEM', label: 'Lock Screen' },
+  { pattern: 'lock screen', field: 'app', category: 'SYSTEM', label: 'Lock Screen' },
 
   // Browser shells last: unresolved web activity is neutral, not "productive".
   { pattern: 'chrome', field: 'app', category: 'NEUTRAL', label: 'Google Chrome' },
@@ -124,7 +123,7 @@ const DEFAULT_APP_RULES = [
 const appRuleSchema = new mongoose.Schema(
   {
     pattern: { type: String, required: true, trim: true },
-    field: { type: String, enum: MATCH_FIELDS, default: 'any' },
+    field: { type: String, enum: MATCH_FIELDS, default: 'app' },
     category: { type: String, enum: APP_CATEGORIES, required: true },
     label: { type: String, trim: true }
   },
@@ -288,7 +287,7 @@ trinetraConfigSchema.statics.updateSettings = async function (patch, updatedBy) 
       .filter((rule) => rule && rule.pattern && APP_CATEGORIES.includes(rule.category))
       .map((rule) => ({
         pattern: String(rule.pattern).trim(),
-        field: MATCH_FIELDS.includes(rule.field) ? rule.field : 'any',
+        field: MATCH_FIELDS.includes(rule.field) ? rule.field : 'app',
         category: rule.category,
         label: rule.label ? String(rule.label).trim() : ''
       }));

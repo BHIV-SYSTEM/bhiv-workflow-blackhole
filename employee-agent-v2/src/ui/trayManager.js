@@ -95,6 +95,14 @@ export class TrayManager extends EventEmitter {
     this.emit('status_updated', newStatus);
   }
 
+  bringToFront() {
+    if (this.childProcess && this.childProcess.stdin && !this.childProcess.stdin.destroyed && this.childProcess.stdin.writable) {
+      try {
+        this.childProcess.stdin.write(JSON.stringify({ cmd: 'OPEN' }) + '\n');
+      } catch (_) {}
+    }
+  }
+
   stop() {
     if (this.childProcess) {
       try {

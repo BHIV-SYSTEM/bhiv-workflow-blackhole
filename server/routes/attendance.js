@@ -186,7 +186,7 @@ router.post('/start', auth, async (req, res) => {
 router.post('/start-day/:userId', auth, async (req, res) => {
   try {
     const { userId } = req.params;
-    let { latitude, longitude, address, accuracy, workFromHome, homeLocation, deviceInfo } = req.body;
+    let { latitude, longitude, address, accuracy, workFromHome, homeLocation, deviceInfo, monitoringConsent = false, deviceId: explicitDeviceId } = req.body;
     
     // Verify user authorization
     if (req.user.id !== userId && req.user.role !== 'Admin') {
@@ -405,6 +405,51 @@ router.post('/start-day/:userId', auth, async (req, res) => {
     
     await dailyRecord.save();
 
+    // Decoupled Monitoring V2 Session Initiation (Milestone 3 - F10, F11)
+    let monitoringSession = null;
+    let monitoringStatus = 'Disconnected / Not Monitored';
+
+    attendanceRecord.monitoringConsent = Boolean(monitoringConsent);
+    dailyRecord.monitoringConsent = Boolean(monitoringConsent);
+
+    if (monitoringConsent) {
+      try {
+        const RegisteredDevice = require('../modules/employee-monitoring-v2/models/RegisteredDevice');
+        const sessionService = require('../modules/employee-monitoring-v2/services/sessionService');
+
+        const deviceId = explicitDeviceId || deviceInfo?.deviceId || (
+          await RegisteredDevice.findOne({ employee: userId, status: 'ACTIVE' }).sort({ updatedAt: -1 })
+        )?.device_id;
+
+        if (deviceId) {
+          const v2Session = await sessionService.startSession({
+            employeeId: userId,
+            mode: 'LAPTOP_PC',
+            deviceId,
+            taskId: 'WORKDAY-START',
+            ip: clientIp,
+            userAgent: req.headers['user-agent']
+          });
+
+          monitoringSession = {
+            sessionId: v2Session.sessionId,
+            leaseExpiresAt: v2Session.leaseExpiresAt,
+            state: v2Session.state
+          };
+          monitoringStatus = 'Active';
+          attendanceRecord.activeSessionId = v2Session.sessionId;
+          dailyRecord.activeSessionId = v2Session.sessionId;
+        }
+      } catch (monErr) {
+        console.warn(`⚠️ Non-fatal: Failed to start monitoring session for user ${userId}:`, monErr.message);
+      }
+    }
+
+    attendanceRecord.monitoringStatus = monitoringStatus;
+    dailyRecord.monitoringStatus = monitoringStatus;
+    await attendanceRecord.save();
+    await dailyRecord.save();
+
     // Keep WorkSession in sync so pause/resume and live timer always use a clean session for today
     try {
       const WorkSession = require('../models/WorkSession');
@@ -474,7 +519,10 @@ router.post('/start-day/:userId', auth, async (req, res) => {
         userId,
         startTime,
         location: { latitude, longitude, address: finalAddress },
-        workLocationType
+        workLocationType,
+        monitoringStatus,
+        monitoringConsent: Boolean(monitoringConsent),
+        activeSessionId: attendanceRecord.activeSessionId || null
       });
     }
 
@@ -487,6 +535,11 @@ router.post('/start-day/:userId', auth, async (req, res) => {
       startTime,
       location: { latitude, longitude, address: finalAddress },
       workLocationType,
+      attendance: attendanceRecord,
+      workday: dailyRecord,
+      monitoringConsent: Boolean(monitoringConsent),
+      monitoringStatus,
+      monitoringSession,
       distanceFromOffice: workFromHome ? null : geolib.getDistance(
         { latitude: OFFICE_COORDINATES.latitude, longitude: OFFICE_COORDINATES.longitude },
         { latitude, longitude }
@@ -547,7 +600,8 @@ router.post('/end-day/:userId', auth, async (req, res) => {
     // =====================================
     
     // ✅ ONLY CHECK PROGRESS - AIM VALIDATION REMOVED
-    const sessionDate = attendanceRecord.date || today;
+    const sessionDate = attendanceRecord.date ? new Date(attendanceRecord.date) : new Date(attendanceRecord.startDayTime || today);
+    sessionDate.setHours(0, 0, 0, 0);
     const sessionDateEnd = new Date(sessionDate);
     sessionDateEnd.setDate(sessionDateEnd.getDate() + 1);
 
@@ -655,10 +709,16 @@ router.post('/end-day/:userId', auth, async (req, res) => {
     
     // Update DailyAttendance record as well
     const DailyAttendance = require('../models/DailyAttendance');
-    const dailyRecord = await DailyAttendance.findOne({
+    let dailyRecord = await DailyAttendance.findOne({
       user: userId,
       date: sessionDate
     });
+    if (!dailyRecord) {
+      dailyRecord = await DailyAttendance.findOne({
+        user: userId,
+        date: { $gte: sessionDate, $lt: sessionDateEnd }
+      });
+    }
     
     if (dailyRecord) {
       dailyRecord.endDayTime = endTime;
@@ -685,8 +745,49 @@ router.post('/end-day/:userId', auth, async (req, res) => {
       
       await dailyRecord.save();
     }
-    
-    // Emit socket event
+
+    // 1. Conclude and Revoke V2 Monitoring Sessions (Milestone 3 - F13)
+    try {
+      const sessionService = require('../modules/employee-monitoring-v2/services/sessionService');
+      await sessionService.endActiveSessionsForEmployee(userId, req.user?.role || 'Employee', 'WORKDAY_END');
+    } catch (v2Err) {
+      console.warn(`⚠️ Non-fatal: Failed to revoke V2 monitoring sessions for user ${userId}:`, v2Err.message);
+    }
+
+    attendanceRecord.monitoringStatus = 'Disconnected / Not Monitored';
+    attendanceRecord.activeSessionId = null;
+    await attendanceRecord.save();
+
+    if (dailyRecord) {
+      dailyRecord.monitoringStatus = 'Disconnected / Not Monitored';
+      dailyRecord.activeSessionId = null;
+      await dailyRecord.save();
+    }
+
+    // 2. Compile Daily Activity Report (Milestone 3 - F13)
+    let dailyReport = null;
+    try {
+      const dailyReportService = require('../modules/employee-monitoring-v2/services/dailyReportService');
+      dailyReport = await dailyReportService.generateDailyReport(userId, sessionDate, {
+        attendanceHours: attendanceRecord.hoursWorked,
+        breakTimeMinutes,
+        attendanceId: attendanceRecord._id
+      });
+    } catch (repErr) {
+      console.warn(`⚠️ Non-fatal: Daily report generation failed for user ${userId}:`, repErr.message);
+      dailyReport = {
+        reportId: require('crypto').randomUUID(),
+        date: sessionDate.toISOString().split('T')[0],
+        totalAttendanceHours: attendanceRecord.hoursWorked,
+        monitoredHours: 0,
+        activeInputHours: 0,
+        hardwareIdleHours: 0,
+        breakHours: +(breakTimeMinutes / 60).toFixed(2),
+        categories: []
+      };
+    }
+
+    // 3. Emit Socket events
     if (req.io) {
       req.io.emit('attendance:day-ended', {
         userId,
@@ -695,18 +796,29 @@ router.post('/end-day/:userId', auth, async (req, res) => {
         progressCompleted: true,
         aimCompleted: todayAim ? (todayAim.completionStatus !== 'Pending') : false
       });
+      req.io.emit('monitoring:session-ended', {
+        userId,
+        endedAt: endTime,
+        reason: 'WORKDAY_END'
+      });
+      if (dailyReport) {
+        req.io.emit('monitoring:daily-report-generated', {
+          userId,
+          report: dailyReport
+        });
+      }
     }
 
-    // KARMA: runtime milestone — day ended; flag idle if short hours
-    if (attendanceRecord.hoursWorked < 4) {
-      signalExcessiveIdle(String(userId), Math.round((8 - attendanceRecord.hoursWorked) * 60)).catch(() => {});
-    } else {
-      signalNormalActivity(String(userId)).catch(() => {});
-    }
+    // KARMA: runtime milestone — day ended (zero automated behavioral penalties)
+    signalNormalActivity(String(userId)).catch(() => {});
 
     res.json({
       success: true,
       message: `Day ended successfully! You worked ${attendanceRecord.hoursWorked} hours.`,
+      attendance: attendanceRecord,
+      workday: dailyRecord,
+      dailyReport,
+      telemetryFlushed: true,
       data: {
         endTime,
         startTime: attendanceRecord.startDayTime,

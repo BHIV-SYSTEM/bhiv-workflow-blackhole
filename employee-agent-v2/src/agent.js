@@ -157,15 +157,25 @@ export class NiyantranMonitoringAgentV2 extends EventEmitter {
       this.telemetryIntervalTimer = null;
     }
 
-    // Flush any pending metrics before stopping
+    // Flush pending metrics and drain offline queue
+    let flushPromise = Promise.resolve();
     if (this.lifecycle.getState() === AGENT_STATES.ACTIVE_MONITORING) {
-      this.flushAndSyncTelemetry().catch(() => {});
+      flushPromise = this.flushAndSyncTelemetry()
+        .then(() => {
+          if (this.syncEngine && typeof this.syncEngine.flushOfflineQueue === 'function') {
+            return this.syncEngine.flushOfflineQueue();
+          }
+        })
+        .catch((err) => {
+          console.warn('[Agent] Final telemetry flush error:', err.message);
+        });
     }
 
     this.win32Monitor.stopMonitoring();
     this.leaseManager.endLease(reason);
     this.lifecycle.shutdown();
     this.emit('monitoring_stopped', { reason });
+    return flushPromise;
   }
 
   /**
@@ -184,15 +194,19 @@ export class NiyantranMonitoringAgentV2 extends EventEmitter {
       inputMetrics,
     });
 
-    // Renew lease upon telemetry generation
-    try {
-      this.leaseManager.renewLease();
-      if (this.lifecycle.activeSessionId) {
-        this.syncEngine.renewServerLease(this.lifecycle.activeSessionId).catch(() => {});
-      }
-    } catch (_) {}
-
+    // Submit sample to server / offline buffer
     const result = await this.syncEngine.submitSample(sample);
+
+    // CRITICAL: Only renew local authorization lease if submission was successful or server confirmed renewal
+    if (result && result.success) {
+      try {
+        this.leaseManager.renewLease();
+        if (this.lifecycle.activeSessionId) {
+          this.syncEngine.renewServerLease(this.lifecycle.activeSessionId).catch(() => {});
+        }
+      } catch (_) {}
+    }
+
     this.emit('telemetry_emitted', { sample, result });
     return sample;
   }

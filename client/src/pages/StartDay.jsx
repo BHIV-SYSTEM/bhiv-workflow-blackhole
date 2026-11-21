@@ -30,7 +30,8 @@ import {
   Save,
   X,
   Home,
-  MessageCircle
+  MessageCircle,
+  AlertTriangle
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -95,16 +96,73 @@ const StartDay = () => {
     return () => clearInterval(timer);
   }, []);
 
+  // Real-Time Socket.io event listeners (Milestone 3 - F10, F12, F13)
+  useEffect(() => {
+    const handleAttendanceEvent = (e) => {
+      const detail = e.detail;
+      if (!detail || (detail.userId && String(detail.userId) !== String(user?.id))) return;
+      fetchTodayStatus();
+    };
+
+    const handleSessionEvent = (e) => {
+      const detail = e.detail;
+      if (!detail || (detail.employeeId && String(detail.employeeId) !== String(user?.id))) return;
+      setTodayStatus(prev => prev ? ({
+        ...prev,
+        monitoringStatus: detail.state === 'ACTIVE' ? 'Active' : 'Disconnected / Not Monitored',
+        activeSessionId: detail.sessionId || prev.activeSessionId
+      }) : prev);
+    };
+
+    window.addEventListener('attendance-updated', handleAttendanceEvent);
+    window.addEventListener('monitoring-session-state', handleSessionEvent);
+
+    return () => {
+      window.removeEventListener('attendance-updated', handleAttendanceEvent);
+      window.removeEventListener('monitoring-session-state', handleSessionEvent);
+    };
+  }, [user?.id]);
+
   const fetchTodayStatus = async () => {
     try {
       setLoading(true);
-      const response = await api.get(`/attendance/today/${user.id}`);
-      if (response.success) {
-        setTodayStatus(response.data);
+      let res = null;
+      try {
+        res = await api.get('/attendance/status');
+      } catch {
+        res = await api.get(`/attendance/today/${user.id}`).catch(() => null);
+      }
+
+      if (res) {
+        const isStarted = res.dayStarted ?? res.data?.hasStarted ?? false;
+        const isEnded = res.dayEndedToday ?? res.data?.hasEnded ?? false;
+        const startTime = res.startTime || res.data?.startTime || null;
+        const endTime = res.endTime || res.data?.endTime || null;
+        const monitoringStatus = res.monitoringStatus || res.data?.monitoringStatus || 
+          (isStarted && !isEnded ? 'Disconnected / Not Monitored' : 'Not Monitored');
+        const monitoringConsent = res.monitoringConsent ?? res.data?.monitoringConsent ?? false;
+        const activeSessionId = res.activeSessionId || res.data?.activeSessionId || null;
+
+        setTodayStatus({
+          hasStarted: isStarted,
+          hasEnded: isEnded,
+          canStartDay: !isStarted && !isEnded,
+          canEndDay: isStarted && !isEnded,
+          status: isEnded ? 'Completed' : isStarted ? 'Present' : 'Not Started',
+          startTime,
+          endTime,
+          workLocation: res.workLocation || res.data?.workLocation || 'Office',
+          monitoringStatus,
+          monitoringConsent,
+          activeSessionId,
+          totalHours: res.data?.totalHours || 0,
+          currentHours: res.data?.currentHours || 0,
+          earnedAmount: res.data?.earnedAmount || 0,
+          message: isEnded ? 'Workday completed!' : isStarted ? 'You are currently working.' : 'Ready to start your day!'
+        });
       }
     } catch (error) {
       console.error('Error fetching today status:', error);
-      // Create mock status for demo
       setTodayStatus({
         hasStarted: false,
         hasEnded: false,
@@ -112,6 +170,9 @@ const StartDay = () => {
         canEndDay: false,
         status: 'Not Started',
         message: 'Ready to start your day!',
+        monitoringStatus: 'Disconnected / Not Monitored',
+        monitoringConsent: false,
+        activeSessionId: null,
         currentHours: 0,
         totalHours: 0,
         earnedAmount: 0
@@ -345,30 +406,54 @@ const StartDay = () => {
         console.warn('Could not get location for end day:', locError);
       }
       
-      // Call the enhanced attendance API
-      const response = await api.post('/enhanced-attendance/end-day', {
-        latitude: locationData.latitude,
-        longitude: locationData.longitude,
-        address: locationData.address,
-        accuracy: locationData.accuracy
-      });
+      // Trigger desktop agent session end and buffer drain before finalizing workday (Milestone 3 - F13)
+      try {
+        await fetch('http://127.0.0.1:48120/session/end', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: 'Workday Ended' })
+        });
+      } catch (agentErr) {
+        // Desktop agent loopback server may be offline, ignore safely
+      }
 
-      if (response.data.success) {
-        const totalHours = response.data.data.totalHours || 0;
+      // Call attendance end day API
+      let response = null;
+      try {
+        response = await api.attendance.endDay(user.id, {
+          latitude: locationData.latitude,
+          longitude: locationData.longitude,
+          address: locationData.address,
+          accuracy: locationData.accuracy
+        });
+      } catch (attErr) {
+        response = await api.post('/enhanced-attendance/end-day', {
+          latitude: locationData.latitude,
+          longitude: locationData.longitude,
+          address: locationData.address,
+          accuracy: locationData.accuracy
+        });
+      }
+
+      const isSuccess = response?.success || response?.data?.success;
+      if (isSuccess) {
+        const resData = response?.data?.data || response?.data || response;
+        const totalHours = resData.hoursWorked || resData.totalHours || (resData.dailyReport?.totalAttendanceHours) || 0;
         
         // Update status
-        setTodayStatus({
-          ...todayStatus,
+        setTodayStatus(prev => ({
+          ...prev,
           hasEnded: true,
           canEndDay: false,
           status: 'Completed',
           endTime: new Date(),
           totalHours: totalHours,
-          earnedAmount: response.data.data.earnedAmount || 0,
-          message: `Day completed! You worked ${totalHours.toFixed(1)} hours today.`
-        });
+          monitoringStatus: 'Disconnected / Not Monitored',
+          earnedAmount: resData.earnedAmount || 0,
+          message: `Day completed! You worked ${Number(totalHours).toFixed(1)} hours today.`
+        }));
 
-        toast.success(`✅ Day ended successfully! You worked ${totalHours.toFixed(1)} hours.`, {
+        toast.success(`✅ Day ended successfully! You worked ${Number(totalHours).toFixed(1)} hours.`, {
           duration: 4000,
           style: {
             background: '#dcfce7',
@@ -575,15 +660,54 @@ const StartDay = () => {
                       </CardDescription>
                     </div>
                   </div>
-                  <Badge 
-                    className={`px-4 py-2 text-lg font-semibold bg-gradient-to-r ${getStatusColor(todayStatus?.status)} text-white border-0`}
-                  >
-                    {todayStatus?.status || 'Not Started'}
-                  </Badge>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge 
+                      className={`px-4 py-2 text-lg font-semibold bg-gradient-to-r ${getStatusColor(todayStatus?.status)} text-white border-0`}
+                    >
+                      {todayStatus?.status || 'Not Started'}
+                    </Badge>
+
+                    {todayStatus?.hasStarted && !todayStatus?.hasEnded && (
+                      <Badge
+                        variant="outline"
+                        className={`px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5 ${
+                          todayStatus.monitoringStatus === 'Active'
+                            ? 'border-emerald-500/50 bg-emerald-50 text-emerald-800'
+                            : 'border-amber-500/50 bg-amber-50 text-amber-900 shadow-sm'
+                        }`}
+                      >
+                        {todayStatus.monitoringStatus === 'Active' ? (
+                          <>
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                            <span>Monitoring: Active</span>
+                          </>
+                        ) : (
+                          <>
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                            <span>Disconnected / Not Monitored</span>
+                          </>
+                        )}
+                      </Badge>
+                    )}
+                  </div>
                 </div>
               </CardHeader>
 
               <CardContent className="space-y-6">
+                {/* Decoupled Monitoring Notice (Milestone 3 - F11) */}
+                {todayStatus?.hasStarted && !todayStatus?.hasEnded && todayStatus?.monitoringStatus === 'Disconnected / Not Monitored' && (
+                  <div className="p-3.5 rounded-xl border border-amber-300 bg-amber-50 text-amber-900 text-xs flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="space-y-0.5">
+                      <p className="font-semibold text-amber-900">
+                        Attendance Active • Desktop Telemetry Disconnected
+                      </p>
+                      <p className="text-amber-800 text-[11px] leading-relaxed">
+                        Your workday attendance continues to record accurately. The desktop monitoring agent is currently offline or unmonitored. Application metrics are paused until the Niyantran Desktop Agent is connected.
+                      </p>
+                    </div>
+                  </div>
+                )}
                 {/* Time Information */}
                 {todayStatus?.hasStarted && (
                   <motion.div
@@ -813,6 +937,23 @@ const StartDay = () => {
                   </div>
                   <Badge variant="outline" className="border-blue-300 text-blue-700">
                     {todayStatus?.status || 'Not Started'}
+                  </Badge>
+                </div>
+
+                <div className="flex items-center justify-between p-3 bg-gradient-to-r from-slate-50 to-slate-100 rounded-lg border border-slate-200">
+                  <div className="flex items-center space-x-2">
+                    <Activity className="w-5 h-5 text-indigo-600" />
+                    <span className="text-sm font-medium text-gray-700">Telemetry Status</span>
+                  </div>
+                  <Badge 
+                    variant="outline" 
+                    className={`text-xs font-medium ${
+                      todayStatus?.monitoringStatus === 'Active'
+                        ? 'border-emerald-400 text-emerald-700 bg-emerald-50'
+                        : 'border-amber-400 text-amber-800 bg-amber-50'
+                    }`}
+                  >
+                    {todayStatus?.monitoringStatus || 'Disconnected / Not Monitored'}
                   </Badge>
                 </div>
 

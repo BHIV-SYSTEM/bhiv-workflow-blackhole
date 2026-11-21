@@ -138,6 +138,60 @@ test('Contracts: validateTelemetrySample strictly rejects clipboard data', () =>
   assert.ok(result.errors.some((e) => e.includes("Forbidden field 'clipboard'")));
 });
 
+test('Contracts: validateTelemetrySample strictly rejects tabTitle', () => {
+  const invasiveSample = {
+    keyPressCount: 10,
+    mouseActivityDelta: 5,
+    hardwareIdleSeconds: 0,
+    tabTitle: 'Online Banking - Personal Account'
+  };
+  const result = validateTelemetrySample(invasiveSample);
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((e) => e.includes("Forbidden field 'tabTitle'")));
+});
+
+test('Contracts: validateTelemetrySample strictly rejects nested app titles, urls, paths, and titles', () => {
+  const sampleWithTitle = {
+    keyPressCount: 10,
+    mouseActivityDelta: 5,
+    hardwareIdleSeconds: 0,
+    apps: [{ name: 'Chrome', title: 'Secret Window' }]
+  };
+  assert.equal(validateTelemetrySample(sampleWithTitle).valid, false);
+
+  const sampleWithUrl = {
+    keyPressCount: 10,
+    mouseActivityDelta: 5,
+    hardwareIdleSeconds: 0,
+    apps: [{ name: 'Edge', url: 'https://secret.com' }]
+  };
+  assert.equal(validateTelemetrySample(sampleWithUrl).valid, false);
+
+  const sampleWithPath = {
+    keyPressCount: 10,
+    mouseActivityDelta: 5,
+    hardwareIdleSeconds: 0,
+    apps: [{ name: 'Notepad', path: 'C:\\passwords.txt' }]
+  };
+  assert.equal(validateTelemetrySample(sampleWithPath).valid, false);
+
+  const sampleWithTabTitle = {
+    keyPressCount: 10,
+    mouseActivityDelta: 5,
+    hardwareIdleSeconds: 0,
+    apps: [{ name: 'Chrome', tabTitle: 'Banking' }]
+  };
+  assert.equal(validateTelemetrySample(sampleWithTabTitle).valid, false);
+
+  const sampleWithWindowTitle = {
+    keyPressCount: 10,
+    mouseActivityDelta: 5,
+    hardwareIdleSeconds: 0,
+    apps: [{ name: 'Excel', windowTitle: 'Payroll' }]
+  };
+  assert.equal(validateTelemetrySample(sampleWithWindowTitle).valid, false);
+});
+
 test('Contracts: validateDeviceRegistration verifies valid device registration', () => {
   const validDev = {
     deviceName: 'Developer MacBook Pro',

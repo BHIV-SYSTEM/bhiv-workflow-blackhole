@@ -45,7 +45,7 @@ import {
   ShieldCheck,
   ShieldX,
 } from 'lucide-react';
-import { MOCK_DEPARTMENTS } from '../mocks/mockFleetData';
+import { DEPARTMENTS } from '../config/constants.js';
 
 const LOCAL_TABS = [
   { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
@@ -170,7 +170,7 @@ function AdminMonitoringV2Content() {
               onChange={(e) => setDepartmentFilter(e.target.value)}
               className="bg-transparent text-foreground focus:outline-none cursor-pointer text-xs"
             >
-              {MOCK_DEPARTMENTS.map((dept) => (
+              {DEPARTMENTS.map((dept) => (
                 <option key={dept} value={dept} className="bg-popover text-popover-foreground">
                   {dept}
                 </option>

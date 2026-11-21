@@ -11,6 +11,45 @@
 
 import http from 'node:http';
 import os from 'node:os';
+import { execSync, spawn } from 'node:child_process';
+import path from 'node:path';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Dynamic hardware detection with Acer Nitro laptop defaults
+let cachedHardware = null;
+function getHardwareInfo() {
+  if (cachedHardware) return cachedHardware;
+  let manufacturer = 'Acer';
+  let model = 'Nitro AN515-57';
+  let machineUuid = 'E77CA225-2515-EC11-80E1-088FC3199D36';
+
+  if (process.platform === 'win32') {
+    try {
+      const outMfr = execSync('reg query "HKLM\\HARDWARE\\DESCRIPTION\\System\\BIOS" /v SystemManufacturer', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] });
+      const mMfr = outMfr.match(/SystemManufacturer\s+REG_SZ\s+(.+)/);
+      if (mMfr && mMfr[1]) manufacturer = mMfr[1].trim();
+    } catch (_) {}
+
+    try {
+      const outMdl = execSync('reg query "HKLM\\HARDWARE\\DESCRIPTION\\System\\BIOS" /v SystemProductName', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] });
+      const mMdl = outMdl.match(/SystemProductName\s+REG_SZ\s+(.+)/);
+      if (mMdl && mMdl[1]) model = mMdl[1].trim();
+    } catch (_) {}
+
+    try {
+      const outUuid = execSync('powershell -NoProfile -Command "(Get-CimInstance Win32_ComputerSystemProduct).UUID"', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], timeout: 2000 });
+      const uuid = outUuid.trim();
+      if (uuid && uuid.length > 10) machineUuid = uuid;
+    } catch (_) {}
+  }
+
+  cachedHardware = { manufacturer, model, machineUuid };
+  return cachedHardware;
+}
 
 export const LOCAL_SERVER_PORT = 48120;
 
@@ -75,6 +114,11 @@ export class LocalAgentServer {
       return this._handleMiniWindow(res);
     }
 
+    // POST or GET /open (Foreground Agent or Mini-Window)
+    if ((req.method === 'POST' || req.method === 'GET') && url.pathname === '/open') {
+      return this._handleOpen(res);
+    }
+
     // POST /session/start
     if (req.method === 'POST' && url.pathname === '/session/start') {
       return this._handleSessionAction(req, res, 'START');
@@ -100,24 +144,58 @@ export class LocalAgentServer {
     res.end(JSON.stringify({ error: 'Endpoint not found', code: 'NOT_FOUND' }));
   }
 
+  _handleOpen(res) {
+    try {
+      if (this.agent?.trayManager?.bringToFront) {
+        this.agent.trayManager.bringToFront();
+      } else {
+        const helperPath = path.resolve(__dirname, '../../bin/NiyantranWin32Helper.exe');
+        if (process.platform === 'win32' && fs.existsSync(helperPath)) {
+          spawn(helperPath, ['open'], { detached: true, stdio: 'ignore' }).unref();
+        } else {
+          const miniUrl = `http://127.0.0.1:${this.port}/mini`;
+          if (process.platform === 'win32') {
+            spawn('cmd.exe', ['/c', 'start', miniUrl], { detached: true, stdio: 'ignore' }).unref();
+          }
+        }
+      }
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, message: 'Agent opened/foregrounded', port: this.port }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message, code: 'OPEN_FAILED' }));
+    }
+  }
+
   async _handleStatus(res) {
     let deviceId = 'UNPAIRED';
     try {
       deviceId = await this.agent?.secureStore?.getSecret('deviceId') || 'UNPAIRED';
     } catch (_) {}
 
-    const state = this.agent?.lifecycle?.currentState || 'IDLE_WAITING_AUTH';
+    const state = (typeof this.agent?.lifecycle?.getState === 'function'
+      ? this.agent.lifecycle.getState()
+      : (this.agent?.lifecycle?.state || this.agent?.lifecycle?.currentState)) || 'IDLE_WAITING_AUTH';
     const lastSample = this.agent?.win32Monitor?.lastSample || {};
+    const hw = (this.agent && this.agent.hardwareInfo) || getHardwareInfo();
+    const leaseExp = this.agent?.leaseManager?.leaseExpiresAt
+      ? new Date(this.agent.leaseManager.leaseExpiresAt).toISOString()
+      : null;
 
     const statusPayload = {
       service: 'niyantran-employee-agent-v2',
-      status: 'HEALTHY',
+      status: 'ok',
+      health: 'HEALTHY',
       installed: true,
       running: true,
       agentVersion: '2.0.0',
       platform: process.platform,
       hostname: os.hostname(),
       username: os.userInfo().username,
+      manufacturer: hw.manufacturer || 'Acer',
+      model: hw.model || 'Nitro AN515-57',
+      machineUuid: hw.machineUuid || hw.uuid || 'E77CA225-2515-EC11-80E1-088FC3199D36',
       deviceId,
       isEnrolled: deviceId !== 'UNPAIRED' && Boolean(deviceId),
       sessionState: state,
@@ -126,6 +204,7 @@ export class LocalAgentServer {
       currentCategory: lastSample.category || 'NEUTRAL',
       activeSeconds: lastSample.activeSeconds || 0,
       hardwareIdleSeconds: lastSample.idleSeconds || 0,
+      leaseExpiresAt: leaseExp,
       lastSyncTimestamp: new Date().toISOString(),
       privacyGuarantees: {
         screenshots: 'STRICTLY_PROHIBITED',
@@ -150,7 +229,14 @@ export class LocalAgentServer {
 
       try {
         if (action === 'START') {
-          const sessId = parsed.sessionId || `sess_local_${Date.now()}`;
+          if (!parsed.sessionId || typeof parsed.sessionId !== 'string' || !parsed.sessionId.trim()) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({
+              error: 'sessionId is required and must be a non-empty string',
+              code: 'INVALID_SESSION_ID'
+            }));
+          }
+          const sessId = parsed.sessionId.trim();
           await this.agent.startMonitoring(sessId);
         } else if (action === 'PAUSE') {
           this.agent.pauseMonitoring(parsed.reason || 'Manual Pause');
@@ -161,7 +247,10 @@ export class LocalAgentServer {
         }
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: true, action, state: this.agent?.lifecycle?.currentState }));
+        const currentState = (typeof this.agent?.lifecycle?.getState === 'function'
+          ? this.agent.lifecycle.getState()
+          : (this.agent?.lifecycle?.state || this.agent?.lifecycle?.currentState)) || 'IDLE_WAITING_AUTH';
+        res.end(JSON.stringify({ success: true, action, state: currentState }));
       } catch (err) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: err.message, code: 'ACTION_FAILED' }));

@@ -2,8 +2,6 @@ const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
 const EmployeeActivity = require('../models/EmployeeActivity');
-const KeystrokeLog = require('../models/KeystrokeLog');
-const { analyzeKeystrokeSegment } = require('../services/keystrokeQuality');
 
 /**
  * Shared gate for every agent telemetry ingest: monitoring must not be
@@ -228,122 +226,6 @@ router.post('/activity/ingest', auth, async (req, res) => {
       success: false,
       error: 'Failed to ingest activity data'
     });
-  }
-});
-
-/**
- * POST /api/agent/keystroke/ingest
- * Receive reconstructed typed text segments from the desktop agent.
- * Gated exactly like activity ingest: consent + active workday required.
- * Each segment is quality-classified (valuable vs key-mashing) server-side
- * so the verdict cannot be gamed by the agent.
- */
-const MAX_TEXT_LENGTH = 4000;
-const MAX_SEGMENTS_PER_BATCH = 25;
-
-router.post('/keystroke/ingest', auth, async (req, res) => {
-  try {
-    const { attendanceId, segments, activeApp, activeAppTitle, activeTaskId } = req.body;
-
-    if (!attendanceId) {
-      return res.status(400).json({ success: false, error: 'Attendance ID is required' });
-    }
-
-    const gateRejection = await monitoringGate(req);
-    if (gateRejection) {
-      return res.status(gateRejection.status).json(gateRejection.body);
-    }
-
-    const activeDay = await findActiveDay(req.user.id);
-    if (!activeDay) {
-      return res.status(403).json({
-        success: false,
-        error: 'Cannot accept keystroke data: workday not started',
-        code: 'DAY_NOT_ACTIVE',
-        hint: 'Employee must start their day first from the dashboard'
-      });
-    }
-
-    if (!Array.isArray(segments) || segments.length === 0) {
-      return res.status(400).json({ success: false, error: 'segments array is required' });
-    }
-
-    const docs = [];
-    for (const segment of segments.slice(0, MAX_SEGMENTS_PER_BATCH)) {
-      if (!segment || typeof segment !== 'object') continue;
-
-      const text = typeof segment.text === 'string'
-        ? segment.text.slice(0, MAX_TEXT_LENGTH)
-        : '';
-      const keyCount = Math.max(0, Number(segment.keyCount) || 0);
-      const backspaceCount = Math.max(0, Number(segment.backspaceCount) || 0);
-      const pasteCount = Math.max(0, Number(segment.pasteCount) || 0);
-      const charCount = text.replace(/\s+/g, '').length;
-
-      // Skip empty noise segments with no keys at all.
-      if (!text.trim() && keyCount === 0) continue;
-
-      const quality = analyzeKeystrokeSegment({
-        text,
-        keyCount,
-        backspaceCount,
-        pasteCount,
-        intervals: Array.isArray(segment.intervals) ? segment.intervals.slice(0, 500) : [],
-        timing: segment.timing
-      });
-
-      const durationMs = Math.max(0, Number(segment.durationMs) || 0);
-      const wordCount = (text.trim().match(/[\p{L}\p{N}_]+/gu) || []).length;
-      const wpm = durationMs > 0 && wordCount > 0
-        ? Math.round((wordCount / (durationMs / 60000)))
-        : 0;
-
-      docs.push({
-        employee: req.user.id,
-        session_id: String(attendanceId),
-        timestamp: segment.start ? new Date(segment.start) : new Date(),
-        text,
-        application_name: segment.activeApp || activeApp || 'Unknown',
-        window_title: segment.activeAppTitle || activeAppTitle || '',
-        task_id: activeTaskId ? String(activeTaskId) : undefined,
-        capture: {
-          key_count: keyCount,
-          backspace_count: backspaceCount,
-          paste_count: pasteCount,
-          char_count: charCount,
-          duration_ms: durationMs,
-          mean_interval_ms: quality.meanIntervalMs,
-          std_interval_ms: quality.stdIntervalMs
-        },
-        quality: {
-          classification: quality.classification,
-          score: quality.score,
-          word_score: quality.wordScore,
-          repetition_score: quality.repetitionScore,
-          correction_ratio: quality.correctionRatio,
-          reasons: quality.reasons
-        },
-        wpm: Math.max(0, Math.min(400, wpm))
-      });
-    }
-
-    if (docs.length > 0) {
-      await KeystrokeLog.insertMany(docs, { ordered: false });
-    }
-
-    console.log(`⌨️ Keystroke segments saved for user ${req.user.id}: ${docs.length}/${segments.length}`);
-
-    res.json({
-      success: true,
-      stored: docs.length,
-      classifications: docs.reduce((acc, d) => {
-        acc[d.quality.classification] = (acc[d.quality.classification] || 0) + 1;
-        return acc;
-      }, {})
-    });
-  } catch (error) {
-    console.error('Keystroke ingestion error:', error);
-    res.status(500).json({ success: false, error: 'Failed to ingest keystroke data' });
   }
 });
 

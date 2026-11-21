@@ -2,7 +2,7 @@ const axios = require('axios');
 
 async function testScreenshotAPI() {
   try {
-    const employeeId = '6884ca2ab6373ccd27d55317'; // John Doe
+    const employeeId = '6884ca2ab6373ccd27d55317'; // Sample User
     const date = '2025-07-26'; // Today's date
     
     console.log('🧪 Testing Screenshot API...');

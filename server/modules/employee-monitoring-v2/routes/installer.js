@@ -24,13 +24,15 @@ function getInstallerMeta() {
   if (fs.existsSync(chosenPath)) {
     const stats = fs.statSync(chosenPath);
     const fileBuffer = fs.readFileSync(chosenPath);
-    const sha256 = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+    const rawSha256 = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+    const sha256 = rawSha256.toUpperCase();
     const isExe = chosenPath.endsWith('.exe');
     return {
       available: true,
       fileName: isExe ? 'NiyantranMonitoringAgentV2-Setup.exe' : 'Niyantran-Agent-V2-Setup.zip',
       format: isExe ? 'exe' : 'zip',
       fileSize: stats.size,
+      sizeBytes: stats.size,
       sha256,
       version: '2.0.0',
       platform: 'win32-x64',
@@ -65,7 +67,14 @@ router.get('/info', (req, res) => {
 
 // GET /api/monitoring-v2/installer/download
 router.get('/download', v2Auth, (req, res) => {
-  const wantsZip = req.query.format === 'zip';
+  const format = req.query.format;
+  if (format && !['exe', 'zip'].includes(format.toLowerCase())) {
+    return res.status(400).json({
+      error: `Unsupported installer format '${format}'. Supported formats: exe, zip`,
+      code: 'UNSUPPORTED_FORMAT'
+    });
+  }
+  const wantsZip = format && format.toLowerCase() === 'zip';
   const targetPath = wantsZip || !fs.existsSync(EXE_INSTALLER_PATH) ? ZIP_INSTALLER_PATH : EXE_INSTALLER_PATH;
 
   if (!fs.existsSync(targetPath)) {

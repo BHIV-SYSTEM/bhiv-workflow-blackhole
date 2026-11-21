@@ -59,6 +59,10 @@ const aggregatedTelemetryV2Schema = new mongoose.Schema({
     max: 100,
     default: 50
   },
+  current_application: {
+    type: String,
+    default: null
+  },
   sync_type: {
     type: String,
     enum: ['REALTIME', 'OFFLINE_BUFFERED'],

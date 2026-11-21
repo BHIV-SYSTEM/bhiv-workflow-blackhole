@@ -67,7 +67,23 @@ router.get('/status', auth, async (req, res) => {
       ['active', 'paused'].includes(todayWorkSession.status)
     );
 
+    let activeV2Session = null;
+    try {
+      const MonitoringSessionV2 = require('../modules/employee-monitoring-v2/models/MonitoringSessionV2');
+      activeV2Session = await MonitoringSessionV2.findOne({
+        employee: userId,
+        state: 'ACTIVE',
+        lease_expires_at: { $gt: new Date() }
+      }).sort({ started_at: -1 }).lean();
+    } catch (v2Err) {
+      // Non-fatal if model not yet defined or lookup fails
+    }
+
+    const monitoringConsent = Boolean(attendance?.monitoringConsent || todayAttendance?.monitoringConsent);
+    const activeSessionId = activeV2Session ? activeV2Session.session_id : null;
+
     if (attendanceOpen) {
+      const monitoringStatus = (monitoringConsent && activeV2Session) ? 'Active' : 'Disconnected / Not Monitored';
       return res.json({
         dayStarted: true,
         dayEndedToday: false,
@@ -77,11 +93,15 @@ router.get('/status', auth, async (req, res) => {
         workLocation: attendance.workLocationType || 'Unknown',
         location: attendance.startDayLocation || attendance.location,
         userName: realName,
-        userEmail: realEmail
+        userEmail: realEmail,
+        monitoringConsent,
+        monitoringStatus,
+        activeSessionId
       });
     }
 
     if (workSessionOpen && !(todayAttendance && (todayAttendance.endDayTime || todayAttendance.endTime))) {
+      const monitoringStatus = (monitoringConsent && activeV2Session) ? 'Active' : 'Disconnected / Not Monitored';
       return res.json({
         dayStarted: true,
         dayEndedToday: false,
@@ -90,7 +110,10 @@ router.get('/status', auth, async (req, res) => {
         attendanceId: String(todayWorkSession._id),
         workLocation: todayWorkSession.workLocation || 'Office',
         userName: realName,
-        userEmail: realEmail
+        userEmail: realEmail,
+        monitoringConsent,
+        monitoringStatus,
+        activeSessionId
       });
     }
 
@@ -107,7 +130,10 @@ router.get('/status', auth, async (req, res) => {
       attendanceId: null,
       workLocation: null,
       userName: realName,
-      userEmail: realEmail
+      userEmail: realEmail,
+      monitoringConsent: false,
+      monitoringStatus: 'Disconnected / Not Monitored',
+      activeSessionId: null
     });
   } catch (error) {
     console.error('❌ Attendance status check error:', error);

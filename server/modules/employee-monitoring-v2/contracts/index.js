@@ -41,7 +41,8 @@ function validateSessionStart(payload) {
 
 /**
  * Validates an aggregated telemetry batch sample.
- * Ensures strict BYOD privacy: rejects any sample containing raw text or image fields.
+ * Ensures strict BYOD privacy: rejects any sample containing raw text, image, URL,
+ * window/tab titles, or nested app tracking metadata (title, url, path).
  */
 function validateTelemetrySample(sample) {
   const errors = [];
@@ -49,21 +50,42 @@ function validateTelemetrySample(sample) {
     return { valid: false, errors: ['Sample must be an object'] };
   }
 
-  // Anti-Surveillance Gate: Strictly reject forbidden fields
-  const forbiddenFields = ['text', 'keystrokes', 'screenshot', 'image', 'base64', 'clipboard', 'url', 'windowTitle'];
+  // Anti-Surveillance Gate: Strictly reject forbidden top-level fields
+  const forbiddenFields = ['text', 'keystrokes', 'screenshot', 'image', 'base64', 'clipboard', 'url', 'windowTitle', 'tabTitle'];
   for (const field of forbiddenFields) {
-    if (Object.prototype.hasOwnProperty.call(sample, field)) {
+    if (Object.prototype.hasOwnProperty.call(sample, field) || (sample[field] !== undefined && sample[field] !== null)) {
       errors.push(`CRITICAL PRIVACY VIOLATION: Forbidden field '${field}' detected in telemetry payload`);
     }
   }
 
-  if (typeof sample.keyPressCount !== 'number' || sample.keyPressCount < 0) {
+  // Anti-Surveillance Gate: Inspect nested app records in sample.apps
+  if (Object.prototype.hasOwnProperty.call(sample, 'apps')) {
+    if (!Array.isArray(sample.apps)) {
+      errors.push('apps must be an array of application records');
+    } else {
+      const forbiddenAppFields = ['title', 'url', 'path', 'windowTitle', 'tabTitle'];
+      for (let i = 0; i < sample.apps.length; i++) {
+        const app = sample.apps[i];
+        if (!app || typeof app !== 'object') {
+          errors.push(`apps[${i}] must be an object`);
+          continue;
+        }
+        for (const f of forbiddenAppFields) {
+          if (Object.prototype.hasOwnProperty.call(app, f) || (app[f] !== undefined && app[f] !== null)) {
+            errors.push(`CRITICAL PRIVACY VIOLATION: App record contains forbidden field '${f}'`);
+          }
+        }
+      }
+    }
+  }
+
+  if (typeof sample.keyPressCount !== 'number' || !Number.isFinite(sample.keyPressCount) || sample.keyPressCount < 0) {
     errors.push('keyPressCount must be a non-negative integer');
   }
-  if (typeof sample.mouseActivityDelta !== 'number' || sample.mouseActivityDelta < 0) {
+  if (typeof sample.mouseActivityDelta !== 'number' || !Number.isFinite(sample.mouseActivityDelta) || sample.mouseActivityDelta < 0) {
     errors.push('mouseActivityDelta must be a non-negative number');
   }
-  if (typeof sample.hardwareIdleSeconds !== 'number' || sample.hardwareIdleSeconds < 0) {
+  if (typeof sample.hardwareIdleSeconds !== 'number' || !Number.isFinite(sample.hardwareIdleSeconds) || sample.hardwareIdleSeconds < 0) {
     errors.push('hardwareIdleSeconds must be a non-negative number');
   }
   if (sample.activeProcessCategory && !Object.values(CATEGORIES).includes(sample.activeProcessCategory)) {

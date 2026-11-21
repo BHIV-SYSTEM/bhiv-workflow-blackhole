@@ -79,16 +79,7 @@ const EnhancedSalaryCalculation = () => {
   };
 
   const generateMockSalaryCalculations = () => {
-    const employees = [
-      { id: 1, name: 'John Doe', email: 'john@company.com', department: 'Engineering', type: 'Employee' },
-      { id: 2, name: 'Jane Smith', email: 'jane@company.com', department: 'Marketing', type: 'Employee' },
-      { id: 3, name: 'Mike Johnson', email: 'mike@company.com', department: 'Engineering', type: 'Intern' },
-      { id: 4, name: 'Sarah Wilson', email: 'sarah@company.com', department: 'HR', type: 'Employee' },
-      { id: 5, name: 'David Brown', email: 'david@company.com', department: 'Finance', type: 'Employee' },
-      { id: 6, name: 'Lisa Davis', email: 'lisa@company.com', department: 'Engineering', type: 'Contractor' },
-      { id: 7, name: 'Tom Wilson', email: 'tom@company.com', department: 'Marketing', type: 'Employee' },
-      { id: 8, name: 'Anna Garcia', email: 'anna@company.com', department: 'HR', type: 'Intern' },
-    ];
+    const employees = [];
 
     const calculations = employees.map(emp => {
       const workingDays = 26;
@@ -191,8 +182,8 @@ const EnhancedSalaryCalculation = () => {
       totalEmployees: calculations.length,
       successfulCalculations: calculations.length,
       totalPayroll: calculations.reduce((sum, calc) => sum + calc.salary.netSalary, 0),
-      averageSalary: calculations.reduce((sum, calc) => sum + calc.salary.netSalary, 0) / calculations.length,
-      averageAttendance: calculations.reduce((sum, calc) => sum + calc.attendance.attendanceRate, 0) / calculations.length,
+      averageSalary: calculations.length > 0 ? calculations.reduce((sum, calc) => sum + calc.salary.netSalary, 0) / calculations.length : 0,
+      averageAttendance: calculations.length > 0 ? calculations.reduce((sum, calc) => sum + calc.attendance.attendanceRate, 0) / calculations.length : 0,
       totalBonuses: calculations.reduce((sum, calc) => sum + calc.adjustments.totalBonuses, 0),
       totalDeductions: calculations.reduce((sum, calc) => sum + calc.adjustments.totalDeductions, 0),
       highPerformers: calculations.filter(calc => calc.attendance.attendanceRate >= 95).length,

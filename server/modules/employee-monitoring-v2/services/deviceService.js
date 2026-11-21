@@ -83,7 +83,7 @@ function generateEnrollmentCode(employeeId, meta = {}) {
  * Pairs a device using a valid one-time pairing code.
  * Issues deviceId and random 64-char hex deviceKey.
  */
-async function pairDevice({ pairingCode, deviceName, platform, osVersion, agentVersion, ip, userAgent }) {
+async function pairDevice({ pairingCode, deviceName, platform, osVersion, agentVersion, manufacturer, model, machineUuid, ip, userAgent }) {
   cleanupExpiredCodes();
   if (!pairingCode || typeof pairingCode !== 'string') {
     const error = new Error('Pairing code is required');
@@ -142,7 +142,10 @@ async function pairDevice({ pairingCode, deviceName, platform, osVersion, agentV
     device_id: deviceId,
     employee: employeeId,
     device_name: deviceName.trim(),
-    platform: platform.toLowerCase(),
+    platform: platform ? platform.toLowerCase() : 'windows',
+    manufacturer: manufacturer ? manufacturer.trim() : 'Acer',
+    model: model ? model.trim() : 'Nitro AN515-57',
+    machine_uuid: machineUuid ? String(machineUuid).trim() : null,
     os_version: osVersion || 'Unknown OS',
     agent_version: agentVersion || '2.0.0',
     device_token_hash: deviceTokenHash,
@@ -169,7 +172,10 @@ async function pairDevice({ pairingCode, deviceName, platform, osVersion, agentV
       deviceName,
       platform,
       osVersion,
-      agentVersion
+      agentVersion,
+      manufacturer: newDevice.manufacturer,
+      model: newDevice.model,
+      machineUuid: newDevice.machine_uuid
     }
   });
 
@@ -178,6 +184,9 @@ async function pairDevice({ pairingCode, deviceName, platform, osVersion, agentV
     deviceKey,
     deviceName: newDevice.device_name,
     platform: newDevice.platform,
+    manufacturer: newDevice.manufacturer,
+    model: newDevice.model,
+    machineUuid: newDevice.machine_uuid,
     status: newDevice.status,
     registeredAt: newDevice.createdAt
   };

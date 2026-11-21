@@ -154,45 +154,11 @@ class ActivityTracker {
   }
 
   /**
-   * Legacy application change handling (for backward compatibility)
+   * Legacy application change handling (DEPRECATED & EXCISED under V2 privacy boundaries)
    */
   async handleLegacyApplicationChange(employeeId, applicationData, session) {
-    // Check if website is whitelisted
-    if (applicationData.url) {
-      const whitelistCheck = await WebsiteWhitelist.isWhitelisted(
-        applicationData.url,
-        employeeId
-      );
-
-      if (!whitelistCheck.allowed) {
-        // Create alert for unauthorized website
-        await MonitoringAlert.createAlert({
-          employee: employeeId,
-          alert_type: 'unauthorized_website',
-          severity: 'medium',
-          title: 'Unauthorized Website Access',
-          description: `Employee accessed non-whitelisted website: ${applicationData.url}`,
-          data: {
-            website_url: applicationData.url,
-            application_name: applicationData.name,
-            activity_data: applicationData
-          },
-          session_id: session.sessionId
-        });
-
-        // Trigger immediate screenshot
-        await screenCaptureService.triggerCapture(
-          employeeId,
-          session.sessionId,
-          'unauthorized_site',
-          {
-            active_application: applicationData,
-            is_flagged: true,
-            flag_reason: 'unauthorized_website'
-          }
-        );
-      }
-    }
+    // URL tracking, website whitelists, and screen captures are permanently eradicated.
+    return;
   }
 
   /**

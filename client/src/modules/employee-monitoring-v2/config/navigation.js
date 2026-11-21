@@ -41,6 +41,7 @@ export const ADMIN_NAV_SECTIONS = [
 ];
 
 export const EMPLOYEE_NAV_ITEMS = [
+  { id: 'agent', label: 'Desktop Agent', icon: 'Download', path: '/monitoring-v2/employee/agent' },
   { id: 'work-session', label: 'Work Session', icon: 'Timer', path: '/monitoring-v2/employee/session' },
   { id: 'my-devices', label: 'My Devices', icon: 'Laptop', path: '/monitoring-v2/employee/devices' },
   { id: 'privacy', label: 'Privacy Transparency', icon: 'ShieldCheck', path: '/monitoring-v2/employee/privacy' },

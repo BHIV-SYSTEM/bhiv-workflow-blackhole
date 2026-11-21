@@ -78,6 +78,22 @@ const attendanceSchema = new mongoose.Schema({
     default: 0, // in minutes
     min: 0
   },
+  // Workday & Monitoring Lifecycle (Milestone 3 - F10, F11)
+  monitoringConsent: {
+    type: Boolean,
+    default: false,
+    index: true
+  },
+  monitoringStatus: {
+    type: String,
+    enum: ['Active', 'Disconnected / Not Monitored'],
+    default: 'Disconnected / Not Monitored',
+    index: true
+  },
+  activeSessionId: {
+    type: String,
+    default: null
+  },
   // Branch - Office location for this attendance
   branch: {
     type: String,

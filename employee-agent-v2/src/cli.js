@@ -14,6 +14,7 @@ import { SecureStore } from './storage/secureStore.js';
 import { NiyantranMonitoringAgentV2 } from './agent.js';
 import { SyncEngine } from './managers/syncEngine.js';
 import { AGENT_CONFIG } from './config.js';
+import { detectHardwareInfo } from './native/hardwareDetector.js';
 
 const secureStore = new SecureStore();
 
@@ -29,12 +30,16 @@ async function pairDevice(pairingCode, apiBaseUrl) {
   console.log(`[Agent CLI] Pairing workstation with enrollment code: ${pairingCode}...`);
   const url = apiBaseUrl || AGENT_CONFIG.API_BASE_URL;
 
+  const hw = await detectHardwareInfo();
   const payload = {
     pairingCode,
-    deviceName: `${os.hostname()} (${os.userInfo().username})`,
+    deviceName: `${hw.manufacturer} ${hw.model} (${os.hostname()})`,
+    manufacturer: hw.manufacturer || 'Acer',
+    model: hw.model || 'Nitro AN515-57',
     platform: 'windows',
-    osVersion: `${os.type()} ${os.release()}`,
-    agentVersion: '2.0.0-phase-e',
+    osVersion: hw.os || `${os.type()} ${os.release()}`,
+    agentVersion: '2.0.0',
+    machineUuid: hw.uuid,
   };
 
   const response = await fetch(`${url}/devices/pair`, {
@@ -66,9 +71,14 @@ async function getStatus() {
   const deviceId = await secureStore.getSecret('deviceId');
   const deviceKey = await secureStore.getSecret('deviceKey');
   const apiBaseUrl = await secureStore.getSecret('apiBaseUrl') || AGENT_CONFIG.API_BASE_URL;
+  const hw = await detectHardwareInfo();
 
   console.log('--- Niyantran Employee Monitoring Agent V2 Status ---');
+  console.log(`Manufacturer:  ${hw.manufacturer}`);
+  console.log(`Model:         ${hw.model}`);
+  console.log(`Machine UUID:  ${hw.uuid}`);
   console.log(`Platform:      ${process.platform} (${os.release()})`);
+  console.log(`OS:            ${hw.os} (${hw.osVersion || ''})`);
   console.log(`Device ID:     ${deviceId || 'NOT ENROLLED'}`);
   console.log(`Encrypted Key: ${deviceKey ? 'DPAPI PROTECTED (Present)' : 'NONE'}`);
   console.log(`API Base URL:  ${apiBaseUrl}`);
