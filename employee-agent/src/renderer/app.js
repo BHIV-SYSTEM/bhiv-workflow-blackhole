@@ -24,6 +24,16 @@ let dailySummaryState = {
 let cachedTasks = [];
 
 /**
+ * Backend task payloads use `id`; local/aim payloads use `_id`.
+ * Normalise so task selectors never end up with an "undefined" value.
+ */
+function getTaskId(task) {
+  if (!task) return null;
+  const id = task._id || task.id || task.task_id || null;
+  return id && id !== 'undefined' && id !== 'null' ? String(id) : null;
+}
+
+/**
  * Initialize application on DOM load
  */
 async function init() {
@@ -539,7 +549,7 @@ async function openQuickProgressCard() {
   } else {
     cachedTasks.forEach((task) => {
       const opt = document.createElement('option');
-      opt.value = task._id;
+      opt.value = getTaskId(task) || '';
       opt.textContent = task.title || 'Untitled Task';
       select.appendChild(opt);
     });
@@ -565,15 +575,15 @@ function hideQuickProgressCard() {
  */
 async function handleSaveProgressAndEndDay() {
   const saveBtn = document.getElementById('saveProgressEndBtn');
-  let taskId = document.getElementById('progressTaskSelect')?.value;
+  let taskId = getTaskId({ id: document.getElementById('progressTaskSelect')?.value });
   const pct = document.getElementById('progressPercent')?.value || '75';
   const notes = document.getElementById('progressNotes')?.value?.trim() || '';
 
-  if (!taskId || taskId === 'undefined' || taskId === 'null') {
+  if (!taskId && cachedTasks.length > 0) {
     // Fall back to the first cached task if the dropdown value is unusable
-    if (cachedTasks.length > 0) taskId = cachedTasks[0]._id;
+    taskId = getTaskId(cachedTasks[0]);
   }
-  if (!taskId || taskId === 'undefined' || taskId === 'null') {
+  if (!taskId) {
     showDashboardAlert('error', 'No assigned task available here. Please submit daily progress from the web Progress tab.');
     return;
   }
@@ -583,8 +593,10 @@ async function handleSaveProgressAndEndDay() {
     return;
   }
 
-  saveBtn.disabled = true;
-  saveBtn.textContent = 'Saving...';
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+  }
 
   try {
     const progRes = await window.electronAPI.submitProgress({
@@ -600,11 +612,14 @@ async function handleSaveProgressAndEndDay() {
     }
 
     hideQuickProgressCard();
-    document.getElementById('progressNotes').value = '';
+    const notesEl = document.getElementById('progressNotes');
+    if (notesEl) notesEl.value = '';
     await handleEndDayClick();
   } finally {
-    saveBtn.disabled = false;
-    saveBtn.textContent = 'Save Progress & End Day';
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save Progress & End Day';
+    }
   }
 }
 
@@ -691,7 +706,7 @@ function renderTasks(tasks) {
 
   cachedTasks.forEach((task) => {
     const opt = document.createElement('option');
-    opt.value = task._id;
+    opt.value = getTaskId(task) || '';
     opt.textContent = task.status ? `${task.title} (${task.status})` : task.title;
     select.appendChild(opt);
   });

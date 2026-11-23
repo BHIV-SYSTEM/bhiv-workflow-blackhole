@@ -46,14 +46,26 @@ function EmployeeMonitoringV2Content() {
   const [activeTab, setActiveTab] = useState('session');
   const [v1Active, setV1Active] = useState(false);
   useEffect(() => {
+    const token = localStorage.getItem('WorkflowToken') || localStorage.getItem('token');
+    // VITE_API_URL already ends with /api (e.g. http://localhost:5000/api)
+    const base = (import.meta.env.VITE_API_URL || '').replace(/\/api\/?$/, '');
     const check = async () => {
+      if (!token) { setV1Active(false); return; }
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/attendance/status`, { headers: { Authorization: `Bearer ${localStorage.getItem('WorkflowToken') || localStorage.getItem('token')}` } });
-        if (res.ok) { const d = await res.json(); setV1Active(!!d.dayStarted); }
+        const res = await fetch(`${base}/api/attendance/status`, {
+          headers: { 'x-auth-token': token, Authorization: `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const d = await res.json();
+          // Day counts as active only while it is started and not yet ended.
+          setV1Active(!!d.dayStarted && !d.dayEndedToday);
+        } else {
+          setV1Active(false);
+        }
       } catch (_) { setV1Active(false); }
     };
     check();
-    const t = setInterval(check, 30000);
+    const t = setInterval(check, 15000);
     return () => clearInterval(t);
   }, []);
 
