@@ -148,7 +148,8 @@ async function resolveLocation() {
       latitude: loc.latitude,
       longitude: loc.longitude,
       accuracy: loc.accuracy,
-      address: address || 'Unknown location',
+      // Empty address makes the server reverse geocode the coordinates.
+      address: address || '',
       source: loc.source,
     };
     cached = result;
