@@ -24,6 +24,13 @@ let dailySummaryState = {
 let cachedTasks = [];
 
 /**
+ * End Day is gated behind a daily progress submission. The flag is set only
+ * after a progress update is successfully saved for the current work day, so
+ * an employee can never close the day without recording progress.
+ */
+let endDayProgressConfirmed = false;
+
+/**
  * Backend task payloads use `id`; local/aim payloads use `_id`.
  * Normalise so task selectors never end up with an "undefined" value.
  */
@@ -406,6 +413,7 @@ function setupEventListeners() {
       const result = await window.electronAPI.startDay();
 
       if (result.success) {
+        endDayProgressConfirmed = false;
         dailySummaryState.baseActiveSeconds = 0;
         dailySummaryState.syncedAtMs = Date.now();
         dailySummaryState.latestSummary = null;
@@ -495,6 +503,17 @@ async function handleEndDayClick() {
   if (!endDayBtn) return;
 
   hideDashboardAlert();
+
+  // Hard gate: progress must be recorded for today before the day may close.
+  if (!endDayProgressConfirmed) {
+    showDashboardAlert(
+      'warning',
+      'Daily progress is required to end the day. Submit the quick update below — your day cannot be closed without it.'
+    );
+    await openQuickProgressCard();
+    return;
+  }
+
   endDayBtn.disabled = true;
   const originalHtml = endDayBtn.innerHTML;
   endDayBtn.textContent = 'Ending Day...';
@@ -511,6 +530,8 @@ async function handleEndDayClick() {
       await refreshDailySummary();
       showDashboardAlert('success', result.message || 'Work day ended cleanly. Great work today!');
     } else if (result.code === 'PROGRESS_NOT_SET') {
+      // Server still refuses: drop the local confirmation and force progress again.
+      endDayProgressConfirmed = false;
       showDashboardAlert(
         'warning',
         'Daily progress update is required before ending your day. Fill out the quick update below or update it on the web Progress tab.'
@@ -611,6 +632,8 @@ async function handleSaveProgressAndEndDay() {
       return;
     }
 
+    // Progress is on record for today -> the End Day gate may now open.
+    endDayProgressConfirmed = true;
     hideQuickProgressCard();
     const notesEl = document.getElementById('progressNotes');
     if (notesEl) notesEl.value = '';
