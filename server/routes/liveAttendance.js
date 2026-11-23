@@ -142,16 +142,13 @@ router.post('/start/:userId', auth, async (req, res) => {
       });
     }
     
-    // Validate location data
-    if (!latitude || !longitude) {
-      return res.status(400).json({
-        success: false,
-        error: 'ValidationError',
-        message: 'Latitude and longitude are required',
-        code: 'LOCATION_REQUIRED'
-      });
-    }
-    
+    // Location is optional: enabling live tracking must never fabricate a
+    // position for the employee. Only geofence when a real fix is supplied.
+    const hasLocation =
+      Number.isFinite(parseFloat(latitude)) && Number.isFinite(parseFloat(longitude));
+    let distanceFromOffice;
+    let insideGeofence;
+
     // Get or create today's attendance record
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -184,16 +181,6 @@ router.post('/start/:userId', auth, async (req, res) => {
       });
     }
     
-    // Calculate distance from office
-    const distanceFromOffice = calculateDistance(
-      latitude,
-      longitude,
-      OFFICE_COORDINATES.latitude,
-      OFFICE_COORDINATES.longitude
-    );
-    
-    const insideGeofence = distanceFromOffice <= OFFICE_RADIUS;
-    
     // Get client IP
     const clientIP = req.headers['x-forwarded-for'] || 
                      req.connection.remoteAddress || 
@@ -208,19 +195,31 @@ router.post('/start/:userId', auth, async (req, res) => {
       status: 'Active'
     };
     
-    // Add initial location to history
-    attendance.locationHistory.push({
-      latitude,
-      longitude,
-      accuracy,
-      timestamp: new Date(),
-      insideGeofence,
-      distanceFromOffice,
-      deviceInfo: {
-        ipAddress: clientIP,
-        deviceId: deviceId || deviceFingerprint
-      }
-    });
+    if (hasLocation) {
+      // Calculate distance from office
+      distanceFromOffice = calculateDistance(
+        latitude,
+        longitude,
+        OFFICE_COORDINATES.latitude,
+        OFFICE_COORDINATES.longitude
+      );
+
+      insideGeofence = distanceFromOffice <= OFFICE_RADIUS;
+
+      // Add initial location to history (only when a genuine fix was supplied)
+      attendance.locationHistory.push({
+        latitude,
+        longitude,
+        accuracy,
+        timestamp: new Date(),
+        insideGeofence,
+        distanceFromOffice,
+        deviceInfo: {
+          ipAddress: clientIP,
+          deviceId: deviceId || deviceFingerprint
+        }
+      });
+    }
     
     // Update device info
     attendance.deviceInfo = {

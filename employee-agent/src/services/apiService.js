@@ -163,9 +163,8 @@ class ApiService {
       const locationData = {
         latitude: location.latitude,
         longitude: location.longitude,
-        address: atOffice ? 'Blackhole Infiverse LLP Office' : location.address,
+        address: location.address,
         accuracy: location.accuracy,
-        monitoringConsent: true,
         deviceInfo: { deviceType: 'desktop', userAgent: 'Niyantran Desktop Agent' }
       };
       if (atOffice) {
