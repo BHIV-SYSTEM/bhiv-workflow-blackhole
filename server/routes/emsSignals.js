@@ -83,6 +83,8 @@ router.post('/signals', async (req, res) => {
       });
     }
 
+    const types = [...new Set(signals.map((s) => s?.type).filter(Boolean))];
+
     // Process each signal
     let processed = 0;
     for (const signal of signals) {

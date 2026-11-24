@@ -1,23 +1,32 @@
 /**
  * TRINETRA Screenshot Engine (Electron main process)
  *
- * Periodic, low-impact screen capture with client-side deduplication.
+ * PRIVACY OVERRIDE — SCREENSHOTS ARE PERMANENTLY DISABLED.
+ * Screen capture (periodic, manual and per-window) never runs: the flag
+ * below short-circuits start()/captureOnce() before desktopCapturer is
+ * ever touched, so no frame can leave this machine. Activity duration
+ * monitoring ("Second Eye": who is doing what, for how long) keeps
+ * running through the activity tracker and is unaffected.
  *
- * Design:
+ * Original design (retained for reference):
+ *  - Periodic, low-impact screen capture with client-side deduplication.
  *  - Uses Electron's built-in `desktopCapturer` (no new native dependency).
- *  - Computes a 64-bit dHash from the captured frame and skips the upload when the
- *    screen is perceptually unchanged, so a static editor does not burn storage.
- *  - Compresses to JPEG and steps quality down until the payload fits the policy
- *    limit supplied by the backend (`/api/trinetra/agent/config`).
- *  - Never captures while the workday is closed, while monitoring is paused, while
- *    the user is idle (unless policy allows it), or when the focused window matches
- *    a blocked title pattern.
- *  - Polls policy from the backend so cadence/mode/masking is managed centrally.
+ *  - Computes a 64-bit dHash from the captured frame and skips the upload
+ *    when the screen is perceptually unchanged.
+ *  - Never captures while the workday is closed, while monitoring is
+ *    paused, while the user is idle (unless policy allows it), or when
+ *    the focused window matches a blocked title pattern.
+ *  - Polls policy from the backend so cadence/mode/masking is managed
+ *    centrally.
  */
 
 const { EventEmitter } = require('events');
 const { desktopCapturer, powerMonitor } = require('electron');
 const activeAppWatcher = require('../utils/activeAppWatcher');
+
+// ── Privacy master switch ────────────────────────────────────────────────────
+// Flip to true ONLY if screenshots are ever deliberately re-enabled.
+const SCREENSHOTS_DISABLED = true;
 
 const DEFAULT_POLICY = {
   periodic_enabled: false,
@@ -71,6 +80,16 @@ class ScreenshotEngine extends EventEmitter {
    * @param {string} attendanceId - open attendance record for the current workday
    */
   async start(attendanceId) {
+    if (SCREENSHOTS_DISABLED) {
+      // Privacy override: never arm a capture timer, never fetch policy,
+      // never touch desktopCapturer.
+      this.isRunning = false;
+      this.attendanceId = attendanceId || null;
+      console.log('🚫 Screenshot capture disabled by privacy policy (no screen capture)');
+      this.emit('status', this.getStatus());
+      return;
+    }
+
     if (this.isRunning) {
       this.attendanceId = attendanceId || this.attendanceId;
       return;
@@ -341,6 +360,9 @@ class ScreenshotEngine extends EventEmitter {
   }
 
   async captureOnce(trigger = 'scheduled') {
+    if (SCREENSHOTS_DISABLED) {
+      return { captured: false, reason: 'screenshots_disabled' };
+    }
     if (!this.isRunning || this.capturing) {
       return { captured: false, reason: 'not_running' };
     }
@@ -488,6 +510,7 @@ class ScreenshotEngine extends EventEmitter {
 
   getStatus() {
     return {
+      disabled: SCREENSHOTS_DISABLED,
       running: this.isRunning,
       mode: this.policy.mode,
       periodic_enabled: this.policy.periodic_enabled,

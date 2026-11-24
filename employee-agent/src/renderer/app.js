@@ -599,6 +599,8 @@ async function handleSaveProgressAndEndDay() {
   let taskId = getTaskId({ id: document.getElementById('progressTaskSelect')?.value });
   const pct = document.getElementById('progressPercent')?.value || '75';
   const notes = document.getElementById('progressNotes')?.value?.trim() || '';
+  const achievements = document.getElementById('progressAchievements')?.value?.trim() || '';
+  const blockers = document.getElementById('progressBlockers')?.value?.trim() || '';
 
   if (!taskId && cachedTasks.length > 0) {
     // Fall back to the first cached task if the dropdown value is unusable
@@ -611,6 +613,17 @@ async function handleSaveProgressAndEndDay() {
 
   if (!notes) {
     showDashboardAlert('warning', 'Please enter a brief note describing today’s work.');
+    document.getElementById('progressNotes')?.focus();
+    return;
+  }
+  if (!achievements) {
+    showDashboardAlert('warning', 'Please list your key achievements for today.');
+    document.getElementById('progressAchievements')?.focus();
+    return;
+  }
+  if (!blockers) {
+    showDashboardAlert('warning', 'Please record today’s blockers — enter “None” if there were none.');
+    document.getElementById('progressBlockers')?.focus();
     return;
   }
 
@@ -624,7 +637,8 @@ async function handleSaveProgressAndEndDay() {
       taskId,
       progressPercentage: Number(pct),
       notes,
-      achievements: notes
+      achievements,
+      blockers
     });
 
     if (!progRes || !progRes.success) {
@@ -635,8 +649,10 @@ async function handleSaveProgressAndEndDay() {
     // Progress is on record for today -> the End Day gate may now open.
     endDayProgressConfirmed = true;
     hideQuickProgressCard();
-    const notesEl = document.getElementById('progressNotes');
-    if (notesEl) notesEl.value = '';
+    ['progressNotes', 'progressAchievements', 'progressBlockers'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
     await handleEndDayClick();
   } finally {
     if (saveBtn) {
@@ -745,6 +761,13 @@ function updateCaptureStatus(status) {
   const text = document.getElementById('captureStatus');
   const next = document.getElementById('captureNext');
   if (!dot || !text || !next) return;
+
+  if (status.disabled) {
+    dot.className = 'capture-dot';
+    text.textContent = 'Capture: disabled (privacy)';
+    next.textContent = '';
+    return;
+  }
 
   if (!status || !status.running) {
     dot.className = 'capture-dot';

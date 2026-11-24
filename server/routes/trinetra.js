@@ -373,6 +373,12 @@ router.put('/config', auth, requireAdmin, async (req, res) => {
 });
 
 // GET /api/trinetra/agent/config — capture policy for the desktop agent.
+//
+// PRIVACY: screenshots are permanently disabled. The policy is forced off
+// here (not only in the agent) so ANY already-installed agent build stops
+// capturing on its next 5-minute policy poll: `allowed:false` makes older
+// builds stop their capture engine outright, and the cadence flags being
+// false stop scheduled ticks on builds that only honour them.
 router.get('/agent/config', auth, async (req, res) => {
   try {
     const settings = await TrinetraConfig.getSettings();
@@ -382,20 +388,19 @@ router.get('/agent/config', auth, async (req, res) => {
 
     res.json({
       success: true,
-      allowed: gate.allowed,
-      reason: gate.reason || null,
+      allowed: false,
+      reason: 'SCREENSHOTS_DISABLED',
       day_active: !!openDay,
       capture: {
-        // The agent only captures on its own when the mode explicitly includes periodic.
-        periodic_enabled: screenshot.mode === 'periodic' || screenshot.mode === 'both',
-        mode: screenshot.mode,
+        periodic_enabled: false,
+        mode: 'off',
         interval_minutes: screenshot.interval_minutes,
         jitter_minutes: screenshot.jitter_minutes,
         dedupe_distance: screenshot.dedupe_distance,
         max_per_hour: screenshot.max_per_hour,
-        capture_when_idle: screenshot.capture_when_idle,
-        capture_windows: screenshot.capture_windows === true,
-        max_windows_per_capture: screenshot.max_windows_per_capture || 5,
+        capture_when_idle: false,
+        capture_windows: false,
+        max_windows_per_capture: 0,
         jpeg_quality: screenshot.jpeg_quality,
         max_upload_bytes: screenshot.max_upload_bytes,
         blocked_title_patterns: screenshot.blocked_title_patterns || []

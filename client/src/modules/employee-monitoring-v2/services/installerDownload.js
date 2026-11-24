@@ -13,7 +13,8 @@ export async function downloadAgentInstaller(format = 'exe') {
     throw new Error('Authentication required: Please log in to your Niyantran account before downloading the desktop agent.');
   }
   const targetFormat = format === 'zip' ? 'zip' : 'exe';
-  const defaultFileName = targetFormat === 'zip' ? 'Niyantran-Agent-V2-Setup.zip' : 'NiyantranMonitoringAgentV2-Setup.exe';
+  // Always the current V1 desktop agent package.
+  const defaultFileName = 'Employee Activity Agent Setup 1.0.0.exe';
 
   const downloadEndpoint = `${API_URL}/monitoring-v2/installer/download${targetFormat === 'zip' ? '?format=zip' : ''}`;
 

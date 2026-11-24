@@ -370,8 +370,12 @@ router.get("/activity", async (req, res) => {
 // Get user stats
 router.get("/user-stats/:userId", async (req, res) => {
     try {
-      let userId = req.params.userId.trim(); // 👉 remove spaces/newlines
+      let userId = (req.params.userId || '').trim();
       console.log('user id in backend for userstats', userId);
+
+      if (!mongoose.Types.ObjectId.isValid(userId)) {
+        return res.status(400).json({ error: 'Invalid user id' });
+      }
 
       const today = new Date();
       const nextWeek = new Date();

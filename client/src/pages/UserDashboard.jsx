@@ -181,15 +181,32 @@ function UserDashboard() {
       return
     }
 
+    // Guard against a corrupted session (e.g. id stored as "undefined")
+    if (!/^[a-fA-F0-9]{24}$/.test(String(storedUser.id))) {
+      console.error("Invalid stored user id, clearing session")
+      localStorage.removeItem("WorkflowUser")
+      localStorage.removeItem("WorkflowToken")
+      window.location.href = "/login"
+      return
+    }
+
     try {
       setIsLoading(true)
       
-      // ✅ FIXED: Use authenticated API methods instead of direct axios calls
-      const [statsResponse, tasksResponse, submissionsResponse] = await Promise.all([
+      // ? FIXED: Use authenticated API methods instead of direct axios calls
+      const [statsRes, tasksRes, submissionsRes] = await Promise.allSettled([
         api.dashboard.getUserStats(storedUser.id),
         api.users.getUserTasks(storedUser.id),
         api.get(`/users/${storedUser.id}/submissions`),
       ])
+
+      const statsResponse = statsRes.status === 'fulfilled' ? statsRes.value : null
+      const tasksResponse = tasksRes.status === 'fulfilled' ? tasksRes.value : []
+      const submissionsResponse = submissionsRes.status === 'fulfilled' ? submissionsRes.value : []
+
+      if (statsRes.status === 'rejected') console.error('user-stats failed:', statsRes.reason)
+      if (tasksRes.status === 'rejected') console.error('user-tasks failed:', tasksRes.reason)
+      if (submissionsRes.status === 'rejected') console.error('submissions failed:', submissionsRes.reason)
 
       console.log('Dashboard data fetched:', {
         stats: statsResponse,

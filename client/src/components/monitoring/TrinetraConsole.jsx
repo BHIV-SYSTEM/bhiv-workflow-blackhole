@@ -135,66 +135,6 @@ const VERIFICATION_STYLES = {
   in_progress: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30'
 };
 
-/**
- * Screenshots are served behind auth, so an <img src> cannot fetch them.
- * Load as a blob with headers and hand the browser an object URL instead.
- */
-function AuthedImage({ screenshotId, alt, onClick }) {
-  const [url, setUrl] = useState(null);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    let objectUrl = null;
-
-    setUrl(null);
-    setFailed(false);
-
-    axios
-      .get(`${API_URL}/trinetra/screenshots/${screenshotId}`, {
-        headers: authHeaders(),
-        responseType: 'blob',
-        timeout: 30000
-      })
-      .then((response) => {
-        if (cancelled) return;
-        objectUrl = URL.createObjectURL(response.data);
-        setUrl(objectUrl);
-      })
-      .catch(() => {
-        if (!cancelled) setFailed(true);
-      });
-
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [screenshotId]);
-
-  if (failed) {
-    return (
-      <div className="h-32 w-full rounded-lg bg-muted/40 flex items-center justify-center text-[10px] text-muted-foreground">
-        unavailable
-      </div>
-    );
-  }
-
-  if (!url) {
-    return <Skeleton className="h-32 w-full rounded-lg" />;
-  }
-
-  return (
-    <button type="button" onClick={onClick} className="block w-full overflow-hidden rounded-lg group">
-      <img
-        src={url}
-        alt={alt}
-        className="h-32 w-full object-cover transition-transform group-hover:scale-105"
-        loading="lazy"
-      />
-    </button>
-  );
-}
-
 /* ------------------------------------------------------------------ */
 /* Console                                                             */
 /* ------------------------------------------------------------------ */
@@ -229,15 +169,13 @@ export function TrinetraConsole({
   const [live, setLive] = useState({ employees: [], summary: null });
   const [productivity, setProductivity] = useState({ employees: [], team: null });
   const [verification, setVerification] = useState({ employees: [], summary: null });
-  const [alerts, setAlerts] = useState([]);
-  const [screenshots, setScreenshots] = useState([]);
-  const [timeline, setTimeline] = useState({ segments: [], idle_clusters: [], summary: null });
+const [alerts, setAlerts] = useState([]);
+const [timeline, setTimeline] = useState({ segments: [], idle_clusters: [], summary: null });
   const [config, setConfig] = useState(null);
 
   const [loading, setLoading] = useState({ live: true, productivity: true, verification: false, alerts: false });
-  const [savingConfig, setSavingConfig] = useState(false);
-  const [previewScreenshot, setPreviewScreenshot] = useState(null);
-  const liveTimer = useRef(null);
+const [savingConfig, setSavingConfig] = useState(false);
+const liveTimer = useRef(null);
 
   const notifyError = useCallback(
     (message) => {
@@ -541,7 +479,7 @@ export function TrinetraConsole({
                 <p className="text-xs text-muted-foreground">
                   Coverage {status?.telemetry?.coverage_percent ?? '—'}% ·{' '}
                   {status?.telemetry?.employees_reporting_last_hour ?? 0} reporting in the last hour ·{' '}
-                  capture mode {status?.screenshots?.mode ?? '—'}
+                  screenshots permanently disabled (privacy)
                 </p>
               </div>
             </div>
@@ -551,7 +489,7 @@ export function TrinetraConsole({
                 config: {status?.config?.source ?? '—'}
               </Badge>
               <Badge variant="outline" className="text-[10px]">
-                snapshots today: {status?.screenshots?.captured_today ?? 0}
+                screenshots: disabled
               </Badge>
               <Badge variant="outline" className="text-[10px]">
                 open alerts: {status?.alerts?.open ?? 0}
@@ -640,7 +578,7 @@ export function TrinetraConsole({
             <Activity className="h-3.5 w-3.5 mr-1.5" /> Eye 1 · Live
           </TabsTrigger>
           <TabsTrigger value="visual" className="text-xs font-bold">
-            <Camera className="h-3.5 w-3.5 mr-1.5" /> Eye 2 · Visual
+            <Clock className="h-3.5 w-3.5 mr-1.5" /> Eye 2 · Activity
           </TabsTrigger>
           <TabsTrigger value="verification" className="text-xs font-bold">
             <ShieldCheck className="h-3.5 w-3.5 mr-1.5" /> Eye 3 · Deliverables
@@ -785,7 +723,7 @@ export function TrinetraConsole({
                   <div className="flex items-center justify-between text-[11px] text-muted-foreground">
                     <span className="flex items-center gap-1">
                       <Camera className="h-3 w-3" />
-                      {employee.captures_today} snapshots
+                      screenshots off
                     </span>
                     <span className="flex items-center gap-1">
                       <Gauge className="h-3 w-3" />
@@ -899,46 +837,19 @@ export function TrinetraConsole({
 
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-bold">
-                    Periodic snapshots · {screenshots.length} captured
-                  </CardTitle>
+                  <CardTitle className="text-sm font-bold">Screenshots · permanently disabled</CardTitle>
                 </CardHeader>
-                <CardContent>
-                  {screenshots.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">
-                      No periodic captures for this date. Enable <strong>periodic</strong> or <strong>both</strong> capture
-                      mode in Policy, then let the agent run during an active workday.
-                    </p>
-                  ) : (
-                    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-                      {screenshots.map((shot) => (
-                        <div key={shot.id} className="space-y-1">
-                          <AuthedImage
-                            screenshotId={shot.id}
-                            alt={`${shot.app || 'screen'} at ${formatTime(shot.timestamp)}`}
-                            onClick={() => setPreviewScreenshot(shot.id)}
-                          />
-                          <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                            <span>{formatTime(shot.timestamp)}</span>
-                            <span className="truncate max-w-[60%]">{shot.app || '—'}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                <CardContent className="space-y-2">
+                  <p className="text-xs text-muted-foreground">
+                    Screen capture is switched off across the agent and this console for privacy. No screen frames,
+                    window captures or screen recordings are taken, uploaded or stored.
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Second Eye keeps reporting <strong>who is doing what, for how long</strong> from the activity
+                    timeline above — application, category and duration only.
+                  </p>
                 </CardContent>
               </Card>
-
-              {previewScreenshot && (
-                <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={() => setPreviewScreenshot(null)}>
-                  <div className="max-w-5xl w-full" onClick={(event) => event.stopPropagation()}>
-                    <AuthedImage screenshotId={previewScreenshot} alt="Screenshot preview" />
-                    <Button variant="outline" size="sm" className="mt-3" onClick={() => setPreviewScreenshot(null)}>
-                      Close
-                    </Button>
-                  </div>
-                </div>
-              )}
             </>
           )}
         </TabsContent>
@@ -1112,94 +1023,21 @@ export function TrinetraConsole({
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-bold flex items-center justify-between">
-                    <span>Capture policy</span>
+                    <span>Screenshot policy</span>
                     <Badge variant="outline" className="text-[10px]">
-                      source: {config.source}
+                      permanently disabled
                     </Badge>
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-1">
-                    <Label className="text-[10px] uppercase text-muted-foreground">Mode</Label>
-                    <Select
-                      value={config.screenshot.mode}
-                      onValueChange={(value) => updateConfigField('screenshot', 'mode', value)}
-                    >
-                      <SelectTrigger className="h-9 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="intelligent">Intelligent (violations only)</SelectItem>
-                        <SelectItem value="periodic">Periodic only</SelectItem>
-                        <SelectItem value="both">Both</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-1">
-                    <Label className="text-[10px] uppercase text-muted-foreground">Interval (minutes)</Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={240}
-                      className="h-9 text-xs"
-                      value={config.screenshot.interval_minutes}
-                      onChange={(event) =>
-                        updateConfigField('screenshot', 'interval_minutes', Number(event.target.value))
-                      }
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <Label className="text-[10px] uppercase text-muted-foreground">Max captures / hour</Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={60}
-                      className="h-9 text-xs"
-                      value={config.screenshot.max_per_hour}
-                      onChange={(event) => updateConfigField('screenshot', 'max_per_hour', Number(event.target.value))}
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <Label className="text-[10px] uppercase text-muted-foreground">Dedupe distance (0-64)</Label>
-                    <Input
-                      type="number"
-                      min={0}
-                      max={64}
-                      className="h-9 text-xs"
-                      value={config.screenshot.dedupe_distance}
-                      onChange={(event) =>
-                        updateConfigField('screenshot', 'dedupe_distance', Number(event.target.value))
-                      }
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <Label className="text-[10px] uppercase text-muted-foreground">Retention (days)</Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={365}
-                      className="h-9 text-xs"
-                      value={config.screenshot.retention_days}
-                      onChange={(event) =>
-                        updateConfigField('screenshot', 'retention_days', Number(event.target.value))
-                      }
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between rounded-lg border border-border p-3">
-                    <div>
-                      <p className="text-xs font-semibold">Capture while idle</p>
-                      <p className="text-[10px] text-muted-foreground">Skip away-from-desk screenshots when off</p>
-                    </div>
-                    <Switch
-                      checked={config.screenshot.capture_when_idle}
-                      onCheckedChange={(checked) => updateConfigField('screenshot', 'capture_when_idle', checked)}
-                    />
-                  </div>
+                <CardContent className="space-y-2">
+                  <p className="text-xs text-muted-foreground">
+                    Screen capture is switched off in the desktop agent and in this console. Mode, interval, capture
+                    rate, dedupe, retention and idle-capture controls are unavailable because no screen frame is ever
+                    taken, uploaded or stored.
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Activity duration monitoring stays on: who is working, on which application, for how long.
+                  </p>
                 </CardContent>
               </Card>
 

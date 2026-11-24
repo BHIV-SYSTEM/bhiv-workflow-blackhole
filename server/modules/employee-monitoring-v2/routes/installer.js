@@ -14,37 +14,36 @@ const fs = require('fs');
 const crypto = require('crypto');
 const v2Auth = require('../security/v2Auth');
 
-// Paths to pre-packaged installer deliverables
-const DIST_DIR = path.resolve(__dirname, '../../../../employee-agent-v2/dist');
-const EXE_INSTALLER_PATH = path.join(DIST_DIR, 'NiyantranMonitoringAgentV2-Setup.exe');
-const ZIP_INSTALLER_PATH = path.join(DIST_DIR, 'Niyantran-Agent-V2-Setup.zip');
+// Single source of truth: every download button in the web app serves the
+// current V1 desktop agent build, so the download section is always up to date.
+const DIST_DIR = path.resolve(__dirname, '../../../../employee-agent/dist');
+const EXE_INSTALLER_PATH = path.join(DIST_DIR, 'Employee Activity Agent Setup 1.0.0.exe');
 
 function getInstallerMeta() {
-  const chosenPath = fs.existsSync(EXE_INSTALLER_PATH) ? EXE_INSTALLER_PATH : ZIP_INSTALLER_PATH;
+  const chosenPath = EXE_INSTALLER_PATH;
   if (fs.existsSync(chosenPath)) {
     const stats = fs.statSync(chosenPath);
     const fileBuffer = fs.readFileSync(chosenPath);
     const rawSha256 = crypto.createHash('sha256').update(fileBuffer).digest('hex');
     const sha256 = rawSha256.toUpperCase();
-    const isExe = chosenPath.endsWith('.exe');
     return {
       available: true,
-      fileName: isExe ? 'NiyantranMonitoringAgentV2-Setup.exe' : 'Niyantran-Agent-V2-Setup.zip',
-      format: isExe ? 'exe' : 'zip',
+      fileName: 'Employee Activity Agent Setup 1.0.0.exe',
+      format: 'exe',
       fileSize: stats.size,
       sizeBytes: stats.size,
       sha256,
-      version: '2.0.0',
+      version: '1.0.0',
       platform: 'win32-x64',
       lastModified: stats.mtime.toISOString(),
-      supportsSilentInstall: isExe,
-      silentArgs: isExe ? '/S' : '-SkipPrompt'
+      supportsSilentInstall: true,
+      silentArgs: '/S'
     };
   }
 
   return {
     available: false,
-    version: '2.0.0',
+    version: '1.0.0',
     platform: 'win32-x64'
   };
 }
@@ -74,8 +73,9 @@ router.get('/download', v2Auth, (req, res) => {
       code: 'UNSUPPORTED_FORMAT'
     });
   }
-  const wantsZip = format && format.toLowerCase() === 'zip';
-  const targetPath = wantsZip || !fs.existsSync(EXE_INSTALLER_PATH) ? ZIP_INSTALLER_PATH : EXE_INSTALLER_PATH;
+
+  // Only one agent ships now (V1); both formats resolve to the same package.
+  const targetPath = EXE_INSTALLER_PATH;
 
   if (!fs.existsSync(targetPath)) {
     return res.status(404).json({
@@ -84,9 +84,8 @@ router.get('/download', v2Auth, (req, res) => {
     });
   }
 
-  const isExe = targetPath.endsWith('.exe');
-  const filename = isExe ? 'NiyantranMonitoringAgentV2-Setup.exe' : 'Niyantran-Agent-V2-Setup.zip';
-  const contentType = isExe ? 'application/vnd.microsoft.portable-executable' : 'application/zip';
+  const filename = 'Employee Activity Agent Setup 1.0.0.exe';
+  const contentType = 'application/vnd.microsoft.portable-executable';
 
   res.setHeader('Content-Type', contentType);
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);

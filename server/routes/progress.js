@@ -212,6 +212,11 @@ router.post(
   [
     check("task", "Task ID is required").not().isEmpty(),
     check("progressPercentage", "Progress percentage is required").isNumeric(),
+    // Daily progress integrity: summary, achievements and blockers are all
+    // mandatory — a day cannot be recorded with a partial update.
+    check("notes", "Work summary is required for daily progress").trim().notEmpty(),
+    check("achievements", "Achievements are required for daily progress").trim().notEmpty(),
+    check("blockers", "Blockers are required for daily progress (enter 'None' if there were none)").trim().notEmpty(),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -378,11 +383,25 @@ router.put("/:id", auth, async (req, res) => {
       return res.status(404).json({ error: "User not found or no longer active" });
     }
 
-    // Update fields
+    // Update fields — when any content field is sent, all three are required
+    // so a progress entry can never be left partially filled.
+    const contentTouched = [notes, blockers, achievements].some((v) => v !== undefined);
+    if (contentTouched) {
+      const allPresent = [notes, blockers, achievements].every(
+        (v) => typeof v === "string" && v.trim().length > 0
+      );
+      if (!allPresent) {
+        return res.status(400).json({
+          error:
+            "Notes, achievements and blockers are all required when updating daily progress",
+          code: "PROGRESS_FIELDS_REQUIRED",
+        });
+      }
+      progress.notes = notes.trim();
+      progress.blockers = blockers.trim();
+      progress.achievements = achievements.trim();
+    }
     if (progressPercentage) progress.progressPercentage = progressPercentage;
-    if (notes) progress.notes = notes;
-    if (blockers !== undefined) progress.blockers = blockers;
-    if (achievements !== undefined) progress.achievements = achievements;
     progress.updatedAt = Date.now();
 
     await progress.save();

@@ -1,15 +1,16 @@
 /**
  * agentKeystrokeCapture.test.js
  *
- * Contract test for the DESKTOP AGENT typed-text pipeline:
+ * Contract test for the DESKTOP AGENT keystroke-activity pipeline:
  *   real employee-agent/src/utils/keystrokeCapture.js
  *     → simulated uiohook keydown events (Windows scan codes)
  *     → drained segments (exact payload the agent uploads)
  *     → POST /api/agent/keystroke/ingest (real route)
  *     → KeystrokeLog docs with server-side quality classification
  *
- * Proves the agent module and the server agree on the payload shape,
- * so agent-captured text reaches the admin Typed Text panel.
+ * PRIVACY CONTRACT: typed characters are NEVER captured. Every segment
+ * ships `text: ""` while keyCount / backspaceCount / pasteCount /
+ * intervals are preserved so the WPM + keymeshing score still works.
  */
 
 "use strict";
@@ -123,21 +124,22 @@ beforeEach(() => {
 describe("agent KeystrokeCapture → uiohook event reconstruction", () => {
   const CTX = { activeApp: "Notepad", activeAppTitle: "notes.txt" };
 
-  it("reconstructs a typed sentence from raw scan codes", () => {
+  it("counts a typed sentence without recording any characters", () => {
     const capture = new KeystrokeCapture();
     typeText(capture, "hello world", CTX);
-    capture.onKeyDown(keyEvent(SCAN.enter), CTX); // newline, not a boundary
+    capture.onKeyDown(keyEvent(SCAN.enter), CTX); // counted, not a boundary
 
     const segments = capture.drain({ final: true });
     expect(segments).toHaveLength(1);
-    expect(segments[0].text).toBe("hello world\n");
+    // PRIVACY: no typed content ever leaves the agent.
+    expect(segments[0].text).toBe("");
     // 11 printable chars + Enter (the agent counts Enter as a key too)
     expect(segments[0].keyCount).toBe(12);
     expect(segments[0].intervals.length).toBeGreaterThan(0);
     expect(segments[0].durationMs).toBeGreaterThanOrEqual(0);
   });
 
-  it("applies Shift and CapsLock to letter casing", () => {
+  it("keeps Shift/CapsLock as counts only (no casing captured)", () => {
     const capture = new KeystrokeCapture();
     capture.onKeyDown(keyEvent(SCAN.h, { shift: true }), CTX); // H
     capture.onKeyDown(keyEvent(SCAN.i), CTX); // i
@@ -146,31 +148,34 @@ describe("agent KeystrokeCapture → uiohook event reconstruction", () => {
     capture.onKeyDown(keyEvent(SCAN.enter), CTX);
 
     const segments = capture.drain({ final: true });
-    expect(segments[0].text).toBe("HiA\n");
+    expect(segments[0].text).toBe("");
+    expect(segments[0].keyCount).toBe(5); // H + i + CapsLock + A + Enter
   });
 
-  it("applies Shift to punctuation via the shift map", () => {
+  it("keeps shifted punctuation as counts only (no symbols captured)", () => {
     const capture = new KeystrokeCapture();
     capture.onKeyDown(keyEvent(SCAN["1"], { shift: true }), CTX); // !
     capture.onKeyDown(keyEvent(SCAN.slash, { shift: true }), CTX); // ?
     capture.onKeyDown(keyEvent(SCAN.enter), CTX);
 
-    expect(capture.drain({ final: true })[0].text).toBe("!?\n");
+    const segments = capture.drain({ final: true });
+    expect(segments[0].text).toBe("");
+    expect(segments[0].keyCount).toBe(3);
   });
 
-  it("Backspace removes the previous character and is counted", () => {
+  it("Backspace is counted as a correction but removes no content", () => {
     const capture = new KeystrokeCapture();
     typeText(capture, "abc", CTX);
-    capture.onKeyDown(keyEvent(SCAN.backspace), CTX); // → "ab"
+    capture.onKeyDown(keyEvent(SCAN.backspace), CTX); // → still no text
     capture.onKeyDown(keyEvent(SCAN.enter), CTX);
 
     const segments = capture.drain({ final: true });
-    expect(segments[0].text).toBe("ab\n");
+    expect(segments[0].text).toBe("");
     expect(segments[0].backspaceCount).toBe(1);
     expect(segments[0].keyCount).toBe(4);
   });
 
-  it("Ctrl+V counts as a paste and never inserts shortcut text", () => {
+  it("Ctrl+V counts as a paste and never records shortcut text", () => {
     const capture = new KeystrokeCapture();
     typeText(capture, "hi", CTX);
     capture.onKeyDown(keyEvent(SCAN.v, { ctrl: true }), CTX);
@@ -178,7 +183,8 @@ describe("agent KeystrokeCapture → uiohook event reconstruction", () => {
 
     const segments = capture.drain({ final: true });
     expect(segments[0].pasteCount).toBe(1);
-    expect(segments[0].text).toBe("hi\n");
+    expect(segments[0].text).toBe("");
+    expect(segments[0].keyCount).toBe(3);
   });
 
   it("never records text typed into sensitive (login/OTP) windows", () => {
@@ -189,8 +195,8 @@ describe("agent KeystrokeCapture → uiohook event reconstruction", () => {
 
     const segments = capture.drain({ final: true });
     expect(segments).toHaveLength(1);
-    // Sensitive window: keys are counted, but no content (not even the
-    // newline Enter would normally add) is recorded.
+    // Sensitive window: keys are counted, but no content is recorded.
+    // (Since no content is EVER recorded, this holds for every window.)
     expect(segments[0].text).toBe("");
     expect(segments[0].keyCount).toBe(15); // 14 chars + Enter
   });
@@ -207,7 +213,9 @@ describe("agent KeystrokeCapture → uiohook event reconstruction", () => {
       capture.onKeyDown(keyEvent(SCAN.enter), CTX);
 
       const segments = capture.drain({ final: true });
-      expect(segments.map((s) => s.text)).toEqual(["one", "two\n"]);
+      expect(segments).toHaveLength(2);
+      expect(segments.map((s) => s.text)).toEqual(["", ""]);
+      expect(segments.map((s) => s.keyCount)).toEqual([3, 4]); // one / two+Enter
     } finally {
       spy.mockRestore();
     }
@@ -233,12 +241,14 @@ describe("agent KeystrokeCapture → uiohook event reconstruction", () => {
       // so admin views see keystrokes within ~1 minute of typing.
       const segments = capture.drain();
       expect(segments).toHaveLength(1);
-      expect(segments[0].text).toBe("onetwothree");
+      expect(segments[0].text).toBe("");
+      expect(segments[0].keyCount).toBe(11); // one + two + three
 
       // A fresh segment starts for the next keys.
       typeText(capture, "four", CTX);
       const rest = capture.drain({ final: true });
-      expect(rest.map((s) => s.text)).toEqual(["four"]);
+      expect(rest.map((s) => s.text)).toEqual([""]);
+      expect(rest.map((s) => s.keyCount)).toEqual([4]);
     } finally {
       spy.mockRestore();
     }
@@ -257,7 +267,8 @@ describe("agent KeystrokeCapture → uiohook event reconstruction", () => {
 
       const segments = capture.drain({ final: true });
       expect(segments).toHaveLength(1);
-      expect(segments[0].text).toBe("hello bye\n");
+      expect(segments[0].text).toBe("");
+      expect(segments[0].keyCount).toBe(10); // "hello " + "bye" + Enter
     } finally {
       spy.mockRestore();
     }
@@ -267,16 +278,17 @@ describe("agent KeystrokeCapture → uiohook event reconstruction", () => {
     const capture = new KeystrokeCapture();
     typeText(capture, "hello", CTX);
 
-    // Regular cadence: the live segment must NOT be flushed mid-sentence.
+    // Regular cadence: the live segment must NOT be flushed mid-burst.
     expect(capture.drain()).toHaveLength(0);
 
     typeText(capture, " world", CTX);
     const segments = capture.drain({ final: true });
     expect(segments).toHaveLength(1);
-    expect(segments[0].text).toBe("hello world");
+    expect(segments[0].text).toBe("");
+    expect(segments[0].keyCount).toBe(11); // "hello" + " world"
   });
 
-  it("keeps multi-line typing in one segment (Enter is not a boundary)", () => {
+  it("keeps multi-line activity in one segment (Enter is not a boundary)", () => {
     const capture = new KeystrokeCapture();
     typeText(capture, "line one", CTX);
     capture.onKeyDown(keyEvent(SCAN.enter), CTX);
@@ -284,7 +296,8 @@ describe("agent KeystrokeCapture → uiohook event reconstruction", () => {
 
     const segments = capture.drain({ final: true });
     expect(segments).toHaveLength(1);
-    expect(segments[0].text).toBe("line one\nline two");
+    expect(segments[0].text).toBe("");
+    expect(segments[0].keyCount).toBe(17); // 8 + Enter + 8
   });
 
   it("starts a new segment when the foreground app changes (attribution)", () => {
@@ -295,9 +308,9 @@ describe("agent KeystrokeCapture → uiohook event reconstruction", () => {
 
     const segments = capture.drain({ final: true });
     expect(segments).toHaveLength(2);
-    expect(segments[0].text).toBe("abc");
+    expect(segments.map((s) => s.text)).toEqual(["", ""]);
+    expect(segments.map((s) => s.keyCount)).toEqual([3, 3]);
     expect(segments[0].activeApp).toBe("Notepad");
-    expect(segments[1].text).toBe("def");
     expect(segments[1].activeApp).toBe("Google Chrome");
   });
 
@@ -323,11 +336,11 @@ describe("agent KeystrokeCapture → uiohook event reconstruction", () => {
 
     const segments = capture.drain({ final: true });
     expect(segments).toHaveLength(1);
-    expect(segments[0].text).toBe("hi"); // specials never pollute text
+    expect(segments[0].text).toBe("");
     expect(segments[0].keyCount).toBe(7); // 2 letters + 5 special keys
   });
 
-  it("counts Ctrl combos (copy/save/reload) without inserting shortcut text", () => {
+  it("counts Ctrl combos (copy/save/reload) without recording shortcut text", () => {
     const capture = new KeystrokeCapture();
     typeText(capture, "doc", CTX);
     capture.onKeyDown(keyEvent(SCAN.c, { ctrl: true }), CTX); // Ctrl+C
@@ -335,12 +348,12 @@ describe("agent KeystrokeCapture → uiohook event reconstruction", () => {
     capture.onKeyDown(keyEvent(SCAN.s, { ctrl: true }), CTX); // Ctrl+S
 
     const segments = capture.drain({ final: true });
-    expect(segments[0].text).toBe("doc");
+    expect(segments[0].text).toBe("");
     expect(segments[0].keyCount).toBe(6); // 3 letters + 3 combos
     expect(segments[0].pasteCount).toBe(0);
   });
 
-  it("captures numpad operator symbols in the text", () => {
+  it("counts numpad operator keys without recording the symbols", () => {
     const capture = new KeystrokeCapture();
     capture.onKeyDown(keyEvent(55), CTX); // numpad *
     capture.onKeyDown(keyEvent(78), CTX); // numpad +
@@ -349,7 +362,7 @@ describe("agent KeystrokeCapture → uiohook event reconstruction", () => {
     capture.onKeyDown(keyEvent(3612), CTX); // numpad Enter
 
     const segments = capture.drain({ final: true });
-    expect(segments[0].text).toBe("*+-/\n");
+    expect(segments[0].text).toBe("");
     expect(segments[0].keyCount).toBe(5);
   });
 
@@ -361,7 +374,7 @@ describe("agent KeystrokeCapture → uiohook event reconstruction", () => {
     capture.onKeyDown(keyEvent(56), CTX); // bare Alt
 
     const segments = capture.drain({ final: true });
-    expect(segments[0].text).toBe("a");
+    expect(segments[0].text).toBe("");
     expect(segments[0].keyCount).toBe(4); // 1 letter + 3 modifiers
   });
 });

@@ -401,11 +401,12 @@ class ActivityTracker {
   }
 
   /**
-   * Upload reconstructed typed-text segments to the server.
+   * Upload keystroke activity segments (counts + rhythm only — never
+   * typed content, see utils/keystrokeCapture.js privacy contract).
    * Segments are drained from the capture buffer, batched with any
    * previously failed segments, and re-queued on retryable errors.
    * Non-final drains ship only finished segments — the live segment keeps
-   * buffering across ticks so an in-progress sentence stays in one block.
+   * buffering across ticks so an in-progress burst stays in one block.
    * @param {Object} [options]
    * @param {boolean} [options.final] - Session end: flush the live segment too.
    */
@@ -428,7 +429,7 @@ class ActivityTracker {
       };
       const response = await this.apiService.ingestKeystrokes(payload);
       if (response.success) {
-        console.log(`⌨️ Sent ${batch.length} typed-text segment(s)`);
+        console.log(`⌨️ Sent ${batch.length} keystroke segment(s)`);
       }
     } catch (error) {
       const status = error.response?.status;

@@ -385,6 +385,20 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use(express.urlencoded({ extended: true }));
 
 const server = http.createServer(app);
+
+// Without this handler a listen failure (e.g. EADDRINUSE when port 5000 is
+// still held by a previous instance) surfaces as an uncaughtException, which
+// the process-level guard below only logs — leaving a zombie process that is
+// alive but serving nothing. Fail loudly and exit so supervisors can restart.
+server.on('error', (err) => {
+  if (err && err.code === 'EADDRINUSE') {
+    console.error(`❌ Port ${PORT} is already in use. Free it and restart (e.g. kill the process listening on ${PORT}).`);
+  } else {
+    console.error('❌ HTTP server error:', err?.stack || err);
+  }
+  process.exit(1);
+});
+
 const io = socketIo(server, {
   cors: {
     origin: ALLOWED_SOCKET_ORIGINS,

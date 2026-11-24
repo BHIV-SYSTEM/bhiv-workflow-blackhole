@@ -266,6 +266,7 @@
 const express = require("express")
 const router = express.Router()
 const jwt = require("jsonwebtoken")
+const bcrypt = require("bcryptjs")
 const User = require("../models/User")
 const Department = require("../models/Department")
 const authMiddleware = require("../middleware/auth")
@@ -527,8 +528,16 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    // Check password directly
-    if (password !== user.password) {
+    // Check password: support bcrypt-hashed (legacy seeded users) and
+    // plaintext (newly registered users) transparently.
+    let passwordOk = false;
+    const stored = user.password || '';
+    if (stored.startsWith('$2a$') || stored.startsWith('$2b$') || stored.startsWith('$2y$')) {
+      try { passwordOk = await bcrypt.compare(password, stored); } catch (e) { passwordOk = false; }
+    } else {
+      passwordOk = (password === stored);
+    }
+    if (!passwordOk) {
       return res.status(400).json({ error: "Invalid credentials" })
     }
 
