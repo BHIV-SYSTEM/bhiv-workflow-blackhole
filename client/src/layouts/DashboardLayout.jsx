@@ -5,6 +5,7 @@ import { Outlet, useLocation, useNavigate } from "react-router-dom"
 import { DashboardSidebar } from "../components/dashboard/sidebar"
 import UniverseBackground from "../components/UniverseBackground"
 import { useTheme } from "../components/theme-provider"
+import { useAuth } from "../context/auth-context"
 import { DashboardHeader } from "../components/dashboard/header"
 
 export function DashboardLayout() {
