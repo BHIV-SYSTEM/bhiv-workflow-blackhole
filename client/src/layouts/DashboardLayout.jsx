@@ -8,6 +8,7 @@ import { useTheme } from "../components/theme-provider"
 import { useAuth } from "../context/auth-context"
 import { DashboardHeader } from "../components/dashboard/header"
 import EnhancedStartDayDialog from "../components/attendance/EnhancedStartDayDialog"
+import api from "../lib/api"
 
 export function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
