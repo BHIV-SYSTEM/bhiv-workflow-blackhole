@@ -227,6 +227,118 @@ router.post('/activity/ingest', auth, async (req, res) => {
 });
 
 /**
+ * POST /api/agent/keystroke/ingest
+ * Ingest keystroke segments from desktop agent with server-side quality classification
+ */
+router.post('/keystroke/ingest', auth, async (req, res) => {
+  try {
+    const { attendanceId, segments, activeApp, activeAppTitle } = req.body;
+
+    if (!attendanceId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Attendance ID is required',
+      });
+    }
+
+    if (!segments || !Array.isArray(segments) || segments.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Segments array is required',
+      });
+    }
+
+    const gateRejection = await monitoringGate(req);
+    if (gateRejection) {
+      return res.status(gateRejection.status).json(gateRejection.body);
+    }
+
+    const activeDay = await findActiveDay(req.user.id);
+    if (!activeDay) {
+      return res.status(403).json({
+        success: false,
+        error: 'Cannot accept activity data: workday not started',
+        code: 'DAY_NOT_ACTIVE',
+        hint: 'Employee must start their day first from the dashboard'
+      });
+    }
+
+    const validSegments = segments.filter(seg => seg && typeof seg.text === 'string' && seg.text.length > 0);
+    if (validSegments.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'No valid segments to store',
+      });
+    }
+
+    const { analyzeKeystrokeSegment } = require('../services/keystrokeQuality');
+    const KeystrokeLog = require('../models/KeystrokeLog');
+
+    const classifications = {};
+    const docs = validSegments.map(seg => {
+      const text = seg.text.slice(0, 4000);
+      const keyCount = seg.keyCount !== undefined ? seg.keyCount : text.length;
+      const durationMs = seg.durationMs || 0;
+      const intervals = seg.intervals || [];
+
+      const quality = analyzeKeystrokeSegment({
+        text,
+        keyCount,
+        intervals,
+        durationMs,
+        backspaceCount: seg.backspaceCount || 0,
+        pasteCount: seg.pasteCount || 0,
+      });
+
+      const cls = quality?.classification || 'neutral';
+      classifications[cls] = (classifications[cls] || 0) + 1;
+
+      const meanInterval = (quality && typeof quality.meanIntervalMs === 'number')
+        ? quality.meanIntervalMs
+        : (intervals.length > 0
+            ? Math.round(intervals.reduce((a, b) => a + b, 0) / intervals.length)
+            : (durationMs && keyCount ? Math.round(durationMs / keyCount) : 0));
+
+      const minutes = (durationMs > 0 ? durationMs : (intervals.length > 0 ? intervals.reduce((a, b) => a + b, 0) : 0)) / 60000;
+      const wpm = minutes > 0 ? Math.round((text.length / 5) / minutes) : 0;
+
+      return {
+        employee: req.user.id,
+        session_id: attendanceId,
+        application_name: activeApp || 'Unknown',
+        window_title: activeAppTitle || '',
+        text,
+        timestamp: seg.start ? new Date(seg.start) : new Date(),
+        quality,
+        capture: {
+          char_count: text.length,
+          key_count: keyCount,
+          backspace_count: seg.backspaceCount || 0,
+          paste_count: seg.pasteCount || 0,
+          duration_ms: durationMs,
+          mean_interval_ms: meanInterval,
+        },
+        wpm,
+      };
+    });
+
+    await KeystrokeLog.insertMany(docs);
+
+    return res.status(200).json({
+      success: true,
+      stored: docs.length,
+      classifications,
+    });
+  } catch (error) {
+    console.error('Keystroke ingestion error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to ingest keystroke data',
+    });
+  }
+});
+
+/**
  * GET /api/agent/activity/summary/:userId
  * Get activity summary for a user (fetches from MongoDB)
  */

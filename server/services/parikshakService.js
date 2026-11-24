@@ -12,6 +12,54 @@ const PARIKSHAK_TIMEOUT_MS = parseInt(process.env.PARIKSHAK_TIMEOUT_MS || '12000
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const CANONICAL_TASK_GRAPH_TITLES = {
+    "T-GOV-001": "Phase 1: Foundation Setup",
+    "T-GOV-002": "Phase 2: Governance Gate Integration",
+    "T-COR-001": "Phase 3: Core Convergence Architecture",
+    "T-COR-002": "Phase 4: Ecosystem Event Bus Certification",
+    "T-SYS-001": "Phase 5: Cross-System Production Hardening",
+    "T-GOV-F01": "Remediate Incomplete & Harden Architecture",
+    "T-GOV-F02": "Remediate Incorrect Logic & Rule Violations",
+    "T-COR-F01": "Remediate Core Interface Boundary Violations",
+    "T-SYS-F00": "Remediate System Integration Failures"
+};
+
+function resolveDeterministicNextTaskTitle(rawNext, taskTitle, nextTaskObj) {
+    const rawNextStr = (typeof rawNext === 'string' ? rawNext.trim() : '') || (nextTaskObj?.task_id || '').trim();
+
+    // 1. If explicit descriptive title provided in packet and not equal to raw ID
+    if (nextTaskObj?.title && !/^T-[A-Z]{3}-\d+$/i.test(nextTaskObj.title) && !nextTaskObj.title.toLowerCase().startsWith("test task")) {
+        return nextTaskObj.title;
+    }
+
+    // 2. Canonical Task Graph Node ID lookup
+    if (rawNextStr && CANONICAL_TASK_GRAPH_TITLES[rawNextStr]) {
+        return CANONICAL_TASK_GRAPH_TITLES[rawNextStr];
+    }
+
+    // 3. Non-ID descriptive string passed as next_task
+    if (rawNextStr && !/^T-[A-Z]{3}-\d+$/i.test(rawNextStr) && !rawNextStr.toLowerCase().startsWith("task-next") && !rawNextStr.toLowerCase().includes("test task")) {
+        return rawNextStr;
+    }
+
+    // 4. Sequential progression without infinite Phase 2 loop
+    const prevTitle = (taskTitle || "").trim();
+    const phaseMatch = prevTitle.match(/^Phase\s*(\d+)\s*[:\-]\s*(.*)$/i);
+    if (phaseMatch) {
+        const currentPhase = parseInt(phaseMatch[1], 10);
+        const baseTitle = phaseMatch[2].trim();
+        return `Phase ${currentPhase + 1}: ${baseTitle}`;
+    }
+
+    // If no phase prefix yet, advance to Phase 2 with the base title
+    const cleanTitle = prevTitle.replace(/^[\*\-\#\s]+/, "").trim();
+    if (cleanTitle) {
+        return `Phase 2: ${cleanTitle}`;
+    }
+
+    return rawNextStr ? `Task ${rawNextStr}: Execution & Convergence` : "Phase 2: Execution & Convergence Certification";
+}
+
 const invokeParikshak = async (submissionId, traceId, io) => {
     try {
         console.log(`[PARIKSHAK] Starting review for submission ${submissionId}, trace_id: ${traceId}`);
@@ -31,18 +79,33 @@ const invokeParikshak = async (submissionId, traceId, io) => {
             submission.notes ? `Candidate Deliverables & Implementation Notes:\n${submission.notes}` : ''
         ].filter(Boolean).join('\n\n') || 'No description provided';
 
+        const submittedByIdentity = {
+            user_id: user._id ? user._id.toString() : (user.id || ''),
+            canonical_employee_id: user.canonicalEmployeeId || user.employeeId || '',
+            name: user.name || '',
+            email: user.email || '',
+            tenant_id: user.tenantId || 'ten-bhiv-core',
+            organization: user.organization || 'BHIV',
+            department: user.department ? user.department.toString() : ''
+        };
+
+        const canonicalProductId = (task.product || (task.branch && !task.branch.startsWith("blackhole_") && !task.branch.startsWith("sips_") ? task.branch : null) || "BHIV").toUpperCase();
+        const canonicalTenantId = task.tenantId || submittedByIdentity.tenant_id || (user.tenantId || "ten-bhiv-core");
+
         const payload = {
             mode: 'task_review',
             title: task.title || 'Untitled Task',
             task_title: task.title || 'Untitled Task',
             description: combinedDescription,
             task_description: combinedDescription,
-            submitted_by: user.name || user._id.toString(),
+            submitted_by: submittedByIdentity,
+            tenant_id: canonicalTenantId,
+            canonical_employee_id: submittedByIdentity.canonical_employee_id,
             submission: submission.notes || '',
 
             task_id: task._id ? task._id.toString() : '',
             user_id: user._id ? user._id.toString() : '',
-            product_id: task.branch || 'default_tenant',
+            product_id: canonicalProductId,
             repo_url: submission.githubLink || '',
             commit_reference: submission.githubLink || '',
             submission_evidence: submission.documentLink || '',
@@ -337,8 +400,8 @@ const invokeParikshak = async (submissionId, traceId, io) => {
                     await task.save();
                 }
 
-                // Phase 3: Next Task Runtime
-                console.log(`[PARIKSHAK] Phase 3: Creating next task for assignee ${task.assignee}`);
+                // Phase 3: Next Task Proposal Preparation (Feature 6: Governed Human Review Confirmation)
+                console.log(`[PARIKSHAK] Phase 3: Preparing next task proposal for assignee ${task.assignee}`);
 
                 const nextTaskObj = (typeof response.canonical_next_task_packet === 'object' && response.canonical_next_task_packet)
                     || (typeof response.next_task_details === 'object' && response.next_task_details)
@@ -351,80 +414,47 @@ const invokeParikshak = async (submissionId, traceId, io) => {
                     || nextTaskObj?.description 
                     || "";
 
-                let nextTaskTitle = "";
-                let nextTaskDescription = "";
+                const rawNext = typeof response.next_task === 'string' ? response.next_task : (nextTaskObj?.task_id || "");
+                // Feature 7: Deterministic and descriptive next-task title without infinite regex prefix loops
+                const nextTaskTitle = resolveDeterministicNextTaskTitle(rawNext, task.title, nextTaskObj);
+                const nextTaskId = (nextTaskObj?.task_id || (typeof response.next_task === 'string' && /^T-[A-Z]{3}-\d+$/i.test(response.next_task.trim()) ? response.next_task.trim() : "") || "").trim();
 
-                if (nextTaskObj) {
-                    nextTaskTitle = nextTaskObj.title || nextTaskObj.name || "";
-                    nextTaskDescription = masterPrompt || nextTaskObj.description || nextTaskObj.objective || "";
-                } else if (typeof response.next_task === 'string' && response.next_task.trim()) {
-                    const rawNext = response.next_task.trim();
-                    if (/^T-[A-Z]{3}-\d+$/i.test(rawNext) || rawNext.toLowerCase().includes("test task") || rawNext.toLowerCase().startsWith("task-next")) {
-                        const cleanPrevTitle = (task.title || "").replace(/^Phase\s*\d+\s*[:\-]\s*/i, "");
-                        nextTaskTitle = `Phase 2: ${cleanPrevTitle || "Execution & Convergence Certification"}`;
-                    } else {
-                        nextTaskTitle = rawNext;
-                    }
-                    nextTaskDescription = masterPrompt || "";
-                }
-
-                if (!nextTaskTitle || /^T-[A-Z]{3}-\d+$/i.test(nextTaskTitle) || nextTaskTitle.toLowerCase().includes("test task")) {
-                    const cleanPrevTitle = (task.title || "").replace(/^Phase\s*\d+\s*[:\-]\s*/i, "");
-                    nextTaskTitle = `Phase 2: ${cleanPrevTitle || "Execution & Convergence Certification"}`;
-                }
-
+                let nextTaskDescription = masterPrompt || nextTaskObj?.description || nextTaskObj?.objective || "";
                 if (!nextTaskDescription) {
                     nextTaskDescription = masterPrompt || `Next production phase following successful evaluation of '${task.title}'.\n\nAutomated AI Review Summary:\n${doneWell}\n\nRecommended Guidelines:\n${recommendations}`;
                 }
 
-                const deptId = task.department?._id || task.department;
-
-                // Prevent duplicate assignment on retries
+                // Feature 8: Broaden deduplication query across active and completed states
                 const existingTask = await Task.findOne({
-                    title: nextTaskTitle,
                     assignee: task.assignee,
-                    status: "Pending" // Already in queue
+                    $or: [
+                        ...(nextTaskId ? [{ task_id: nextTaskId }] : []),
+                        {
+                            title: nextTaskTitle,
+                            status: { $in: ["Pending", "In Progress", "Submitted for Review", "Completed", "Closed"] }
+                        }
+                    ]
                 });
 
                 if (existingTask) {
-                    console.log(`[PHASE 3] Next task "${nextTaskTitle}" already exists for assignee. Skipping duplicate creation.`);
+                    console.log(`[PHASE 3] Next task "${nextTaskTitle}" already exists for assignee (status: ${existingTask.status}). Skipping duplicate creation.`);
                 } else {
-                    // Calibrate task SLA strictly to 180-360 minutes (3-6 hours completion window)
-                    const taskDurationMinutes = nextTaskObj?.estimated_minutes || 240; // Default 240 minutes (4 hours)
-                    const taskDurationMs = taskDurationMinutes * 60 * 1000;
-                    const calculatedDueDate = new Date(Date.now() + Math.max(taskDurationMs, 6 * 60 * 60 * 1000)); // Bounded to 360 mins max
+                    console.log(`[PHASE 3] Next task "${nextTaskTitle}" prepared for confirmed human review approval (Feature 6: automatic Task.save race condition eliminated).`);
+                }
 
-                    const newTask = new Task({
+                // Store next-task proposal in submission for human review modal and approve-and-assign-next workflow
+                if (submission.parikshakReview) {
+                    submission.parikshakReview.nextTask = nextTaskTitle;
+                    submission.parikshakReview.nextTaskId = nextTaskId;
+                    submission.parikshakReview.nextTaskProposal = {
+                        task_id: nextTaskId,
                         title: nextTaskTitle,
                         description: nextTaskDescription,
-                        notes: masterPrompt || nextTaskDescription,
-                        status: "Pending",
-                        priority: task.priority || "Medium",
-                        department: deptId,
-                        assignee: task.assignee, // Assign same candidate
-                        scope: `Atomic single-shift task (180-360 minutes / ${taskDurationMinutes} mins estimated)`,
-                        expectedOutcome: nextTaskObj?.objective || "Complete atomic deliverables and pass unit test assertions.",
-                        dueDate: calculatedDueDate, // Strictly 180-360 minutes (single shift window)
-                        dependencies: task.dependencies, // Preserve dependencies
-                        branch: task.branch, // Preserve product/tenant
-                        progress: 0,
-                    });
-
-                    await newTask.save();
-                    console.log(`[PHASE 3] Created new assigned task: ${newTask._id} with canonical task packet`);
-
-                    // Emit task assigned event for the new task
-                    const { emitTaskAssignedEvent } = require('./taskExecutionBridge');
-                    await emitTaskAssignedEvent(newTask, traceId, newTask.branch);
-
-                    // Notify candidate about new task
-                    await Notification.create({
-                        recipient: newTask.assignee,
-                        type: "task_assigned",
-                        title: `New Automatically Assigned Task`,
-                        message: `A follow-up task "${newTask.title}" has been automatically assigned to you.`,
-                        task: newTask._id
-                    });
+                        master_prompt: masterPrompt,
+                        estimated_minutes: nextTaskObj?.estimated_minutes || 240,
+                        objective: nextTaskObj?.objective || nextTaskDescription
+                    };
+                    await submission.save();
                 }
                 // End Phase 3
 
@@ -620,6 +650,9 @@ const evaluateParikshakSubmission = async (submissionId, traceId) => {
         submission.notes ? `Candidate Deliverables & Implementation Notes:\n${submission.notes}` : ''
     ].filter(Boolean).join('\n\n') || 'No description provided';
 
+    const canonicalProductId = (task.product || (task.branch && !task.branch.startsWith("blackhole_") && !task.branch.startsWith("sips_") ? task.branch : null) || "BHIV").toUpperCase();
+    const canonicalTenantId = task.tenantId || user.tenantId || "ten-bhiv-core";
+
     const payload = {
         mode: 'task_review',
         title: task.title || 'Untitled Task',
@@ -627,10 +660,11 @@ const evaluateParikshakSubmission = async (submissionId, traceId) => {
         description: combinedDescription,
         task_description: combinedDescription,
         submitted_by: user.name || user._id.toString(),
+        tenant_id: canonicalTenantId,
         submission: submission.notes || '',
         task_id: task._id ? task._id.toString() : '',
         user_id: user._id ? user._id.toString() : '',
-        product_id: task.branch || 'default_tenant',
+        product_id: canonicalProductId,
         repo_url: submission.githubLink || '',
         commit_reference: submission.githubLink || '',
         submission_evidence: submission.documentLink || '',
@@ -739,14 +773,17 @@ const evaluateParikshakSubmission = async (submissionId, traceId) => {
         || (typeof response.next_task === 'object' && response.next_task)
         || null;
 
-    let nextTaskTitle = "";
+    // Feature 7: Deterministic and descriptive next-task title resolution
+    const rawNext = typeof response.next_task === 'string' ? response.next_task : (nextTaskObj?.task_id || "");
+    const nextTaskTitle = resolveDeterministicNextTaskTitle(rawNext, task.title, nextTaskObj);
+    const nextTaskId = (nextTaskObj?.task_id || (typeof response.next_task === 'string' && /^T-[A-Z]{3}-\d+$/i.test(response.next_task.trim()) ? response.next_task.trim() : "") || "").trim();
+
     let nextTaskDesc = "";
     let masterPrompt = response.master_prompt || "";
     let deliverables = [];
     let acceptanceCriteria = [];
 
     if (nextTaskObj) {
-        nextTaskTitle = nextTaskObj.title || nextTaskObj.name || (typeof response.next_task === 'string' ? response.next_task : "");
         if (!masterPrompt && nextTaskObj.master_prompt) {
             masterPrompt = nextTaskObj.master_prompt;
         }
@@ -754,7 +791,6 @@ const evaluateParikshakSubmission = async (submissionId, traceId) => {
         deliverables = Array.isArray(nextTaskObj.deliverables) ? nextTaskObj.deliverables : [];
         acceptanceCriteria = Array.isArray(nextTaskObj.acceptance_criteria) ? nextTaskObj.acceptance_criteria : [];
     } else if (typeof response.next_task === 'string' && response.next_task.trim()) {
-        nextTaskTitle = response.next_task.trim();
         nextTaskDesc = masterPrompt || "";
     }
 
@@ -788,6 +824,7 @@ const evaluateParikshakSubmission = async (submissionId, traceId) => {
         recommendations,
         readiness,
         nextTask: nextTaskTitle ? {
+            task_id: nextTaskId,
             title: nextTaskTitle,
             description: nextTaskDesc || nextTaskTitle,
             masterPrompt: pdfPrompt || nextTaskDesc || "",
@@ -796,14 +833,51 @@ const evaluateParikshakSubmission = async (submissionId, traceId) => {
             acceptanceCriteria: acceptanceCriteria,
             priority: task.priority || "Medium",
             department: task.department || null,
-            branch: task.branch || null
+            branch: task.branch || null,
+            product: task.product || "BHIV",
+            tenantId: task.tenantId || "ten-bhiv-core"
         } : null
     };
 };
 
+const withdrawKnowledgeContext = async ({ productId, individualId, contextId, deletedBy, deletionReason }) => {
+    try {
+        const payload = {
+            product_id: productId,
+            individual_id: individualId,
+            context_id: contextId,
+            deleted_by: deletedBy,
+            deletion_reason: deletionReason
+        };
+        const config = {
+            headers: { 'Content-Type': 'application/json' },
+            timeout: 5000,
+            validateStatus: (s) => s < 600
+        };
+        if (PARIKSHAK_API_KEY) {
+            config.headers['x-api-key'] = PARIKSHAK_API_KEY;
+        }
+        if (PARIKSHAK_TOKEN) {
+            config.headers['Authorization'] = `Bearer ${PARIKSHAK_TOKEN}`;
+        }
+        const parikshakBase = PARIKSHAK_URL.replace(/\/parikshak\/review\/?$/, '').replace(/\/$/, '');
+        const res = await axios.post(`${parikshakBase}/api/v1/knowledge/withdraw`, payload, config);
+        return res.data;
+    } catch (err) {
+        console.warn(`[PARIKSHAK_WITHDRAW] Error notifying Parikshak:`, err.message);
+        return { status: "OFFLINE_FALLBACK", error: err.message };
+    }
+};
+
+const submitTaskForReview = invokeParikshak;
+
 module.exports = {
     invokeParikshak,
+    submitTaskForReview,
     triggerReview,
-    evaluateParikshakSubmission
+    evaluateParikshakSubmission,
+    resolveDeterministicNextTaskTitle,
+    withdrawKnowledgeContext,
+    CANONICAL_TASK_GRAPH_TITLES
 };
 

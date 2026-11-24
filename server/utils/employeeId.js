@@ -1,47 +1,102 @@
 /**
- * Derives and formats the Employee ID from an employee's email or identifier suffix.
- * Format Rule:
- * - blackholeinfivers147 => BHIV147
- * - blackholeinfivers20 => BHIV20
- * - blackholeinfiverse64@gmail.com => BHIV64
- * - bhivtest2@outlook.com => BHIV2
- * - BHIVMSSU0030@outlook.com => BHIVMSSU0030
- * - Fallback: existing valid employeeId, or 'N/A'
+ * Canonical Employee ID Formatter
+ *
+ * Enforces standard canonical employee identity format:
+ *   EMP-<TENANT_CODE>-<ID> (e.g., EMP-BHIV-080, EMP-SIPS-012)
+ *
+ * Rules:
+ * 1. Never overwrites an already valid canonical ID (EMP-<TENANT_CODE>-<ID>).
+ * 2. Scoped to the tenant's authoritative code (e.g. BHIV, SIPS) - does NOT force BHIV onto other tenants.
+ * 3. Eliminates flawed fallback regex that blindly prefixed non-BHIV emails with 'BHIV'.
+ * 4. Normalizes numeric sequences (e.g., 80 -> 080, 12 -> 012, 147 -> 147).
+ * 5. Supports BHIVMSSU format (e.g. BHIVMSSU0030).
  *
  * @param {string} email - Employee email or identifier string
  * @param {string} [existingEmployeeId] - Existing employeeId if set
- * @returns {string} Formatted Employee ID (e.g. 'BHIV147', 'BHIVMSSU0030')
+ * @param {string} [tenantCode='BHIV'] - Authoritative tenant code (e.g. 'BHIV', 'SIPS')
+ * @returns {string} Formatted Canonical Employee ID (e.g. 'EMP-BHIV-080')
  */
-function formatEmployeeId(email, existingEmployeeId = null) {
-  if (existingEmployeeId && /^BHIV(?:MSSU)?\d+$/i.test(existingEmployeeId.trim())) {
-    return existingEmployeeId.trim().toUpperCase();
+function formatEmployeeId(email, existingEmployeeId = null, tenantCode = "BHIV") {
+  const cleanTenant = String(tenantCode || "BHIV").trim().toUpperCase();
+
+  // 1. If existingEmployeeId is already a valid canonical ID, preserve it immutably
+  if (existingEmployeeId && typeof existingEmployeeId === "string") {
+    const trimmedExisting = existingEmployeeId.trim();
+    if (/^EMP-[A-Z0-9]+-[A-Z0-9]+$/i.test(trimmedExisting)) {
+      return trimmedExisting.toUpperCase();
+    }
+    if (/^BHIVMSSU\d+$/i.test(trimmedExisting)) {
+      return trimmedExisting.toUpperCase();
+    }
+    // If existing is legacy format matching current tenant (e.g. BHIV147)
+    const legacyTenantMatch = trimmedExisting.match(new RegExp(`^${cleanTenant}(\\d+)$`, "i"));
+    if (legacyTenantMatch) {
+      const num = legacyTenantMatch[1];
+      const padded = num.length < 3 ? num.padStart(3, "0") : num;
+      return `EMP-${cleanTenant}-${padded}`;
+    }
   }
 
-  if (!email || typeof email !== 'string') {
-    return existingEmployeeId || 'N/A';
+  if (!email || typeof email !== "string") {
+    if (existingEmployeeId && existingEmployeeId.trim() && existingEmployeeId.trim() !== "N/A") {
+      return existingEmployeeId.trim();
+    }
+    return "N/A";
   }
 
-  const localPart = email.split('@')[0].trim().toLowerCase();
+  const cleanEmail = email.trim();
+  const localPart = cleanEmail.split("@")[0].trim().toLowerCase();
 
   const mssuMatch = localPart.match(/^bhiv[-_.]?mssu[^\d]*(\d+)/i);
   if (mssuMatch && mssuMatch[1]) {
     return `BHIVMSSU${mssuMatch[1]}`;
   }
 
-  // Match BHIV / Blackhole patterns followed by numbers, or any trailing numbers
-  const match = localPart.match(/(?:blackhole(?:infiverse?|infivers)?|bhiv)[^\d]*(\d+)/i)
-    || localPart.match(/(\d+)$/);
+  // 2. Extract numeric ID using tenant-aware matching
+  let numMatch = null;
 
-  if (match && match[1]) {
-    return `BHIV${match[1]}`;
+  if (cleanTenant === "BHIV") {
+    // BHIV-specific pattern: blackholeinfiverse80, bhivtest2, bhiv20, blackholeinfivers147
+    const bhivPattern = /(?:blackhole(?:infiverse?|infivers)?|bhiv)[^\d]*(\d+)/i;
+    numMatch = localPart.match(bhivPattern);
+    // Only fall back to trailing digits if localPart contains bhiv or blackhole
+    if (!numMatch && (localPart.includes("bhiv") || localPart.includes("blackhole"))) {
+      numMatch = localPart.match(/(\d+)$/);
+    }
+  } else if (cleanTenant === "SIPS") {
+    // SIPS-specific pattern: sips012, student12, biotech05
+    const sipsPattern = /(?:sips)[^\d]*(\d+)/i;
+    numMatch = localPart.match(sipsPattern);
+    if (!numMatch) {
+      numMatch = localPart.match(/(\d+)$/);
+    }
+  } else {
+    // Generic tenant pattern
+    const genericPattern = new RegExp(`(?:${cleanTenant.toLowerCase()})[^\\d]*(\\d+)`, "i");
+    numMatch = localPart.match(genericPattern);
+    if (!numMatch) {
+      numMatch = localPart.match(/(\d+)$/);
+    }
   }
 
-  if (existingEmployeeId && existingEmployeeId.trim()) {
+  // 3. Format into canonical EMP-<TENANT_CODE>-<ID>
+  if (numMatch && numMatch[1]) {
+    const rawNum = numMatch[1];
+    const padded = rawNum.length < 3 ? rawNum.padStart(3, "0") : rawNum;
+    return `EMP-${cleanTenant}-${padded}`;
+  }
+
+  // 4. Fallback to existing valid ID if available
+  if (existingEmployeeId && typeof existingEmployeeId === "string" && existingEmployeeId.trim() && existingEmployeeId.trim() !== "N/A") {
     return existingEmployeeId.trim();
   }
 
-  return 'N/A';
+  return "N/A";
 }
 
-module.exports = { formatEmployeeId };
+const formatCanonicalEmployeeId = formatEmployeeId;
 
+module.exports = {
+  formatEmployeeId,
+  formatCanonicalEmployeeId,
+};

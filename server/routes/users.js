@@ -578,10 +578,16 @@ router.delete("/:id", auth, adminAuth, async (req, res) => {
   }
 })
 
-// Get tasks assigned to user - SHOW ALL USERS
-router.get("/:id/tasks", async (req, res) => {
+// Get tasks assigned to user - Protected by auth
+router.get("/:id/tasks", auth, async (req, res) => {
   try {
     const { status } = req.query
+
+    // Check authorization: user can only view their own tasks unless Admin
+    const authUserId = req.user ? (req.user.id || req.user._id) : null;
+    if (!req.user || (req.user.role !== "Admin" && (!authUserId || authUserId.toString() !== req.params.id))) {
+      return res.status(403).json({ error: "Not authorized to access these tasks" });
+    }
 
     // Verify user exists
     const user = await User.findById(req.params.id)

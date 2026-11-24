@@ -600,6 +600,51 @@ router.get('/intelligent/stats', async (req, res) => {
   }
 });
 
+// GET /api/monitoring/employees/:id/keystrokes
+router.get('/employees/:id/keystrokes', auth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { date, classification } = req.query;
+    const KeystrokeLog = require('../models/KeystrokeLog');
+
+    const query = { employee: id };
+    if (date) {
+      const d = new Date(date);
+      const nextD = new Date(d);
+      nextD.setDate(nextD.getDate() + 1);
+      query.timestamp = { $gte: d, $lt: nextD };
+    }
+
+    const ALLOWED_CLASSIFICATIONS = ['valuable', 'key_mashing', 'neutral', 'low_value', 'insufficient', 'suspicious'];
+    if (classification && ALLOWED_CLASSIFICATIONS.includes(classification)) {
+      query['quality.classification'] = classification;
+    }
+
+    const segments = await KeystrokeLog.find(query)
+      .sort({ timestamp: -1 })
+      .limit(100)
+      .select('timestamp text application_name window_title capture quality wpm session_id')
+      .lean();
+
+    const summary = {
+      total: segments.length,
+      valuable: segments.filter(s => s.quality?.classification === 'valuable').length,
+      key_mashing: segments.filter(s => s.quality?.classification === 'key_mashing').length,
+      totalChars: segments.reduce((acc, s) => acc + (s.capture?.char_count || (s.text ? s.text.length : 0)), 0),
+      avgWpm: segments.length > 0 ? Math.round(segments.reduce((acc, s) => acc + (s.wpm || 0), 0) / segments.length) : 0,
+    };
+
+    return res.status(200).json({
+      success: true,
+      segments,
+      summary,
+    });
+  } catch (error) {
+    console.error('Error fetching keystrokes:', error);
+    return res.status(500).json({ success: false, error: 'Failed to fetch keystrokes' });
+  }
+});
+
 // Note: /keystroke/:employeeId endpoints excised under Monitoring V2 Privacy Boundaries.
 
 // Get productivity summary

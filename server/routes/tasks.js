@@ -727,12 +727,44 @@ router.post("/register-intake", auth, async (req, res) => {
       taskTitle = firstLine.length > 80 ? firstLine.substring(0, 77) + "..." : (firstLine || "WhatsApp Registered Task");
     }
 
+    const taskDescription = description || originalInstruction;
+
+    // Feature 9: API Idempotency Checking (X-Idempotency-Key or SHA-256 payload hash)
+    const crypto = require("crypto");
+    const providedKey = req.headers["x-idempotency-key"] || req.headers["idempotency-key"] || req.body.idempotencyKey;
+    const normalizedInstruction = (originalInstruction || "").trim().toLowerCase();
+    const normalizedTitle = (taskTitle || "").trim().toLowerCase();
+    const hashSource = `${candidateUser._id.toString()}:${normalizedTitle}:${normalizedInstruction}:${sourceType.toUpperCase()}`;
+    const payloadHash = crypto.createHash("sha256").update(hashSource).digest("hex");
+    const idempotencyKey = (providedKey && String(providedKey).trim()) ? String(providedKey).trim() : `hash-${payloadHash}`;
+
+    // Feature 9: Check existing task by idempotencyKey or content match to prevent duplicate intake
+    const existingTask = await Task.findOne({
+      $or: [
+        { idempotencyKey },
+        {
+          assignee: candidateUser._id,
+          title: taskTitle,
+          originalInstruction: originalInstruction,
+          status: { $in: ["Pending Validation", "Pending", "In Progress", "Submitted for Review", "Completed", "Closed"] }
+        }
+      ]
+    });
+
+    if (existingTask) {
+      console.log(`[INTAKE IDEMPOTENCY] Duplicate intake detected for key "${idempotencyKey}". Replaying existing task ${existingTask._id} (${existingTask.task_id}).`);
+      return res.status(200).json({
+        ok: true,
+        idempotentReplay: true,
+        message: "Task intake already registered. Returning existing record.",
+        task: existingTask
+      });
+    }
+
     // Generate unique task_id: e.g. T-WHT-<TIMESTAMP_HEX>
     const randSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
     const prefix = sourceType === "WHATSAPP" ? "T-WHT" : (sourceType === "LEAD_INSTRUCTION" ? "T-DIR" : "T-INT");
     const generatedTaskId = `${prefix}-${Date.now().toString(36).toUpperCase()}-${randSuffix}`;
-
-    const taskDescription = description || originalInstruction;
 
     const initialProgress = Math.max(0, Math.min(100, Number(req.body.progress) || 0));
     const requestedStatus = req.body.status || (sourceType.toUpperCase() === "WHATSAPP" ? "In Progress" : "Pending Validation");
@@ -744,6 +776,9 @@ router.post("/register-intake", auth, async (req, res) => {
       title: taskTitle,
       description: taskDescription,
       task_id: generatedTaskId,
+      idempotencyKey: idempotencyKey,
+      product: req.body.product || "BHIV",
+      tenantId: candidateUser.tenantId || "ten-bhiv-core",
       sourceType: sourceType.toUpperCase(),
       originatingPerson: originatingPerson || "Project Lead",
       sourceReference: sourceReference || "WhatsApp / External Communication",
@@ -764,10 +799,31 @@ router.post("/register-intake", auth, async (req, res) => {
       branch: branch || req.headers["x-branch"] || candidateUser.branch || "blackhole_mumbai",
       progress: initialProgress,
       closedAt: initialStatus === "Completed" ? new Date() : undefined,
-      notes: `[TASK INTAKE REGISTERED]\nSource: ${sourceType}\nOriginator: ${originatingPerson || 'Lead'}\nReference: ${sourceReference || 'N/A'}\nUnique ID: ${generatedTaskId}\nRegistered At: ${new Date().toISOString()}`
+      notes: `[TASK INTAKE REGISTERED]\nSource: ${sourceType}\nOriginator: ${originatingPerson || 'Lead'}\nReference: ${sourceReference || 'N/A'}\nUnique ID: ${generatedTaskId}\nIdempotency Key: ${idempotencyKey}\nRegistered At: ${new Date().toISOString()}`,
+      metadata: {
+        idempotencyKey,
+        registeredVia: "register-intake",
+        sourceType: sourceType.toUpperCase()
+      }
     });
 
-    await newTask.save();
+    try {
+      await newTask.save();
+    } catch (saveErr) {
+      if (saveErr.code === 11000) {
+        const racedTask = await Task.findOne({ idempotencyKey });
+        if (racedTask) {
+          console.log(`[INTAKE IDEMPOTENCY] Concurrent duplicate insert caught via unique index for key ${idempotencyKey}. Returning existing record.`);
+          return res.status(200).json({
+            ok: true,
+            idempotentReplay: true,
+            message: "Concurrent duplicate intake request handled idempotently.",
+            task: racedTask
+          });
+        }
+      }
+      throw saveErr;
+    }
 
     // Notify project leads and managers about new pending task
     try {

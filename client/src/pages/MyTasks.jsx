@@ -840,6 +840,7 @@ function MyTasks() {
           onOpenChange={setIsSubmissionDialogOpen}
           onSubmit={handleSubmitTask}
           existingSubmission={submissions[selectedTask._id]}
+          task={selectedTask}
         />
       )}
 
