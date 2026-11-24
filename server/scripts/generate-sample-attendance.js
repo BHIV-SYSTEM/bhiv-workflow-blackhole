@@ -20,8 +20,8 @@ const WEEKENDS = [1, 2, 8, 9, 15, 16, 22, 23, 29, 30]; // Saturdays and Sundays
 
 // Employee data
 const employees = [
-  { id: 'EMP0001', name: 'John Doe' },
-  { id: 'EMP0002', name: 'Jane Smith' },
+  { id: 'EMP0001', name: 'Alex Taylor' },
+  { id: 'EMP0002', name: 'Jordan Lee' },
   { id: 'EMP0003', name: 'Bob Johnson' },
   { id: 'EMP0004', name: 'Alice Williams' },
   { id: 'EMP0005', name: 'Charlie Brown' }

@@ -83,6 +83,7 @@ const TaskSchema = new mongoose.Schema({
       "Approved",
       "Returned",
       "Pending",
+      "Pending Admin Assignment",
       "In Progress",
       "Submitted for Review",
       "Completed",
@@ -168,7 +169,9 @@ const TaskSchema = new mongoose.Schema({
   assignee: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
-    required: true,
+    required: function () {
+      return this.status !== "Pending Admin Assignment";
+    },
   },
   dueDate: {
     type: Date,
@@ -211,6 +214,31 @@ const TaskSchema = new mongoose.Schema({
     default: 'blackhole_mumbai',
     index: true,
   },
+  // Product context grounding
+  product: {
+    type: String,
+    trim: true,
+    default: 'BHIV',
+    index: true,
+  },
+  // Multi-tenant isolation identifier
+  tenantId: {
+    type: String,
+    default: 'ten-bhiv-core',
+    index: true,
+  },
+  // API Idempotency key to prevent duplicate intake/assignment on network retry
+  idempotencyKey: {
+    type: String,
+    unique: true,
+    sparse: true,
+    index: true,
+  },
+  // Audit and reconciliation metadata (e.g. SUPERSEDED_DUPLICATE, canonical linkage)
+  metadata: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {},
+  },
 });
 
 // Update the updatedAt field before saving
@@ -219,11 +247,12 @@ TaskSchema.pre("save", function (next) {
   next();
 });
 
-// Compound indexes for dashboard query performance
+// Compound indexes for dashboard query performance and duplicate prevention
 TaskSchema.index({ assignee: 1, status: 1 });
 TaskSchema.index({ department: 1, status: 1, branch: 1 });
 TaskSchema.index({ assignee: 1, dueDate: 1, status: 1 });
 TaskSchema.index({ branch: 1, status: 1, updatedAt: -1 }); // covering index for paginated completed-tasks sort
+TaskSchema.index({ assignee: 1, task_id: 1, tenantId: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model("Task", TaskSchema);
 

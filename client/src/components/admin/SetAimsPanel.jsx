@@ -216,15 +216,13 @@ const SetAimsPanel = () => {
 
       // Step 2: Start live attendance tracking for all selected users
       console.log('Starting live attendance for users:', selectedUserIds);
-      const trackingResponses = await Promise.allSettled(
-        selectedUserIds.map(userId =>
-          api.post(`/attendance/live/start/${userId}`, {
-            latitude: 40.7128,
-            longitude: -74.0060,
-            accuracy: 50,
-          })
-        )
-      );
+        const trackingResponses = await Promise.allSettled(
+          selectedUserIds.map(userId =>
+            // No fabricated coordinates: the server enables live tracking and
+            // records a real position only when the employee's device reports one.
+            api.post(`/attendance/live/start/${userId}`, {})
+          )
+        );
 
       const trackingSucceeded = trackingResponses.filter(r => r.status === 'fulfilled').length;
       const trackingFailed = trackingResponses.filter(r => r.status === 'rejected').length;

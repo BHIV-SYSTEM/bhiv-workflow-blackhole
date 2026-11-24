@@ -1591,6 +1591,7 @@ function TaskDetails() {
         onOpenChange={setIsSubmissionDialogOpen}
         onSubmit={handleSubmitTask}
         existingSubmission={submission}
+        task={task}
       />
 
       {task && (

@@ -24,6 +24,23 @@ let dailySummaryState = {
 let cachedTasks = [];
 
 /**
+ * End Day is gated behind a daily progress submission. The flag is set only
+ * after a progress update is successfully saved for the current work day, so
+ * an employee can never close the day without recording progress.
+ */
+let endDayProgressConfirmed = false;
+
+/**
+ * Backend task payloads use `id`; local/aim payloads use `_id`.
+ * Normalise so task selectors never end up with an "undefined" value.
+ */
+function getTaskId(task) {
+  if (!task) return null;
+  const id = task._id || task.id || task.task_id || null;
+  return id && id !== 'undefined' && id !== 'null' ? String(id) : null;
+}
+
+/**
  * Initialize application on DOM load
  */
 async function init() {
@@ -388,28 +405,36 @@ function setupEventListeners() {
   const startDayBtn = document.getElementById('startDayBtn');
   if (startDayBtn) {
     startDayBtn.addEventListener('click', async () => {
-      await handleStartDayClick();
-    });
-  }
+      hideDashboardAlert();
+      startDayBtn.disabled = true;
+      const originalHtml = startDayBtn.innerHTML;
+      startDayBtn.textContent = 'Starting Day...';
 
-  const submitPrevReasonStartBtn = document.getElementById('submitPrevReasonStartBtn');
-  if (submitPrevReasonStartBtn) {
-    submitPrevReasonStartBtn.addEventListener('click', async () => {
-      const inputEl = document.getElementById('prevProgressReasonInput');
-      const reason = inputEl?.value?.trim() || '';
-      const minLen = Number(submitPrevReasonStartBtn.dataset.minLength || 10);
-      if (reason.length < minLen) {
-        showDashboardAlert('error', `Please enter at least ${minLen} characters explaining why yesterday's progress was not updated.`);
-        return;
+      const result = await window.electronAPI.startDay();
+
+      if (result.success) {
+        endDayProgressConfirmed = false;
+        dailySummaryState.baseActiveSeconds = 0;
+        dailySummaryState.syncedAtMs = Date.now();
+        dailySummaryState.latestSummary = null;
+        const mouseCountEl = document.getElementById('mouseCount');
+        const keyCountEl = document.getElementById('keyCount');
+        if (mouseCountEl) mouseCountEl.textContent = '0';
+        if (keyCountEl) keyCountEl.textContent = '0';
+
+        const appState = await window.electronAPI.getAppState();
+        currentAppState = appState || currentAppState;
+        updateDashboard(appState);
+        await refreshDailySummary();
+        startStatsUpdate();
+        await loadTasks();
+        showDashboardAlert('success', 'Work day started! Activity tracking is now active.');
+      } else {
+        showDashboardAlert('error', result.error || 'Failed to start work day.');
       }
-      await handleStartDayClick(reason);
-    });
-  }
 
-  const cancelPrevReasonBtn = document.getElementById('cancelPrevReasonBtn');
-  if (cancelPrevReasonBtn) {
-    cancelPrevReasonBtn.addEventListener('click', () => {
-      hidePrevProgressReasonCard();
+      startDayBtn.disabled = false;
+      startDayBtn.innerHTML = originalHtml;
     });
   }
 
@@ -441,7 +466,6 @@ function setupEventListeners() {
   if (activeTaskSelect && window.electronAPI.setActiveTask) {
     activeTaskSelect.addEventListener('change', async () => {
       const taskId = activeTaskSelect.value || null;
-      currentAppState.activeTaskId = taskId;
       await window.electronAPI.setActiveTask(taskId);
     });
   }
@@ -471,94 +495,25 @@ function setupEventListeners() {
   }
 }
 
-function hidePrevProgressReasonCard() {
-  const card = document.getElementById('prevProgressReasonCard');
-  if (card) card.classList.remove('visible');
-}
-
-function openPrevProgressReasonCard({ previousDateLabel, minLength = 10, error }) {
-  const card = document.getElementById('prevProgressReasonCard');
-  const desc = document.getElementById('prevProgressReasonDesc');
-  const input = document.getElementById('prevProgressReasonInput');
-  const submitBtn = document.getElementById('submitPrevReasonStartBtn');
-  if (!card) return;
-  if (desc) {
-    desc.textContent =
-      error ||
-      `Why was the previous day's progress (${previousDateLabel || 'yesterday'}) not updated? Minimum ${minLength} characters required.`;
-  }
-  if (submitBtn) submitBtn.dataset.minLength = String(minLength);
-  card.classList.add('visible');
-  if (input) input.focus();
-}
-
-async function handleStartDayClick(previousDayProgressReason = null) {
-  const startDayBtn = document.getElementById('startDayBtn');
-  if (!startDayBtn) return;
-
-  hideDashboardAlert();
-  startDayBtn.disabled = true;
-  const originalHtml = startDayBtn.innerHTML;
-  startDayBtn.textContent = 'Starting Day...';
-
-  try {
-    const payload = previousDayProgressReason ? { previousDayProgressReason } : {};
-    const result = await window.electronAPI.startDay(payload);
-
-    if (result.success) {
-      hidePrevProgressReasonCard();
-      const input = document.getElementById('prevProgressReasonInput');
-      if (input) input.value = '';
-
-      dailySummaryState.baseActiveSeconds = 0;
-      dailySummaryState.syncedAtMs = Date.now();
-      dailySummaryState.latestSummary = null;
-      const mouseCountEl = document.getElementById('mouseCount');
-      const keyCountEl = document.getElementById('keyCount');
-      if (mouseCountEl) mouseCountEl.textContent = '0';
-      if (keyCountEl) keyCountEl.textContent = '0';
-
-      const appState = await window.electronAPI.getAppState();
-      currentAppState = appState || currentAppState;
-      updateDashboard(appState);
-      await refreshDailySummary();
-      startStatsUpdate();
-      await loadTasks();
-
-      if (result.aimReminder) {
-        showDashboardAlert(
-          'warning',
-          result.aimReminderMessage ||
-            "Work day started! Reminder: Please set your daily Aim in the Set Aims tab on the web portal."
-        );
-      } else {
-        showDashboardAlert('success', 'Work day started! Activity tracking is now active.');
-      }
-    } else if (result.code === 'PREVIOUS_DAY_PROGRESS_REASON_REQUIRED') {
-      showDashboardAlert(
-        'warning',
-        result.error || "Why was the previous day's progress not updated? Please enter a reason below."
-      );
-      openPrevProgressReasonCard(result);
-    } else {
-      showDashboardAlert('error', result.error || 'Failed to start work day.');
-    }
-  } catch (error) {
-    showDashboardAlert('error', error.message || 'Failed to start work day.');
-  } finally {
-    startDayBtn.disabled = false;
-    startDayBtn.innerHTML = originalHtml;
-  }
-}
-
 /**
- * Execute End Day flow with clear UI feedback & non-blocking progress reminder
+ * Execute End Day flow with clear UI feedback & daily progress fallback
  */
 async function handleEndDayClick() {
   const endDayBtn = document.getElementById('endDayBtn');
   if (!endDayBtn) return;
 
   hideDashboardAlert();
+
+  // Hard gate: progress must be recorded for today before the day may close.
+  if (!endDayProgressConfirmed) {
+    showDashboardAlert(
+      'warning',
+      'Daily progress is required to end the day. Submit the quick update below — your day cannot be closed without it.'
+    );
+    await openQuickProgressCard();
+    return;
+  }
+
   endDayBtn.disabled = true;
   const originalHtml = endDayBtn.innerHTML;
   endDayBtn.textContent = 'Ending Day...';
@@ -573,17 +528,10 @@ async function handleEndDayClick() {
       currentAppState = appState || currentAppState;
       updateDashboard(appState);
       await refreshDailySummary();
-      if (result.progressReminder || result.data?.progressReminder) {
-        showDashboardAlert(
-          'warning',
-          result.reminderMessage ||
-            result.data?.reminderMessage ||
-            "Work day ended! Reminder: Today's daily progress was not updated. You will be asked for a reason at tomorrow's Start Day."
-        );
-      } else {
-        showDashboardAlert('success', result.message || 'Work day ended cleanly. Great work today!');
-      }
+      showDashboardAlert('success', result.message || 'Work day ended cleanly. Great work today!');
     } else if (result.code === 'PROGRESS_NOT_SET') {
+      // Server still refuses: drop the local confirmation and force progress again.
+      endDayProgressConfirmed = false;
       showDashboardAlert(
         'warning',
         'Daily progress update is required before ending your day. Fill out the quick update below or update it on the web Progress tab.'
@@ -621,10 +569,8 @@ async function openQuickProgressCard() {
     select.appendChild(opt);
   } else {
     cachedTasks.forEach((task) => {
-      const taskVal = getTaskOptionValue(task);
-      if (!taskVal) return;
       const opt = document.createElement('option');
-      opt.value = taskVal;
+      opt.value = getTaskId(task) || '';
       opt.textContent = task.title || 'Untitled Task';
       select.appendChild(opt);
     });
@@ -650,10 +596,16 @@ function hideQuickProgressCard() {
  */
 async function handleSaveProgressAndEndDay() {
   const saveBtn = document.getElementById('saveProgressEndBtn');
-  const taskId = document.getElementById('progressTaskSelect')?.value;
+  let taskId = getTaskId({ id: document.getElementById('progressTaskSelect')?.value });
   const pct = document.getElementById('progressPercent')?.value || '75';
   const notes = document.getElementById('progressNotes')?.value?.trim() || '';
+  const achievements = document.getElementById('progressAchievements')?.value?.trim() || '';
+  const blockers = document.getElementById('progressBlockers')?.value?.trim() || '';
 
+  if (!taskId && cachedTasks.length > 0) {
+    // Fall back to the first cached task if the dropdown value is unusable
+    taskId = getTaskId(cachedTasks[0]);
+  }
   if (!taskId) {
     showDashboardAlert('error', 'No assigned task available here. Please submit daily progress from the web Progress tab.');
     return;
@@ -661,18 +613,32 @@ async function handleSaveProgressAndEndDay() {
 
   if (!notes) {
     showDashboardAlert('warning', 'Please enter a brief note describing today’s work.');
+    document.getElementById('progressNotes')?.focus();
+    return;
+  }
+  if (!achievements) {
+    showDashboardAlert('warning', 'Please list your key achievements for today.');
+    document.getElementById('progressAchievements')?.focus();
+    return;
+  }
+  if (!blockers) {
+    showDashboardAlert('warning', 'Please record today’s blockers — enter “None” if there were none.');
+    document.getElementById('progressBlockers')?.focus();
     return;
   }
 
-  saveBtn.disabled = true;
-  saveBtn.textContent = 'Saving...';
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+  }
 
   try {
     const progRes = await window.electronAPI.submitProgress({
       taskId,
       progressPercentage: Number(pct),
       notes,
-      achievements: notes
+      achievements,
+      blockers
     });
 
     if (!progRes || !progRes.success) {
@@ -680,12 +646,19 @@ async function handleSaveProgressAndEndDay() {
       return;
     }
 
+    // Progress is on record for today -> the End Day gate may now open.
+    endDayProgressConfirmed = true;
     hideQuickProgressCard();
-    document.getElementById('progressNotes').value = '';
+    ['progressNotes', 'progressAchievements', 'progressBlockers'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
     await handleEndDayClick();
   } finally {
-    saveBtn.disabled = false;
-    saveBtn.textContent = 'Save Progress & End Day';
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save Progress & End Day';
+    }
   }
 }
 
@@ -762,42 +735,22 @@ async function loadTasks() {
   }
 }
 
-function getTaskOptionValue(task) {
-  const val = task?.id || task?._id || task?.task_id || '';
-  return val && val !== 'undefined' && val !== 'null' ? String(val) : '';
-}
-
 function renderTasks(tasks) {
   cachedTasks = Array.isArray(tasks) ? tasks : (tasks?.tasks || []);
   const select = document.getElementById('activeTaskSelect');
   if (!select) return;
 
-  const desiredValue =
-    (select.value && select.value !== 'undefined' ? select.value : '') ||
-    (currentAppState?.activeTaskId && currentAppState.activeTaskId !== 'undefined'
-      ? String(currentAppState.activeTaskId)
-      : '');
-
+  const previous = select.value;
   select.innerHTML = '<option value="">— Not attributed to a task —</option>';
 
   cachedTasks.forEach((task) => {
-    const taskVal = getTaskOptionValue(task);
-    if (!taskVal) return;
     const opt = document.createElement('option');
-    opt.value = taskVal;
+    opt.value = getTaskId(task) || '';
     opt.textContent = task.status ? `${task.title} (${task.status})` : task.title;
     select.appendChild(opt);
   });
 
-  if (desiredValue && Array.from(select.options).some((o) => o.value === desiredValue)) {
-    select.value = desiredValue;
-  } else if (currentAppState?.activeTaskId && !Array.from(select.options).some((o) => o.value === String(currentAppState.activeTaskId))) {
-    // Task no longer open/assigned; clear stale selection cleanly
-    currentAppState.activeTaskId = null;
-    if (window.electronAPI?.setActiveTask) {
-      window.electronAPI.setActiveTask(null).catch(() => {});
-    }
-  }
+  if (previous) select.value = previous;
 }
 
 /**
@@ -808,6 +761,13 @@ function updateCaptureStatus(status) {
   const text = document.getElementById('captureStatus');
   const next = document.getElementById('captureNext');
   if (!dot || !text || !next) return;
+
+  if (status.disabled) {
+    dot.className = 'capture-dot';
+    text.textContent = 'Capture: disabled (privacy)';
+    next.textContent = '';
+    return;
+  }
 
   if (!status || !status.running) {
     dot.className = 'capture-dot';

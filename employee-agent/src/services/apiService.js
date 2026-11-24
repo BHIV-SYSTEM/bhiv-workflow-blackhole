@@ -1,6 +1,7 @@
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
+const { resolveLocation, isNearOffice } = require('../utils/geolocation');
 
 class ApiService {
   constructor() {
@@ -145,22 +146,40 @@ class ApiService {
         };
       }
 
-      // Use sample location data for desktop agent (work from home mode)
-      // Using generic coordinates - can be replaced with actual geolocation API later
-      const locationData = {
-        latitude: 40.7128,  // Sample latitude (New York City)
-        longitude: -74.0060, // Sample longitude (New York City)
-        address: 'Work From Home - Desktop Agent',
-        accuracy: 10,
-        workFromHome: true,
-        homeLocation: { 
-          latitude: 40.7128, 
-          longitude: -74.0060 
-        },
-        ...(options?.previousDayProgressReason
-          ? { previousDayProgressReason: String(options.previousDayProgressReason).trim() }
-          : {})
-      };
+      // Resolve the operator's real location instead of sample coordinates.
+      const location = await resolveLocation();
+      if (!location) {
+        return {
+          success: false,
+          error:
+            'Location unavailable. Allow location access in Windows Settings (Settings > Privacy > Location) or connect to the internet, then try again.'
+        };
+      }
+
+      // Only report Office when the fix came from the Windows Location API and we
+      // are genuinely inside the office radius; otherwise treat it as work-from-home
+      // so the server never rejects the day with LOCATION_TOO_FAR.
+      const atOffice = location.source === 'windows' && isNearOffice(location.latitude, location.longitude);
+
+        const locationData = {
+          latitude: location.latitude,
+          longitude: location.longitude,
+          address: location.address,
+          accuracy: location.accuracy,
+          deviceInfo: { deviceType: 'desktop', userAgent: 'Niyantran Desktop Agent' },
+          ...(options?.previousDayProgressReason
+            ? { previousDayProgressReason: String(options.previousDayProgressReason).trim() }
+            : {})
+        };
+        if (atOffice) {
+          locationData.workFromHome = false;
+        } else {
+          locationData.workFromHome = true;
+          locationData.homeLocation = {
+            latitude: location.latitude,
+            longitude: location.longitude
+          };
+        }
 
       const response = await this.client.post(`/api/attendance/start-day/${userId}`, locationData);
       
@@ -253,13 +272,16 @@ class ApiService {
         };
       }
 
-      // Use sample location data for desktop agent (work from home mode)
-      const locationData = {
-        latitude: 40.7128,  // Sample latitude (New York City)
-        longitude: -74.0060, // Sample longitude (New York City)
-        address: 'Work From Home - Desktop Agent',
-        accuracy: 10
-      };
+      // End the day at the operator's real location (best effort).
+      const endLocation = await resolveLocation();
+      const locationData = endLocation
+        ? {
+            latitude: endLocation.latitude,
+            longitude: endLocation.longitude,
+            address: endLocation.address,
+            accuracy: endLocation.accuracy
+          }
+        : {};
 
       const response = await this.client.post(`/api/attendance/end-day/${userId}`, locationData);
       
@@ -286,7 +308,7 @@ class ApiService {
       };
     } catch (error) {
       const errData = error.response?.data || {};
-      const errMsg = errData.error || errData.message || error.message || 'Failed to end day';
+      const errMsg = errData.details || errData.error || errData.message || error.message || 'Failed to end day';
 
       if (errData.code === 'PROGRESS_NOT_SET' || /daily progress/i.test(errMsg)) {
         return {

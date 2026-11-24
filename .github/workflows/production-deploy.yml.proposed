@@ -1,0 +1,311 @@
+# ==============================================================================
+# PROPOSED HARDENED PRODUCTION DEPLOYMENT WORKFLOW
+# File: .github/workflows/production-deploy.yml.proposed
+# Status: PROPOSAL — Awaiting explicit engineering approval before replacing cicd.yml
+# ==============================================================================
+
+name: Hardened Production VM Deployment
+
+on:
+  # Manual dispatch with required reason input
+  workflow_dispatch:
+    inputs:
+      deployment_reason:
+        description: 'Reason for deployment to production'
+        required: true
+        default: 'Production release after successful PR quality gate'
+  # Automated trigger ONLY on official GitHub Releases
+  release:
+    types: [published]
+
+# Prevent overlapping deployments to the production VM
+concurrency:
+  group: production-vm-deployment
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  pre-deploy-validation:
+    name: Pre-Deployment Validation & Compose Config Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set Short Git SHA
+        id: vars
+        run: echo "short_sha=$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Generate Compose file for validation
+        run: |
+          sed "s|IMG_TAG|${{ steps.vars.outputs.short_sha }}|g" docker-compose.production.template.yml > docker-compose.production.yml
+
+      - name: Create Stub .env for Compose Config Validation
+        run: |
+          cat <<EOF > .env
+          MONGO_INITDB_ROOT_USERNAME=root
+          MONGO_INITDB_ROOT_PASSWORD=stub_root_password
+          MONGO_INITDB_DATABASE=blackhole_db
+          MONGO_APP_USERNAME=niyantran_app
+          MONGO_APP_PASSWORD=stub_app_password
+          MONGODB_URI=mongodb://niyantran_app:stub_app_password@database:27017/blackhole_db?authSource=blackhole_db
+          EOF
+
+      - name: Validate Docker Compose Configuration
+        run: docker compose -f docker-compose.production.yml config
+
+      - name: Upload Deployment Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-artifacts
+          path: |
+            docker-compose.production.template.yml
+            proxy configurations/nginx.conf
+            proxy configurations/nginx.ssl.conf
+            Monitoring/prometheus.yml
+            Monitoring/datasource.yml
+            mongo-init.js
+
+  build-images:
+    name: Build & Push Production Docker Images
+    needs: pre-deploy-validation
+    runs-on: ubuntu-latest
+    outputs:
+      sha_short: ${{ steps.vars.outputs.sha_short }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set Short Git SHA
+        id: vars
+        run: echo "sha_short=$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and Push Backend Image
+        run: |
+          docker buildx build --push \
+            --tag bhiv/niyantran-backend:${{ steps.vars.outputs.sha_short }} \
+            --tag bhiv/niyantran-backend:latest \
+            -f server/Dockerfile server
+
+      - name: Build and Push Frontend Image
+        env:
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+          VITE_PRANA_BUCKET_URL: ${{ secrets.VITE_PRANA_BUCKET_URL }}
+        run: |
+          API_URL="${VITE_API_URL:-/api}"
+          PRANA_BUCKET_URL="${VITE_PRANA_BUCKET_URL:-https://bhiv-bucket-i1l6.onrender.com/bucket/prana/ingest}"
+          docker buildx build --push \
+            --tag bhiv/niyantran-frontend:${{ steps.vars.outputs.sha_short }} \
+            --tag bhiv/niyantran-frontend:latest \
+            --build-arg VITE_API_URL="$API_URL" \
+            --build-arg VITE_PRANA_BUCKET_URL="$PRANA_BUCKET_URL" \
+            -f client/Dockerfile .
+
+  deploy-production:
+    name: Deploy to Production VM (Protected Environment Gate)
+    needs: build-images
+    runs-on: ubuntu-latest
+    # Protected GitHub Environment: Requires reviewer approval in GitHub Settings
+    environment:
+      name: production
+      url: https://niyantran.blackholeinfiverse.com
+    steps:
+      - name: Download Deployment Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: deployment-artifacts
+
+      - name: Create .env from Secrets
+        run: |
+          cat <<'EOF' > .env
+          ${{ secrets.ENV_FILE }}
+          EOF
+
+      - name: Inject Secrets into NGINX SSL Config
+        run: |
+          export PRAVAH_API_KEY="${{ secrets.PRAVAH_API_KEY }}"
+          envsubst '${PRAVAH_API_KEY}' \
+            < "proxy configurations/nginx.ssl.conf" \
+            > "proxy configurations/nginx.ssl.conf.tmp"
+          mv "proxy configurations/nginx.ssl.conf.tmp" "proxy configurations/nginx.ssl.conf"
+
+      - name: Tar Deployment Files
+        run: |
+          tar -czf deployment.tar.gz docker-compose.production.template.yml .env "proxy configurations" Monitoring mongo-init.js
+
+      - name: Install sshpass
+        run: |
+          sudo apt-get update && sudo apt-get install -y sshpass
+
+      - name: Create Working Directory on Production VM
+        run: |
+          sshpass -p "${{ secrets.VM_PASSWORD }}" ssh -p ${{ secrets.VM_PORT }} -o StrictHostKeyChecking=no ${{ secrets.VM_USERNAME }}@${{ secrets.VM_IP }} "mkdir -p ~/NIYANTRAN"
+
+      - name: Copy Deployment Tarball to VM
+        run: |
+          sshpass -p "${{ secrets.VM_PASSWORD }}" scp -P ${{ secrets.VM_PORT }} -o StrictHostKeyChecking=no deployment.tar.gz ${{ secrets.VM_USERNAME }}@${{ secrets.VM_IP }}:~/NIYANTRAN/deployment.tar.gz
+
+      - name: Deploy Production Stack on VM
+        run: |
+          sshpass -p "${{ secrets.VM_PASSWORD }}" ssh -p ${{ secrets.VM_PORT }} -o StrictHostKeyChecking=no ${{ secrets.VM_USERNAME }}@${{ secrets.VM_IP }} "bash -s" << 'EOF'
+            set -euo pipefail
+            cd ~/NIYANTRAN
+
+            # Preserve docs / release history
+            find . -mindepth 1 ! -name docs ! -path './docs/*' ! -name deployment.tar.gz -exec rm -rf {} +
+
+            tar -xzf deployment.tar.gz
+            rm -f deployment.tar.gz
+
+            docker version
+            docker compose version
+
+            echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+
+            mkdir -p docs
+            if [ -f /var/tmp/NIYANTRAN/RELEASE_HISTORY.md ]; then
+              cp /var/tmp/NIYANTRAN/RELEASE_HISTORY.md docs/RELEASE_HISTORY.md
+            fi
+
+            sed "s|IMG_TAG|${{ needs.build-images.outputs.sha_short }}|g" docker-compose.production.template.yml > docker-compose.production.yml
+            docker compose -f docker-compose.production.yml config
+            docker compose -f docker-compose.production.yml pull
+            docker logout
+
+            docker compose -f docker-compose.production.yml up -d --remove-orphans
+            docker compose -f docker-compose.production.yml up -d --force-recreate proxy
+            docker compose -f docker-compose.production.yml ps
+
+            echo "Waiting for services to be healthy..."
+            for i in {1..12}; do
+              if docker compose -f docker-compose.production.yml ps --filter "status=running" --filter "health=unhealthy" -q >/dev/null 2>&1; then
+                UNHEALTHY_COUNT=$(docker compose -f docker-compose.production.yml ps --filter "status=running" --filter "health=unhealthy" -q | wc -l)
+                STARTING_COUNT=$(docker compose -f docker-compose.production.yml ps --filter "status=running" --filter "health=starting" -q | wc -l)
+              else
+                UNHEALTHY_COUNT=0
+                STARTING_COUNT=0
+              fi
+
+              API_HEALTH=0
+              curl -k -sf https://localhost/api/ping > /dev/null && API_HEALTH=1
+
+              FRONTEND_HEALTH=0
+              curl -k -sf https://localhost > /dev/null && FRONTEND_HEALTH=1
+
+              if [ "$UNHEALTHY_COUNT" -eq 0 ] && [ "$STARTING_COUNT" -eq 0 ] && [ "$API_HEALTH" -eq 1 ] && [ "$FRONTEND_HEALTH" -eq 1 ]; then
+                echo "All containers, API, and frontend endpoints are healthy!"
+                break
+              fi
+
+              if [ "$i" -eq 12 ]; then
+                echo "Health check failed!"
+                docker compose -f docker-compose.production.yml ps
+                docker compose -f docker-compose.production.yml logs --tail=50
+                exit 1
+              fi
+
+              echo "Status: $STARTING_COUNT starting, $UNHEALTHY_COUNT unhealthy, api_ping=$API_HEALTH, frontend=$FRONTEND_HEALTH. Retrying in 10s..."
+              sleep 10
+            done
+
+            docker image prune -af --filter "until=168h"
+          EOF
+
+      - name: Update Release Documentation on Success
+        if: success()
+        run: |
+          sshpass -p "${{ secrets.VM_PASSWORD }}" ssh -p ${{ secrets.VM_PORT }} -o StrictHostKeyChecking=no ${{ secrets.VM_USERNAME }}@${{ secrets.VM_IP }} "bash -s" << 'EOF'
+            set -euo pipefail
+            cd ~/NIYANTRAN
+            if [ ! -f docs/RELEASE_HISTORY.md ]; then
+              mkdir -p docs
+              echo "# Release History and Deployment Registry" > docs/RELEASE_HISTORY.md
+              echo "" >> docs/RELEASE_HISTORY.md
+              echo "| Timestamp | Image Tag (Git SHA) | Status | Description |" >> docs/RELEASE_HISTORY.md
+              echo "|---|---|---|---|" >> docs/RELEASE_HISTORY.md
+            fi
+            echo "| $(date -u +'%Y-%m-%d %H:%M:%S UTC') | ${{ needs.build-images.outputs.sha_short }} | SUCCESS | Hardened release deployment |" >> docs/RELEASE_HISTORY.md
+          EOF
+
+      - name: Automatic Rollback on Failure
+        if: failure()
+        run: |
+          sshpass -p "${{ secrets.VM_PASSWORD }}" ssh -p ${{ secrets.VM_PORT }} -o StrictHostKeyChecking=no ${{ secrets.VM_USERNAME }}@${{ secrets.VM_IP }} "bash -s" << 'EOF'
+            set -euo pipefail
+            cd ~/NIYANTRAN
+            echo "=== BACKEND LOGS ON DEPLOY FAILURE ==="
+            docker compose -f docker-compose.production.yml logs --tail=60 backend || true
+
+            if [ -f docs/RELEASE_HISTORY.md ] && grep -qE "SUCCESS|ROLLBACK_SUCCESS" docs/RELEASE_HISTORY.md; then
+              LAST_HEALTHY_TAG=$(grep -E "SUCCESS|ROLLBACK_SUCCESS" docs/RELEASE_HISTORY.md | tail -n 1 | awk -F '|' '{
+                for(i=1; i<=NF; i++) {
+                  gsub(/[[:space:]]/, "", $i);
+                  if ($i ~ /^[0-9a-f]{7}$/) {
+                    print $i;
+                    exit;
+                  }
+                }
+              }')
+
+              if [ -z "$LAST_HEALTHY_TAG" ]; then
+                echo "No last healthy tag found in Release History. Cannot rollback."
+                exit 1
+              fi
+
+              echo "Rolling back to tag: $LAST_HEALTHY_TAG"
+              sed "s|IMG_TAG|$LAST_HEALTHY_TAG|g" docker-compose.production.template.yml > docker-compose.production.yml
+              echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+              docker compose -f docker-compose.production.yml pull
+              docker logout
+              docker compose -f docker-compose.production.yml up -d --remove-orphans
+              docker compose -f docker-compose.production.yml ps
+
+              echo "Waiting for rollback services to be healthy..."
+              for i in {1..12}; do
+                if docker compose -f docker-compose.production.yml ps --filter "status=running" --filter "health=unhealthy" -q >/dev/null 2>&1; then
+                  UNHEALTHY_COUNT=$(docker compose -f docker-compose.production.yml ps --filter "status=running" --filter "health=unhealthy" -q | wc -l)
+                  STARTING_COUNT=$(docker compose -f docker-compose.production.yml ps --filter "status=running" --filter "health=starting" -q | wc -l)
+                else
+                  UNHEALTHY_COUNT=0
+                  STARTING_COUNT=0
+                fi
+
+                API_HEALTH=0
+                curl -sf http://localhost/api/ping > /dev/null && API_HEALTH=1
+                FRONTEND_HEALTH=0
+                curl -sf http://localhost > /dev/null && FRONTEND_HEALTH=1
+
+                if [ "$UNHEALTHY_COUNT" -eq 0 ] && [ "$STARTING_COUNT" -eq 0 ] && [ "$API_HEALTH" -eq 1 ] && [ "$FRONTEND_HEALTH" -eq 1 ]; then
+                  echo "Rollback deployment is healthy!"
+                  echo "| $(date -u +'%Y-%m-%d %H:%M:%S UTC') | $LAST_HEALTHY_TAG | ROLLBACK_SUCCESS | Rollback from failed ${{ needs.build-images.outputs.sha_short }} is healthy |" >> docs/RELEASE_HISTORY.md
+                  exit 0
+                fi
+                sleep 10
+              done
+            fi
+            exit 1
+          EOF
+
+      - name: Save Persistent Release History
+        if: always()
+        run: |
+          sshpass -p "${{ secrets.VM_PASSWORD }}" ssh -p ${{ secrets.VM_PORT }} -o StrictHostKeyChecking=no ${{ secrets.VM_USERNAME }}@${{ secrets.VM_IP }} "bash -s" << 'EOF'
+            set -euo pipefail
+            cd ~/NIYANTRAN
+            if [ -f docs/RELEASE_HISTORY.md ]; then
+              mkdir -p /var/tmp/NIYANTRAN
+              cp docs/RELEASE_HISTORY.md /var/tmp/NIYANTRAN/RELEASE_HISTORY.md
+            fi
+          EOF

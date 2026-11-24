@@ -75,6 +75,7 @@ router.post("/", upload.any(), async (req, res) => {
       mimeType,
       requireApproval: req.body.requireApproval === "true" || req.body.requireApproval === true,
       branch: req.headers["x-branch"] || req.body.branch || "blackhole_mumbai",
+      tenantId: req.headers["x-tenant-id"] || req.body.tenantId || "ten-bhiv-core",
       creatorId: req.user ? req.user._id : null,
       assignee: req.body.assignee || null,
       department: req.body.department || null,

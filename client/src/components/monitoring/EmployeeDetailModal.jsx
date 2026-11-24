@@ -25,7 +25,6 @@ import {
 import axios from 'axios';
 import { API_URL } from '@/lib/api';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
-import { KeystrokeTextPanel } from '@/components/monitoring/KeystrokeTextPanel';
 
 export function EmployeeDetailModal({ employee, onClose }) {
   const [loading, setLoading] = useState(true);
@@ -47,10 +46,19 @@ export function EmployeeDetailModal({ employee, onClose }) {
     }
   }, [employee]);
 
-  const fetchEmployeeDetails = async () => {
+  // Live update: keep keystroke/metrics fresh while the modal stays
+  // open — silent so the loading state doesn't flash every 30s.
+  useEffect(() => {
+    if (!employee) return undefined;
+    const timer = setInterval(() => fetchEmployeeDetails(true), 30000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employee]);
+
+  const fetchEmployeeDetails = async (silent = false) => {
     if (!employee?._id && !employee?.employeeId) return;
     const empId = employee._id || employee.employeeId;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const token = localStorage.getItem('WorkflowToken') || localStorage.getItem('token');
       
@@ -201,7 +209,7 @@ export function EmployeeDetailModal({ employee, onClose }) {
     } catch (error) {
       console.error('Error fetching employee detailed monitoring:', error);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -257,25 +265,19 @@ export function EmployeeDetailModal({ employee, onClose }) {
             <CardHeader className="pb-2 pt-4">
               <CardTitle className="text-xs font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-2">
                 <Monitor className="h-4 w-4 text-emerald-400 animate-pulse" />
-                Current Active Application & Window
+                Current Active Application
               </CardTitle>
             </CardHeader>
             <CardContent className="pb-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <p className="text-xs text-zinc-400">Application Name</p>
-                  <p className="font-bold text-lg text-white mt-0.5">{metrics.currentActivity.appName}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-zinc-400">Window Title</p>
-                  <p className="font-semibold text-sm text-zinc-200 mt-0.5 truncate">{metrics.currentActivity.windowTitle}</p>
-                </div>
+              <div>
+                <p className="text-xs text-zinc-400">Application Name</p>
+                <p className="font-bold text-lg text-white mt-0.5">{metrics.currentActivity.appName}</p>
               </div>
             </CardContent>
           </Card>
 
           {/* Key Metrics Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
             <Card className="p-3 bg-zinc-900/60 border-zinc-800">
               <p className="text-[11px] font-semibold text-zinc-400 flex items-center gap-1">
                 <Clock className="h-3 w-3 text-emerald-400" /> Active Time
@@ -288,13 +290,6 @@ export function EmployeeDetailModal({ employee, onClose }) {
                 <Clock3 className="h-3 w-3 text-amber-400" /> Idle Time
               </p>
               <p className="font-extrabold text-base mt-1 text-white">{metrics.idleTime}</p>
-            </Card>
-
-            <Card className="p-3 bg-zinc-900/60 border-zinc-800">
-              <p className="text-[11px] font-semibold text-zinc-400 flex items-center gap-1">
-                <Keyboard className="h-3 w-3 text-blue-400" /> Keystrokes
-              </p>
-              <p className="font-extrabold text-base mt-1 text-white">{metrics.keystrokes.toLocaleString()}</p>
             </Card>
 
             <Card className="p-3 bg-zinc-900/60 border-zinc-800">
@@ -337,15 +332,12 @@ export function EmployeeDetailModal({ employee, onClose }) {
 
           {/* Activity Timeline Chart & Logs */}
           <Tabs defaultValue="timeline" className="w-full">
-            <TabsList className="grid grid-cols-3 w-full max-w-md bg-zinc-900 border border-zinc-800 p-1 rounded-xl">
+            <TabsList className="grid grid-cols-2 w-full max-w-xs bg-zinc-900 border border-zinc-800 p-1 rounded-xl">
               <TabsTrigger value="timeline" className="text-xs font-bold data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                 Activity Timeline
               </TabsTrigger>
               <TabsTrigger value="logs" className="text-xs font-bold data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                 Timestamped Logs ({activityLogs.length})
-              </TabsTrigger>
-              <TabsTrigger value="typed" className="text-xs font-bold data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
-                Typed Text
               </TabsTrigger>
             </TabsList>
 
@@ -363,7 +355,6 @@ export function EmployeeDetailModal({ employee, onClose }) {
                         <YAxis stroke="#888888" fontSize={12} />
                         <Tooltip contentStyle={{ backgroundColor: '#18181b', borderColor: '#27272a', color: '#fff' }} />
                         <Line type="monotone" dataKey="productivity" name="Productivity %" stroke="#10b981" strokeWidth={2.5} />
-                        <Line type="monotone" dataKey="keystrokes" name="Keystrokes" stroke="#3b82f6" strokeWidth={2.5} />
                       </LineChart>
                     </ResponsiveContainer>
                   ) : (
@@ -387,7 +378,7 @@ export function EmployeeDetailModal({ employee, onClose }) {
                         <div key={i} className="flex items-center justify-between p-2.5 rounded-xl bg-zinc-950 border border-zinc-800 text-xs">
                           <div>
                             <p className="font-bold text-white">{log.active_application?.name || 'Workspace'}</p>
-                            <p className="text-zinc-400 truncate max-w-xs sm:max-w-md">{log.active_application?.title || 'Active'}</p>
+                            <p className="text-zinc-400 truncate max-w-xs sm:max-w-md">{log.app_category || 'Work Activity'}</p>
                           </div>
                           <div className="text-right">
                             <span className="font-bold text-emerald-400">{log.productivity_score}% prod</span>
@@ -401,17 +392,6 @@ export function EmployeeDetailModal({ employee, onClose }) {
                   </div>
                 </CardContent>
               </Card>
-            </TabsContent>
-
-            <TabsContent value="typed" className="mt-3">
-              <KeystrokeTextPanel
-                employeeId={employee._id || employee.employeeId}
-                date={(() => {
-                  const now = new Date();
-                  const localTodayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-                  return employee.selectedDate || employee.date || localTodayStr;
-                })()}
-              />
             </TabsContent>
           </Tabs>
         </div>

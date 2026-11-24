@@ -64,7 +64,7 @@ router.get('/today/:userId', auth, async (req, res) => {
     const attendance = await Attendance.findOne({
       user: userId,
       date: today
-    }).populate('user', 'name email avatar');
+    }).populate('user', 'name email avatar hourlyRate');
 
     if (!attendance) {
       return res.json({
@@ -95,7 +95,12 @@ router.get('/today/:userId', auth, async (req, res) => {
     }
 
     const totalHours = attendance.hoursWorked || 0;
-    const earnedAmount = totalHours * 32.25; // Mock hourly rate
+    let hourlyRate = attendance.user?.hourlyRate;
+    if (hourlyRate === undefined) {
+      const u = await User.findById(userId).select('hourlyRate').lean();
+      hourlyRate = u?.hourlyRate || 25;
+    }
+    const earnedAmount = totalHours * (hourlyRate || 0);
 
     let status = 'Not Started';
     let message = 'Ready to start your day!';
@@ -669,7 +674,7 @@ router.get('/verify/:userId', auth, async (req, res) => {
     const attendance = await Attendance.findOne({
       user: userId,
       date: targetDate
-    }).populate('user', 'name email');
+    }).populate('user', 'name email hourlyRate');
 
     if (!attendance) {
       return res.json({
@@ -700,7 +705,12 @@ router.get('/verify/:userId', auth, async (req, res) => {
     }
 
     const totalHours = attendance.hoursWorked || 0;
-    const earnedAmount = totalHours * 32.25; // Mock hourly rate
+    let hourlyRate = attendance.user?.hourlyRate;
+    if (hourlyRate === undefined) {
+      const u = await User.findById(userId).select('hourlyRate').lean();
+      hourlyRate = u?.hourlyRate || 25;
+    }
+    const earnedAmount = totalHours * (hourlyRate || 0);
 
     let status = 'Not Started';
     let message = 'Ready to start your day!';

@@ -1,6 +1,6 @@
-const ALLOWED_DOMAINS = new Set(["gmail.com", "outlook.com"]);
+const ALLOWED_DOMAINS = new Set(["gmail.com", "outlook.com", "localhost.invalid", "blackhole.ai"]);
 
-/** Matches server: @gmail.com or @outlook.com; local part must contain bhiv or blackhole. */
+/** Matches server: @gmail.com, @outlook.com, @localhost.invalid, or @blackhole.ai. */
 export function isValidOrgEmail(email) {
   if (!email || typeof email !== "string") return false;
   const e = email.trim().toLowerCase();
@@ -9,5 +9,6 @@ export function isValidOrgEmail(email) {
   const local = e.slice(0, at);
   const domain = e.slice(at + 1);
   if (!ALLOWED_DOMAINS.has(domain)) return false;
+  if (domain === "localhost.invalid" || domain === "blackhole.ai") return true;
   return local.includes("bhiv") || local.includes("blackhole");
 }

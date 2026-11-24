@@ -539,6 +539,25 @@ function Progress() {
       return;
     }
 
+    // Daily progress integrity: all three text sections are mandatory.
+    const notesValue = (notes || "").trim() ||
+      (selectedTask._id === "whatsapp_task" ? (whatsappTitle || "").trim() : "");
+    if (!notesValue) {
+      toast.error("Today's progress notes are required");
+      document.getElementById("notes")?.focus();
+      return;
+    }
+    if (!(achievements || "").trim()) {
+      toast.error("Key achievements are required");
+      document.getElementById("achievements")?.focus();
+      return;
+    }
+    if (!(blockers || "").trim()) {
+      toast.error("Blockers are required — enter 'None' if there were none");
+      document.getElementById("blockers")?.focus();
+      return;
+    }
+
     try {
       setIsSubmitting(true);
       const token = localStorage.getItem('WorkflowToken');
@@ -823,35 +842,53 @@ function Progress() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="notes">Today's Progress Notes</Label>
+                <Label htmlFor="notes" className="flex items-center gap-1">
+                  Today&apos;s Progress Notes
+                  <span className="text-destructive" aria-hidden="true">*</span>
+                  <span className="sr-only">(required)</span>
+                </Label>
                 <Textarea
                   id="notes"
-                  placeholder="What did you accomplish today?"
+                  placeholder="What did you accomplish today? (required)"
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   rows={3}
+                  required
+                  aria-required="true"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="blockers">Blockers or Challenges</Label>
+                <Label htmlFor="blockers" className="flex items-center gap-1">
+                  Blockers or Challenges
+                  <span className="text-destructive" aria-hidden="true">*</span>
+                  <span className="sr-only">(required)</span>
+                </Label>
                 <Textarea
                   id="blockers"
-                  placeholder="Any issues preventing progress?"
+                  placeholder="Any issues preventing progress? Enter 'None' if there were none. (required)"
                   value={blockers}
                   onChange={(e) => setBlockers(e.target.value)}
                   rows={2}
+                  required
+                  aria-required="true"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="achievements">Key Achievements</Label>
+                <Label htmlFor="achievements" className="flex items-center gap-1">
+                  Key Achievements
+                  <span className="text-destructive" aria-hidden="true">*</span>
+                  <span className="sr-only">(required)</span>
+                </Label>
                 <Textarea
                   id="achievements"
-                  placeholder="What are you most proud of today?"
+                  placeholder="What are you most proud of today? (required)"
                   value={achievements}
                   onChange={(e) => setAchievements(e.target.value)}
                   rows={2}
+                  required
+                  aria-required="true"
                 />
               </div>
 

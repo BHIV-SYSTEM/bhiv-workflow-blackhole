@@ -14,54 +14,7 @@ export const searchUsers = async (query) => {
     return response.data;
   } catch (error) {
     console.error('Error searching users:', error);
-    
-    // Mock data fallback for development
-    const mockUsers = [
-      {
-        _id: '1',
-        name: 'John Doe',
-        email: 'john.doe@company.com',
-        role: 'Developer',
-        avatar: null,
-        joinDate: '2023-01-15',
-        completionRate: 85,
-        activeTasks: 3,
-        completedTasks: 24,
-        department: { name: 'Engineering', _id: 'eng1' }
-      },
-      {
-        _id: '2',
-        name: 'Jane Smith',
-        email: 'jane.smith@company.com',
-        role: 'Designer',
-        avatar: null,
-        joinDate: '2023-03-20',
-        completionRate: 92,
-        activeTasks: 2,
-        completedTasks: 18,
-        department: { name: 'Design', _id: 'des1' }
-      },
-      {
-        _id: '3',
-        name: 'Mike Johnson',
-        email: 'mike.johnson@company.com',
-        role: 'Manager',
-        avatar: null,
-        joinDate: '2022-11-10',
-        completionRate: 78,
-        activeTasks: 5,
-        completedTasks: 45,
-        department: { name: 'Management', _id: 'mgmt1' }
-      }
-    ];
-
-    // Filter mock data based on query
-    return mockUsers.filter(user =>
-      user.name.toLowerCase().includes(query.toLowerCase()) ||
-      user.email.toLowerCase().includes(query.toLowerCase()) ||
-      user.role.toLowerCase().includes(query.toLowerCase()) ||
-      user.department.name.toLowerCase().includes(query.toLowerCase())
-    );
+    return [];
   }
 };
 
@@ -72,33 +25,7 @@ export const getUserDetails = async (userId) => {
     return response.data;
   } catch (error) {
     console.error('Error fetching user details:', error);
-    
-    // Mock detailed user data
-    return {
-      _id: userId,
-      name: 'John Doe',
-      email: 'john.doe@company.com',
-      role: 'Developer',
-      avatar: null,
-      joinDate: '2023-01-15',
-      phone: '+1 (555) 123-4567',
-      location: 'San Francisco, CA',
-      bio: 'Experienced developer with a passion for creating innovative solutions.',
-      skills: ['React', 'Node.js', 'Python', 'AWS', 'Docker'],
-      completionRate: 85,
-      totalTasks: 67,
-      completedTasks: 57,
-      inProgressTasks: 3,
-      overdueTasks: 1,
-      averageCompletionTime: '2.3 days',
-      performanceScore: 8.7,
-      department: { name: 'Engineering', _id: 'eng1' },
-      recentActivity: [
-        { date: '2024-01-15', action: 'Completed task: API Integration', type: 'completed' },
-        { date: '2024-01-14', action: 'Started task: Database Optimization', type: 'started' },
-        { date: '2024-01-13', action: 'Commented on: UI Review', type: 'comment' },
-      ]
-    };
+    return null;
   }
 };
 

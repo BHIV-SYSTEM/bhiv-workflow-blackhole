@@ -1,5 +1,6 @@
 const express = require("express")
 const router = express.Router()
+const mongoose = require("mongoose")
 const TaskSubmission = require("../models/TaskSubmission")
 const Task = require("../models/Task")
 const multer = require("multer")
@@ -10,6 +11,42 @@ const auth = require("../middleware/auth")
 const crypto = require("crypto")
 const { emitTaskSubmittedEvent, emitTaskCompletedEvent, emitTaskFailedEvent } = require("../services/taskExecutionBridge")
 const { invokeParikshak, evaluateParikshakSubmission } = require("../services/parikshakService")
+const { validateContextInternal, handleValidateContext } = require("./knowledgeAdmin")
+
+// Validate context endpoints (Feature 15: Cases A, B, C, D)
+router.get("/validate-context", auth, handleValidateContext);
+router.post("/validate-context", auth, async (req, res) => {
+  try {
+    const taskId = req.body?.taskId || req.body?.task;
+    let productId = req.body?.productId || req.body?.product_id;
+    if (taskId) {
+      let taskDoc = null;
+      if (mongoose.Types.ObjectId.isValid(taskId)) {
+        taskDoc = await Task.findById(taskId);
+      }
+      if (!taskDoc) {
+        taskDoc = await Task.findOne({ task_id: taskId });
+      }
+      if (taskDoc && taskDoc.product && taskDoc.product.toString().trim()) {
+        const taskProductStr = taskDoc.product.toString().trim();
+        const isNonProd = ['NONE', 'INTERNAL_ADMIN', 'ADMIN'].includes(taskProductStr.toUpperCase());
+        const supplied = (productId || '').toString().trim();
+        if (!isNonProd && supplied && supplied.toUpperCase() !== taskProductStr.toUpperCase()) {
+          return res.status(400).json({
+            error: `Product mismatch: Task belongs to '${taskDoc.product}', cannot validate under '${supplied}'`
+          });
+        }
+        productId = taskDoc.product;
+      }
+    }
+    if (productId && !req.body.productId) {
+      req.body.productId = productId;
+    }
+    return handleValidateContext(req, res);
+  } catch (err) {
+    return handleValidateContext(req, res);
+  }
+});
 
 // Configure multer for memory storage
 const upload = multer({
@@ -42,12 +79,25 @@ const upload = multer({
 
 const MAX_UNPAGINATED_LIMIT = 100
 
-// Mark a task as Completed once the assignee submits or resubmits work for review.
-async function markTaskSubmittedCompleted(taskDoc, io) {
+// Transition task to "Submitted for Review" when work is submitted or resubmitted (Feature 9)
+async function markTaskSubmittedForReview(taskDoc, io) {
+  if (!taskDoc) return
+  taskDoc.status = "Submitted for Review"
+  taskDoc.progress = Math.max(Number(taskDoc.progress) || 0, 90)
+  taskDoc.submittedForReviewAt = new Date()
+  await taskDoc.save()
+
+  if (io) {
+    io.emit("task:updated", taskDoc)
+    io.emit("task-updated", taskDoc)
+  }
+}
+
+// Mark a task as Completed once confirmed review approval is granted (Feature 9)
+async function markTaskApprovedCompleted(taskDoc, io) {
   if (!taskDoc) return
   taskDoc.status = "Completed"
   taskDoc.progress = 100
-  taskDoc.submittedForReviewAt = new Date()
   taskDoc.closedAt = taskDoc.closedAt || new Date()
   await taskDoc.save()
 
@@ -56,6 +106,9 @@ async function markTaskSubmittedCompleted(taskDoc, io) {
     io.emit("task-updated", taskDoc)
   }
 }
+
+// Backwards-compatible alias
+const markTaskSubmittedCompleted = markTaskApprovedCompleted;
 
 // Reopen a rejected task back into In Progress so it leaves Completed stats/tabs cleanly.
 async function reopenRejectedTask(taskDoc, io) {
@@ -193,7 +246,40 @@ router.get("/task/:taskId", auth, async (req, res) => {
 // Create new submission - ONLY ALLOW ACTIVE USERS
 router.post("/", auth, upload.single("document"), async (req, res) => {
   try {
-    const { task: taskId, githubLink, notes, originalSubmission, userId } = req.body
+    const resolvedTaskId = req.body.task || req.body.taskId;
+    const { githubLink, notes, originalSubmission, userId: bodyUserId } = req.body;
+
+    if (!resolvedTaskId) {
+      return res.status(400).json({ error: "Task ID is required" });
+    }
+
+    // Enforce authenticated user identity (Feature 5 Security Hardening)
+    const authUserId = req.user ? (req.user.id || req.user._id) : null;
+    if (!authUserId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+
+    const isAdmin = Boolean(req.user && req.user.role === "Admin");
+
+    // Do not blindly trust req.body.userId
+    if (!isAdmin && bodyUserId && bodyUserId.toString() !== authUserId.toString()) {
+      return res.status(403).json({ error: "Forbidden: Cannot submit work on behalf of another user" });
+    }
+
+    const effectiveUserId = isAdmin && bodyUserId ? bodyUserId : authUserId;
+
+    // Resolve task by ObjectId or task_id string
+    let task = null;
+    if (mongoose.Types.ObjectId.isValid(resolvedTaskId)) {
+      task = await Task.findById(resolvedTaskId);
+    }
+    if (!task) {
+      task = await Task.findOne({ task_id: resolvedTaskId });
+    }
+    if (!task) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    const taskId = task._id;
 
     // Get or generate trace_id (make it optional for backward compatibility)
     let traceId = req.headers["x-trace-id"];
@@ -205,15 +291,104 @@ router.post("/", auth, upload.single("document"), async (req, res) => {
     }
 
     // Check if user is active
-    const user = await User.findOne({ _id: userId, stillExist: 1 });
+    const user = await User.findOne({ _id: effectiveUserId, stillExist: 1 });
     if (!user) {
       return res.status(404).json({ error: "User not found or no longer active" });
     }
 
-    // Check if task exists
-    const task = await Task.findById(taskId)
-    if (!task) {
-      return res.status(404).json({ error: "Task not found" })
+    // Verify that req.user matches task.assignee or user is Admin
+    const isAssignee = task.assignee && task.assignee.toString() === authUserId.toString();
+    if (!isAdmin && !isAssignee) {
+      return res.status(403).json({ error: "Forbidden: You are not assigned to this task" });
+    }
+
+    // =========================================================================
+    // FEATURE 15: PRE-SUBMISSION CONTEXT VALIDATION GUARD (Cases A, B, C, D)
+    // =========================================================================
+    const suppliedProductId = (req.body.productId || req.body.product_id || req.body.product || '').toString().trim();
+    let rawProductId = '';
+
+    if (task.product && task.product.toString().trim()) {
+      const taskProductStr = task.product.toString().trim();
+      const isNonProductTaskProduct = ['NONE', 'INTERNAL_ADMIN', 'ADMIN'].includes(taskProductStr.toUpperCase());
+
+      if (!isNonProductTaskProduct) {
+        if (suppliedProductId && suppliedProductId.toUpperCase() !== taskProductStr.toUpperCase()) {
+          const clientProductDisplay = req.body.productId || req.body.product_id || req.body.product;
+          return res.status(400).json({
+            error: `Product mismatch: Task belongs to '${task.product}', cannot submit under '${clientProductDisplay}'`
+          });
+        }
+        rawProductId = taskProductStr.toUpperCase();
+      } else {
+        rawProductId = taskProductStr.toUpperCase();
+      }
+    } else {
+      rawProductId = suppliedProductId ? suppliedProductId.toUpperCase() : '';
+    }
+
+    const isNonProductTask = !rawProductId || ['NONE', 'INTERNAL_ADMIN', 'ADMIN'].includes(rawProductId.toUpperCase());
+
+    if (!isNonProductTask) {
+      const submitterEmpId = (
+        req.user?.canonicalEmployeeId ||
+        req.user?.employeeId ||
+        user.canonicalEmployeeId ||
+        user.employeeId ||
+        ''
+      ).toString().trim().toUpperCase();
+
+      const submitterTenant = (
+        req.user?.tenantId ||
+        task.tenantId ||
+        user.tenantId ||
+        'ten-bhiv-core'
+      ).toString().trim();
+
+      const validationCheck = await validateContextInternal({
+        productId: rawProductId,
+        employeeId: submitterEmpId,
+        tenantId: submitterTenant,
+        user: req.user,
+        userId: effectiveUserId
+      });
+
+      if (validationCheck.data && !validationCheck.data.canSubmit) {
+        const vData = validationCheck.data;
+        if (vData.status === 'MISSING') {
+          return res.status(400).json({
+            error: "Product context is missing. Please add and obtain approval before submitting.",
+            code: "MISSING_CONTEXT",
+            action: "ADD_CONTEXT",
+            case: "CASE_A"
+          });
+        }
+        if (vData.status === 'PENDING_APPROVAL' || vData.status === 'DRAFT') {
+          return res.status(400).json({
+            error: "Product context is pending approval",
+            code: "PENDING_APPROVAL",
+            action: "AWAIT_APPROVAL",
+            case: "CASE_B"
+          });
+        }
+        if (vData.status === 'OUTDATED' || vData.status === 'REJECTED') {
+          const reason = vData.reason || (vData.status === 'OUTDATED' ? 'Context is outdated' : 'Context was rejected');
+          return res.status(400).json({
+            error: `Product context is outdated/rejected: ${reason}`,
+            reason: reason,
+            code: vData.status,
+            action: "UPDATE_CONTEXT",
+            case: "CASE_D"
+          });
+        }
+        return res.status(400).json({
+          error: vData.message || "Product context validation failed",
+          case: vData.case || "CASE_UNKNOWN"
+        });
+      }
+    }
+    if (!isAdmin && !isAssignee) {
+      return res.status(403).json({ error: "Forbidden: You are not assigned to this task" });
     }
 
     // Validate: Prevent duplicate original submission
@@ -229,7 +404,7 @@ router.post("/", auth, upload.single("document"), async (req, res) => {
         // Emit failure event
         try {
           await emitTaskFailedEvent(
-            { task: taskId, user: userId, _id: "duplicate" },
+            { task: taskId, user: effectiveUserId, _id: "duplicate" },
             "duplicate_submission",
             traceId,
             task.branch
@@ -263,7 +438,7 @@ router.post("/", auth, upload.single("document"), async (req, res) => {
     // Create new submission
     const newSubmission = new TaskSubmission({
       task: taskId,
-      user: userId,
+      user: effectiveUserId,
       githubLink: githubLink || "",
       notes: notes || "",
       documentLink,
@@ -276,9 +451,9 @@ router.post("/", auth, upload.single("document"), async (req, res) => {
     // Populate user information
     await submission.populate("user", "name")
 
-    // 🔄 AUTO STATUS UPDATE: Mark task as Completed once work is submitted (fresh or revision)
-    await markTaskSubmittedCompleted(task, req.io)
-    console.log(`✅ Task ${taskId} marked as Completed (${originalSubmission ? "Revision" : "Submission"} submitted)`);
+    // 🔄 AUTO STATUS UPDATE: Transition task to "Submitted for Review" until review approval (Feature 9)
+    await markTaskSubmittedForReview(task, req.io)
+    console.log(`✅ Task ${taskId} marked as Submitted for Review (${originalSubmission ? "Revision" : "Submission"} submitted)`);
 
     // Emit execution event with trace propagation
     let execContext;
@@ -346,7 +521,7 @@ router.put("/:id", auth, upload.single("document"), async (req, res) => {
   try {
     const { githubLink, notes } = req.body
     const submission = await TaskSubmission.findById(req.params.id)
-      .populate("task", "title status")
+      .populate("task", "title status product tenantId")
 
     if (!submission) {
       return res.status(404).json({ error: "Submission not found" })
@@ -356,6 +531,88 @@ router.put("/:id", auth, upload.single("document"), async (req, res) => {
     const user = await User.findOne({ _id: submission.user, stillExist: 1 });
     if (!user) {
       return res.status(404).json({ error: "User not found or no longer active" });
+    }
+
+    // Context validation guard on resubmission / update
+    if (submission.task) {
+      const taskProduct = submission.task.product;
+      const suppliedProductId = (req.body.productId || req.body.product_id || req.body.product || '').toString().trim();
+      let rawProductId = '';
+
+      if (taskProduct && taskProduct.toString().trim()) {
+        const taskProductStr = taskProduct.toString().trim();
+        const isNonProductTaskProduct = ['NONE', 'INTERNAL_ADMIN', 'ADMIN'].includes(taskProductStr.toUpperCase());
+
+        if (!isNonProductTaskProduct) {
+          if (suppliedProductId && suppliedProductId.toUpperCase() !== taskProductStr.toUpperCase()) {
+            const clientProductDisplay = req.body.productId || req.body.product_id || req.body.product;
+            return res.status(400).json({
+              error: `Product mismatch: Task belongs to '${taskProduct}', cannot submit under '${clientProductDisplay}'`
+            });
+          }
+          rawProductId = taskProductStr.toUpperCase();
+        } else {
+          rawProductId = taskProductStr.toUpperCase();
+        }
+      } else {
+        rawProductId = suppliedProductId ? suppliedProductId.toUpperCase() : '';
+      }
+
+      const isNonProductTask = !rawProductId || ['NONE', 'INTERNAL_ADMIN', 'ADMIN'].includes(rawProductId.toUpperCase());
+      if (!isNonProductTask) {
+        const submitterEmpId = (
+          req.user?.canonicalEmployeeId ||
+          req.user?.employeeId ||
+          user.canonicalEmployeeId ||
+          user.employeeId ||
+          ''
+        ).toString().trim().toUpperCase();
+
+        const submitterTenant = (
+          req.user?.tenantId ||
+          submission.task.tenantId ||
+          user.tenantId ||
+          'ten-bhiv-core'
+        ).toString().trim();
+
+        const validationCheck = await validateContextInternal({
+          productId: rawProductId,
+          employeeId: submitterEmpId,
+          tenantId: submitterTenant,
+          user: req.user,
+          userId: submission.user
+        });
+
+        if (validationCheck.data && !validationCheck.data.canSubmit) {
+          const vData = validationCheck.data;
+          if (vData.status === 'MISSING') {
+            return res.status(400).json({
+              error: "Product context is missing. Please add and obtain approval before submitting.",
+              code: "MISSING_CONTEXT",
+              action: "ADD_CONTEXT",
+              case: "CASE_A"
+            });
+          }
+          if (vData.status === 'PENDING_APPROVAL' || vData.status === 'DRAFT') {
+            return res.status(400).json({
+              error: "Product context is pending approval",
+              code: "PENDING_APPROVAL",
+              action: "AWAIT_APPROVAL",
+              case: "CASE_B"
+            });
+          }
+          if (vData.status === 'OUTDATED' || vData.status === 'REJECTED') {
+            const reason = vData.reason || (vData.status === 'OUTDATED' ? 'Context is outdated' : 'Context was rejected');
+            return res.status(400).json({
+              error: `Product context is outdated/rejected: ${reason}`,
+              reason: reason,
+              code: vData.status,
+              action: "UPDATE_CONTEXT",
+              case: "CASE_D"
+            });
+          }
+        }
+      }
     }
 
     let documentLink = submission.documentLink
@@ -395,10 +652,10 @@ router.put("/:id", auth, upload.single("document"), async (req, res) => {
       .populate("user", "name email")
       .populate("reviewHistory.reviewedBy", "name email")
 
-    // Sync parent task back to Completed on resubmission (e.g. after rejection)
+    // Sync parent task to "Submitted for Review" on resubmission (Feature 9)
     if (submission.task?._id) {
       const taskDoc = await Task.findById(submission.task._id)
-      await markTaskSubmittedCompleted(taskDoc, req.io)
+      await markTaskSubmittedForReview(taskDoc, req.io)
       if (updatedSubmission.task && taskDoc) {
         updatedSubmission.task.status = taskDoc.status
       }
@@ -500,7 +757,7 @@ router.put("/:id/review", auth, async (req, res) => {
 
     // Update parent task status deterministically based on review outcome
     if (status === "Approved") {
-      await markTaskSubmittedCompleted(task, req.io)
+      await markTaskApprovedCompleted(task, req.io)
     } else if (status === "Rejected") {
       await reopenRejectedTask(task, req.io)
     }
@@ -618,16 +875,23 @@ router.post("/:id/approve-and-assign-next", auth, async (req, res) => {
       console.warn("[TRACE] Failed emitting completion event:", e.message);
     }
 
-    // 4. Create and Assign Next Task if provided
+    // 4. Create and Assign Next Task if provided (Feature 6 & Feature 8: Single Authoritative Path & Deduplication)
     let createdNextTask = null;
     if (nextTask && nextTask.title) {
+      const nextTaskId = nextTask.task_id || "";
       const existing = await Task.findOne({
-        title: nextTask.title,
         assignee: user._id,
-        status: "Pending"
+        $or: [
+          ...(nextTaskId ? [{ task_id: nextTaskId }] : []),
+          {
+            title: nextTask.title,
+            status: { $in: ["Pending", "In Progress", "Submitted for Review", "Completed", "Closed"] }
+          }
+        ]
       });
 
       if (existing) {
+        console.log(`[APPROVE-AND-ASSIGN] Task "${nextTask.title}" already exists for assignee with status "${existing.status}". Skipping duplicate creation.`);
         createdNextTask = existing;
       } else {
         createdNextTask = new Task({
@@ -635,11 +899,14 @@ router.post("/:id/approve-and-assign-next", auth, async (req, res) => {
           description: nextTask.description || nextTask.title,
           notes: nextTask.notes || nextTask.masterPrompt || nextTask.description || "",
           status: "Pending",
-          priority: nextTask.priority || currentTask.priority || "Medium",
-          department: nextTask.department || currentTask.department,
+          task_id: nextTaskId || undefined,
+          product: nextTask.product || currentTask?.product || "BHIV",
+          tenantId: nextTask.tenantId || currentTask?.tenantId || user.tenantId || "ten-bhiv-core",
+          priority: nextTask.priority || currentTask?.priority || "Medium",
+          department: nextTask.department || currentTask?.department,
           assignee: user._id,
           dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-          branch: currentTask.branch || "default_tenant",
+          branch: currentTask?.branch || "blackhole_mumbai",
           progress: 0,
           links: Array.isArray(nextTask.links) ? nextTask.links : []
         });

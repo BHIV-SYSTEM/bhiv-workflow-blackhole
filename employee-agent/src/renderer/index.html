@@ -838,10 +838,20 @@
       font-size: 12.5px;
     }
 
-    textarea#progressNotes {
+    textarea#progressNotes,
+    textarea#progressAchievements,
+    textarea#progressBlockers {
       resize: vertical;
-      min-height: 60px;
+      min-height: 54px;
       font-size: 12.5px;
+      margin-top: 8px;
+    }
+
+    .qp-required {
+      font-size: 11px;
+      color: #f87171;
+      margin-top: 9px;
+      display: block;
     }
 
     /* Day-End Summary Card */
@@ -1172,6 +1182,7 @@
         </div>
         <p class="qp-desc">
           Submit a quick progress update for today so your work day can be closed cleanly.
+          All three sections below are required.
         </p>
         <div class="qp-row">
           <select id="progressTaskSelect">
@@ -1179,7 +1190,10 @@
           </select>
           <input type="number" id="progressPercent" min="0" max="100" value="75" placeholder="%" title="Completion %">
         </div>
-        <textarea id="progressNotes" placeholder="What did you work on or complete today?"></textarea>
+        <textarea id="progressNotes" placeholder="What did you work on or complete today? (required)" aria-required="true"></textarea>
+        <textarea id="progressAchievements" placeholder="Key achievements today (required)" aria-required="true"></textarea>
+        <textarea id="progressBlockers" placeholder="Blockers today — enter 'None' if there were none (required)" aria-required="true"></textarea>
+        <span class="qp-required">* All fields required before the day can be closed.</span>
         <div class="qp-actions">
           <button type="button" id="saveProgressEndBtn" class="btn btn-primary">Save Progress &amp; End Day</button>
           <button type="button" id="cancelProgressBtn" class="btn btn-secondary">Cancel</button>

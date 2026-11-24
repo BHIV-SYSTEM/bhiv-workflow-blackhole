@@ -373,6 +373,12 @@ router.put('/config', auth, requireAdmin, async (req, res) => {
 });
 
 // GET /api/trinetra/agent/config — capture policy for the desktop agent.
+//
+// PRIVACY: screenshots are permanently disabled. The policy is forced off
+// here (not only in the agent) so ANY already-installed agent build stops
+// capturing on its next 5-minute policy poll: `allowed:false` makes older
+// builds stop their capture engine outright, and the cadence flags being
+// false stop scheduled ticks on builds that only honour them.
 router.get('/agent/config', auth, async (req, res) => {
   try {
     const settings = await TrinetraConfig.getSettings();
@@ -382,18 +388,19 @@ router.get('/agent/config', auth, async (req, res) => {
 
     res.json({
       success: true,
-      allowed: gate.allowed,
-      reason: gate.reason || null,
+      allowed: false,
+      reason: 'SCREENSHOTS_DISABLED',
       day_active: !!openDay,
       capture: {
-        // The agent only captures on its own when the mode explicitly includes periodic.
-        periodic_enabled: screenshot.mode === 'periodic' || screenshot.mode === 'both',
-        mode: screenshot.mode,
+        periodic_enabled: false,
+        mode: 'off',
         interval_minutes: screenshot.interval_minutes,
         jitter_minutes: screenshot.jitter_minutes,
         dedupe_distance: screenshot.dedupe_distance,
         max_per_hour: screenshot.max_per_hour,
-        capture_when_idle: screenshot.capture_when_idle,
+        capture_when_idle: false,
+        capture_windows: false,
+        max_windows_per_capture: 0,
         jpeg_quality: screenshot.jpeg_quality,
         max_upload_bytes: screenshot.max_upload_bytes,
         blocked_title_patterns: screenshot.blocked_title_patterns || []
@@ -453,216 +460,9 @@ router.get('/agent/tasks', auth, async (req, res) => {
 });
 
 /* ------------------------------------------------------------------ */
-/* Agent ingest: periodic screenshot                                    */
+/* Agent ingest: periodic screenshot EXCISED under V2 Privacy        */
 /* ------------------------------------------------------------------ */
 
-// POST /api/trinetra/agent/screenshot
-router.post('/agent/screenshot', auth, async (req, res) => {
-  try {
-    const employeeId = req.user.id;
-    if (!isValidObjectId(employeeId)) {
-      return res.status(401).json({ success: false, error: 'Invalid session identity' });
-    }
-
-    const {
-      image,
-      signature,
-      capturedAt,
-      activeApp,
-      windowTitle,
-      sessionId,
-      trigger
-    } = req.body || {};
-
-    if (!image || typeof image !== 'string') {
-      return res.status(400).json({ success: false, error: 'image (base64) is required' });
-    }
-
-    const gate = await getMonitoringGate(employeeId);
-    if (!gate.allowed) {
-      return res.status(403).json({
-        success: false,
-        error: gate.reason === 'monitoring_paused'
-          ? 'Monitoring is paused for this employee'
-          : 'Monitoring consent is not active for this employee',
-        code: 'MONITORING_BLOCKED',
-        reason: gate.reason
-      });
-    }
-
-    const openDay = await findOpenAttendance(employeeId);
-    if (!openDay) {
-      return res.status(403).json({
-        success: false,
-        error: 'Cannot accept captures: workday not started',
-        code: 'DAY_NOT_ACTIVE'
-      });
-    }
-
-    const settings = await TrinetraConfig.getSettings();
-    const policy = settings.screenshot;
-
-    const blocked = (policy.blocked_title_patterns || []).some((pattern) => {
-      const needle = String(pattern || '').toLowerCase().trim();
-      if (!needle) return false;
-      return `${String(windowTitle || '').toLowerCase()} ${String(activeApp || '').toLowerCase()}`.includes(needle);
-    });
-    if (blocked) {
-      return res.status(202).json({
-        success: true,
-        stored: false,
-        skipped: 'privacy_blocked',
-        message: 'Window matched a blocked title pattern; capture discarded'
-      });
-    }
-
-    const base64Payload = image.includes(',') ? image.slice(image.indexOf(',') + 1) : image;
-    let buffer;
-    try {
-      buffer = Buffer.from(base64Payload, 'base64');
-    } catch (error) {
-      return res.status(400).json({ success: false, error: 'Invalid base64 image payload' });
-    }
-
-    if (!buffer || buffer.length === 0) {
-      return res.status(400).json({ success: false, error: 'Empty image payload' });
-    }
-
-    const maxBytes = Math.min(MAX_IMAGE_BYTES, policy.max_upload_bytes || MAX_IMAGE_BYTES);
-    if (buffer.length > maxBytes) {
-      return res.status(413).json({
-        success: false,
-        error: `Image exceeds the configured limit of ${Math.round(maxBytes / 1024)}KB`
-      });
-    }
-
-    // Server-side rate limit so a misconfigured agent cannot flood storage.
-    const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
-    const capturesLastHour = await ScreenCapture.countDocuments({
-      employee: employeeId,
-      capture_trigger: 'scheduled',
-      timestamp: { $gte: hourAgo }
-    });
-    if (capturesLastHour >= (policy.max_per_hour || 8)) {
-      return res.status(429).json({
-        success: false,
-        error: 'Hourly capture budget exhausted',
-        code: 'CAPTURE_RATE_LIMIT',
-        max_per_hour: policy.max_per_hour
-      });
-    }
-
-    // Server-side dedupe: authoritative dHash computed from the bytes we received.
-    let serverHash = null;
-    try {
-      serverHash = await computeDHash(buffer);
-    } catch (error) {
-      console.warn('[trinetra] dHash computation failed, continuing without server signature:', error.message);
-    }
-
-    const previous = await ScreenCapture.findOne({ employee: employeeId })
-      .sort({ timestamp: -1 })
-      .select('timestamp file_hash metadata.screen_signature')
-      .lean();
-
-    if (previous && serverHash) {
-      const previousSignature = (previous.metadata && previous.metadata.screen_signature) || null;
-      const distance = previousSignature ? hammingDistance(serverHash, previousSignature) : 64;
-      const withinWindow = previous.timestamp
-        ? Date.now() - new Date(previous.timestamp).getTime() <= 30 * 60 * 1000
-        : false;
-
-      if (withinWindow && distance <= (policy.dedupe_distance || 5)) {
-        return res.json({
-          success: true,
-          stored: false,
-          skipped: 'duplicate_frame',
-          distance,
-          signature: serverHash,
-          message: 'Screen unchanged since the last capture'
-        });
-      }
-    }
-
-    let processed;
-    try {
-      processed = await sharp(buffer)
-        .jpeg({ quality: Math.min(policy.jpeg_quality || 70, 85), mozjpeg: true })
-        .toBuffer({ resolveWithObject: true });
-    } catch (error) {
-      return res.status(400).json({ success: false, error: 'Unsupported or corrupt image data' });
-    }
-
-    const dateStr = new Date().toISOString().split('T')[0];
-    const dirPath = path.join(SCREENSHOT_BASE_PATH, String(employeeId), 'trinetra', dateStr);
-    await fs.mkdir(dirPath, { recursive: true });
-
-    const stamp = new Date();
-    const filename = `trinetra_${stamp.getTime()}_${crypto.randomBytes(3).toString('hex')}.jpg`;
-    const filePath = path.join(dirPath, filename);
-    await fs.writeFile(filePath, processed.data);
-
-    const fileHash = crypto.createHash('sha256').update(processed.data).digest('hex');
-
-    // Upload to Cloudinary as persistent storage so ephemeral cloud containers never lose snapshots
-    let cloudUpload = null;
-    if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
-      try {
-        cloudUpload = await uploadRegularScreenshot(processed.data, String(employeeId), {
-          application: activeApp || 'Unknown'
-        });
-      } catch (cloudErr) {
-        console.warn('[trinetra] Cloudinary upload skipped (using local disk):', cloudErr.message);
-      }
-    }
-
-    const capture = await ScreenCapture.create({
-      employee: employeeId,
-      timestamp: capturedAt ? new Date(capturedAt) : stamp,
-      file_path: filePath,
-      file_size: processed.info.size,
-      file_hash: fileHash,
-      compression_ratio: buffer.length > 0 ? buffer.length / processed.info.size : 1,
-      screen_resolution: { width: processed.info.width, height: processed.info.height },
-      is_delta: !!previous,
-      previous_capture: previous ? previous._id : undefined,
-      active_application: {
-        name: activeApp || 'Unknown',
-        title: windowTitle || ''
-      },
-      session_id: sessionId || String(openDay._id),
-      capture_trigger: 'scheduled',
-      is_flagged: false,
-      metadata: {
-        blur_applied: false,
-        privacy_level: 'full',
-        intelligent_capture: false,
-        trinetra_mode: 'periodic',
-        screen_signature: serverHash || signature || null,
-        app_category: engine.categorizeActivity(
-          { active_application: { name: activeApp, title: windowTitle } },
-          settings.app_rules
-        ).category,
-        client_signature: signature || null,
-        requested_trigger: trigger || 'scheduled',
-        cloudinary_url: cloudUpload ? cloudUpload.cloudinary_url : null,
-        cloudinary_public_id: cloudUpload ? cloudUpload.cloudinary_public_id : null
-      }
-    });
-
-    res.status(201).json({
-      success: true,
-      stored: true,
-      screenshot_id: String(capture._id),
-      file_size: processed.info.size,
-      signature: serverHash,
-      duplicates_skipped: 0
-    });
-  } catch (error) {
-    console.error('[trinetra] screenshot ingest failed:', error);
-    res.status(500).json({ success: false, error: 'Failed to store screenshot' });
-  }
-});
 
 /* ------------------------------------------------------------------ */
 /* Live telemetry grid                                                  */
@@ -1103,138 +903,8 @@ router.get('/timeline/:employeeId', auth, async (req, res) => {
 });
 
 /* ------------------------------------------------------------------ */
-/* Screenshot gallery                                                   */
+/* Screenshot gallery EXCISED under V2 Privacy Boundaries             */
 /* ------------------------------------------------------------------ */
-
-// GET /api/trinetra/screenshots?employeeId=&date=&type=periodic|violation|all
-router.get('/screenshots', auth, async (req, res) => {
-  try {
-    const scope = resolveScope(req, req.query.employeeId);
-    if (scope.error) {
-      return res.status(scope.status).json({ success: false, error: scope.error });
-    }
-
-    const { start, end } = engine.getDayBounds(parseDateParam(req.query.date));
-    const type = String(req.query.type || 'periodic').toLowerCase();
-    const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
-    const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
-
-    const query = {
-      timestamp: { $gte: start, $lte: end }
-    };
-
-    // Managers may omit employeeId for a team-wide gallery; `employee: null`
-    // would match nothing, so only filter when a subject is in scope.
-    if (scope.employeeId) {
-      query.employee = scope.employeeId;
-    }
-
-    if (type === 'periodic') {
-      query['metadata.trinetra_mode'] = 'periodic';
-    } else if (type === 'violation') {
-      query['metadata.intelligent_capture'] = true;
-    }
-
-    const [captures, total] = await Promise.all([
-      ScreenCapture.find(query)
-        .sort({ timestamp: -1 })
-        .skip(offset)
-        .limit(limit)
-        .select('-metadata.encryption_key')
-        .lean(),
-      ScreenCapture.countDocuments(query)
-    ]);
-
-    res.json({
-      success: true,
-      employee_id: scope.employeeId,
-      date: start,
-      type,
-      total,
-      limit,
-      offset,
-      screenshots: captures.map((capture) => ({
-        id: String(capture._id),
-        timestamp: capture.timestamp,
-        trigger: capture.capture_trigger,
-        flagged: capture.is_flagged,
-        flag_reason: capture.flag_reason || null,
-        app: (capture.active_application && capture.active_application.name) || null,
-        title: (capture.active_application && capture.active_application.title) || null,
-        category: (capture.metadata && capture.metadata.app_category) || null,
-        signature: (capture.metadata && capture.metadata.screen_signature) || null,
-        file_size: capture.file_size,
-        url: `/api/trinetra/screenshots/${capture._id}`
-      }))
-    });
-  } catch (error) {
-    console.error('[trinetra] screenshot list failed:', error);
-    res.status(500).json({ success: false, error: 'Failed to list screenshots' });
-  }
-});
-
-// GET /api/trinetra/screenshots/:screenshotId — RBAC-guarded file/redirect.
-router.get('/screenshots/:screenshotId', auth, async (req, res) => {
-  try {
-    if (!isValidObjectId(req.params.screenshotId)) {
-      return res.status(400).json({ success: false, error: 'Invalid screenshot id' });
-    }
-
-    const capture = await ScreenCapture.findById(req.params.screenshotId).lean();
-    if (!capture) {
-      return res.status(404).json({ success: false, error: 'Screenshot not found' });
-    }
-
-    if (!isManager(req) && String(capture.employee) !== String(req.user.id)) {
-      return res.status(403).json({ success: false, error: 'Not authorized to view this screenshot' });
-    }
-
-    await writeAudit(req.user.id, 'trinetra_screenshot_view', 'trinetra/screenshot', capture._id);
-
-    let imageBuffer = null;
-
-    if (capture.file_path) {
-      try {
-        imageBuffer = await fs.readFile(capture.file_path);
-      } catch (diskErr) {
-        // Disk file missing (e.g. ephemeral container restart); fall back to Cloudinary below
-      }
-    }
-
-    if (!imageBuffer && capture.metadata && (capture.metadata.cloudinary_public_id || capture.metadata.cloudinary_url)) {
-      try {
-        const cloudUrl = capture.metadata.cloudinary_public_id
-          ? generateOptimizedScreenshotUrl(capture.metadata.cloudinary_public_id, {
-              width: 1600,
-              height: 1000,
-              quality: 'auto:good',
-              format: 'jpg'
-            })
-          : capture.metadata.cloudinary_url;
-        const imgResp = await axios.get(cloudUrl, { responseType: 'arraybuffer', timeout: 15000 });
-        imageBuffer = Buffer.from(imgResp.data);
-      } catch (cloudErr) {
-        console.warn('[trinetra] Cloudinary proxy failed:', cloudErr.message);
-      }
-    }
-
-    if (!imageBuffer) {
-      return res.status(404).json({
-        success: false,
-        error: 'Screenshot file is no longer on disk',
-        message: 'It may have been purged by the retention policy'
-      });
-    }
-
-    res.setHeader('Content-Type', 'image/jpeg');
-    res.setHeader('Cache-Control', 'private, max-age=60');
-    res.setHeader('Content-Disposition', `inline; filename="trinetra_${capture._id}.jpg"`);
-    return res.send(imageBuffer);
-  } catch (error) {
-    console.error('[trinetra] screenshot fetch failed:', error);
-    res.status(500).json({ success: false, error: 'Failed to serve screenshot' });
-  }
-});
 
 /* ------------------------------------------------------------------ */
 /* Completion verification matrix                                       */
@@ -1474,10 +1144,20 @@ async function runAlertEvaluation(options = {}) {
       const gapMs = now.getTime() - reference;
       if (gapMs >= inactivityMs) {
         const gapMinutes = Math.round(gapMs / 60000);
+        const isRed = gapMinutes >= settings.alerts.inactivity_minutes * 2;
         candidates.push({
           employee: user._id,
+          tier: isRed ? 'RED' : 'YELLOW',
+          rule_id: isRed ? 'RULE-REVIEW-INACTIVITY-001' : 'RULE-ATTENTION-INACTIVITY-001',
+          threshold_value: `${settings.alerts.inactivity_minutes} minutes`,
+          observed_value: `${gapMinutes} minutes`,
+          event_reference: {
+            gap_minutes: gapMinutes,
+            last_activity_at: lastActivity || null,
+            day_started_at: openDay.startDayTime
+          },
           alert_type: 'idle_timeout',
-          severity: gapMinutes >= settings.alerts.inactivity_minutes * 2 ? 'high' : 'medium',
+          severity: isRed ? 'high' : 'medium',
           title: 'Prolonged inactivity during workday',
           description: `${user.name} has had no recorded activity for ${gapMinutes} minutes while their workday is still open.`,
           data: {
@@ -1517,13 +1197,23 @@ async function runAlertEvaluation(options = {}) {
 
       if (stillSeconds >= stillThresholdSeconds) {
         const stillForMinutes = Math.round(stillSeconds / 60);
+        const isRed = stillSeconds >= stillThresholdSeconds * 2;
         // One alert per 30-minute block while the employee stays still: frequent
         // enough to be useful, sparse enough not to flood the dashboard.
         const stillBucket = Math.floor(now.getTime() / (30 * 60 * 1000));
         candidates.push({
           employee: user._id,
+          tier: isRed ? 'RED' : 'YELLOW',
+          rule_id: isRed ? 'RULE-REVIEW-STILL-002' : 'RULE-ATTENTION-STILL-002',
+          threshold_value: `${stillMinutesSetting} minutes`,
+          observed_value: `${stillForMinutes} minutes`,
+          event_reference: {
+            still_seconds: stillSeconds,
+            still_minutes: stillForMinutes,
+            last_activity_at: latestSample ? latestSample.timestamp : null
+          },
           alert_type: 'idle_timeout',
-          severity: stillSeconds >= stillThresholdSeconds * 2 ? 'high' : 'medium',
+          severity: isRed ? 'high' : 'medium',
           title: 'Keyboard and mouse still',
           description: `${user.name} has recorded no keyboard or mouse input for ${stillForMinutes} minutes (threshold ${stillMinutesSetting} min) while their workday is open.`,
           data: {
@@ -1549,10 +1239,20 @@ async function runAlertEvaluation(options = {}) {
         typeof summary.focus_ratio === 'number' &&
         summary.focus_ratio < settings.alerts.low_focus_percent
       ) {
+        const isRed = summary.focus_ratio < settings.alerts.low_focus_percent / 2;
         candidates.push({
           employee: user._id,
+          tier: isRed ? 'RED' : 'YELLOW',
+          rule_id: isRed ? 'RULE-REVIEW-FOCUS-003' : 'RULE-ATTENTION-FOCUS-003',
+          threshold_value: `${settings.alerts.low_focus_percent}%`,
+          observed_value: `${summary.focus_ratio}%`,
+          event_reference: {
+            focus_ratio: summary.focus_ratio,
+            distraction_ratio: summary.distraction_ratio,
+            active_minutes: summary.active_minutes
+          },
           alert_type: 'productivity_drop',
-          severity: summary.focus_ratio < settings.alerts.low_focus_percent / 2 ? 'high' : 'medium',
+          severity: isRed ? 'high' : 'medium',
           title: 'Low focus ratio detected',
           description: `${user.name} spent ${summary.focus_ratio}% of active time in focus applications today (threshold ${settings.alerts.low_focus_percent}%).`,
           data: {
@@ -1582,6 +1282,15 @@ async function runAlertEvaluation(options = {}) {
       const stalledHours = Math.round((now.getTime() - lastProgress) / 3600000);
       candidates.push({
         employee: owner._id,
+        tier: 'YELLOW',
+        rule_id: 'RULE-ATTENTION-STALLED-004',
+        threshold_value: `${settings.alerts.stalled_task_hours || 24} hours`,
+        observed_value: `${stalledHours} hours`,
+        event_reference: {
+          task_id: taskKey,
+          stalled_hours: stalledHours,
+          due_date: task.dueDate || null
+        },
         alert_type: 'task_reminder',
         severity: 'medium',
         title: 'Task appears stalled',
@@ -1599,10 +1308,20 @@ async function runAlertEvaluation(options = {}) {
 
     if (task.dueDate && now.getTime() > new Date(task.dueDate).getTime() + graceMs) {
       const overdueHours = Math.round((now.getTime() - new Date(task.dueDate).getTime()) / 3600000);
+      const isRed = overdueHours > 48;
       candidates.push({
         employee: owner._id,
+        tier: isRed ? 'RED' : 'YELLOW',
+        rule_id: isRed ? 'RULE-REVIEW-OVERDUE-005' : 'RULE-ATTENTION-OVERDUE-005',
+        threshold_value: `Grace: ${Math.round(graceMs / 3600000)}h`,
+        observed_value: `Overdue by ${overdueHours} hours`,
+        event_reference: {
+          task_id: taskKey,
+          overdue_hours: overdueHours,
+          due_date: task.dueDate
+        },
         alert_type: 'task_reminder',
-        severity: overdueHours > 48 ? 'high' : 'medium',
+        severity: isRed ? 'high' : 'medium',
         title: 'Task is overdue',
         description: `"${task.title}" is ${overdueHours} hours past its due date and still ${task.status}.`,
         data: {
@@ -1652,6 +1371,8 @@ async function runAlertEvaluation(options = {}) {
         alert_type: alert.alert_type,
         title: alert.title,
         severity: alert.severity,
+        tier: alert.tier,
+        rule_id: alert.rule_id,
         key: dedupeKey
       });
     } catch (error) {
@@ -1688,9 +1409,9 @@ router.get('/alerts', auth, async (req, res) => {
       query.employee = scope.employeeId;
     }
     if (status === 'open') {
-      query.status = { $in: ['active', 'acknowledged'] };
+      query.status = { $in: ['active', 'acknowledged', 'ACTIVE', 'EXPLAINED'] };
     } else if (status !== 'all') {
-      query.status = status;
+      query.status = { $in: [status, status.toUpperCase()] };
     }
 
     const [alerts, counts] = await Promise.all([
@@ -1718,6 +1439,16 @@ router.get('/alerts', auth, async (req, res) => {
           : null,
         type: alert.alert_type,
         severity: alert.severity,
+        tier: alert.tier || 'YELLOW',
+        rule_id: alert.rule_id || 'RULE-ATTENTION-001',
+        threshold_value: alert.threshold_value,
+        observed_value: alert.observed_value,
+        event_reference: alert.event_reference,
+        employee_explanation: alert.employee_explanation,
+        explained_at: alert.explained_at,
+        explanation_status: alert.explanation_status,
+        admin_verdict: alert.admin_verdict,
+        resolution_notes: alert.resolution_notes,
         title: alert.title,
         description: alert.description,
         status: alert.status,
@@ -1787,6 +1518,95 @@ router.put('/alerts/:alertId/acknowledge', auth, requireAdmin, (req, res) =>
 router.put('/alerts/:alertId/resolve', auth, requireAdmin, (req, res) =>
   updateAlertStatus(req, res, 'resolved')
 );
+
+// POST /api/trinetra/alerts/:alertId/explain — submit employee explanation
+router.post('/alerts/:alertId/explain', auth, async (req, res) => {
+  try {
+    if (!isValidObjectId(req.params.alertId)) {
+      return res.status(400).json({ success: false, error: 'Invalid alert ID' });
+    }
+    const alert = await MonitoringAlert.findById(req.params.alertId);
+    if (!alert) {
+      return res.status(404).json({ success: false, error: 'Alert not found' });
+    }
+    const userId = req.user ? (req.user._id || req.user.id) : null;
+    if (!isManager(req) && String(alert.employee) !== String(userId)) {
+      return res.status(403).json({ success: false, error: 'Not authorized to explain this alert' });
+    }
+    const explanation = req.body && req.body.explanation;
+    if (!explanation || typeof explanation !== 'string' || !explanation.trim()) {
+      return res.status(400).json({ success: false, error: 'Explanation text is required' });
+    }
+    alert.employee_explanation = explanation.trim();
+    alert.explained_at = new Date();
+    alert.explanation_status = 'pending_review';
+    alert.status = 'EXPLAINED';
+    await alert.save();
+    return res.json({
+      success: true,
+      message: 'Explanation submitted successfully',
+      alert: {
+        id: String(alert._id),
+        status: alert.status,
+        explanation_status: alert.explanation_status,
+        employee_explanation: alert.employee_explanation,
+        explained_at: alert.explained_at
+      }
+    });
+  } catch (error) {
+    console.error('[trinetra] alert explain failed:', error);
+    return res.status(500).json({ success: false, error: 'Failed to submit explanation' });
+  }
+});
+
+// POST /api/trinetra/alerts/:alertId/resolve — admin verdict resolution (ZERO automated penalties)
+router.post('/alerts/:alertId/resolve', auth, requireAdmin, async (req, res) => {
+  try {
+    if (!isValidObjectId(req.params.alertId)) {
+      return res.status(400).json({ success: false, error: 'Invalid alert ID' });
+    }
+    const alert = await MonitoringAlert.findById(req.params.alertId);
+    if (!alert) {
+      return res.status(404).json({ success: false, error: 'Alert not found' });
+    }
+    const { verdict, resolution_notes } = req.body || {};
+    const validVerdicts = ['cleared', 'acknowledged', 'escalated'];
+    if (!verdict || !validVerdicts.includes(verdict)) {
+      return res.status(400).json({
+        success: false,
+        error: `Invalid verdict. Must be one of: ${validVerdicts.join(', ')}`
+      });
+    }
+    const userId = req.user ? (req.user._id || req.user.id) : null;
+    alert.admin_verdict = verdict;
+    alert.resolution_notes = resolution_notes ? String(resolution_notes).trim() : '';
+    alert.resolved_by = userId;
+    alert.resolved_at = new Date();
+    alert.status = 'RESOLVED';
+    if (verdict === 'cleared') {
+      alert.explanation_status = 'accepted';
+    } else if (alert.explanation_status === 'pending_review') {
+      alert.explanation_status = 'rejected';
+    }
+    await alert.save();
+    return res.json({
+      success: true,
+      message: 'Alert resolved successfully without automated penalties',
+      alert: {
+        id: String(alert._id),
+        status: alert.status,
+        admin_verdict: alert.admin_verdict,
+        resolution_notes: alert.resolution_notes,
+        resolved_by: alert.resolved_by,
+        resolved_at: alert.resolved_at,
+        explanation_status: alert.explanation_status
+      }
+    });
+  } catch (error) {
+    console.error('[trinetra] alert resolve failed:', error);
+    return res.status(500).json({ success: false, error: 'Failed to resolve alert' });
+  }
+});
 
 /* ------------------------------------------------------------------ */
 /* Retention                                                            */
@@ -1867,7 +1687,7 @@ router.get('/status', auth, requireManager, async (req, res) => {
         timestamp: { $gte: start, $lte: end },
         'metadata.trinetra_mode': 'periodic'
       }),
-      MonitoringAlert.countDocuments({ status: { $in: ['active', 'acknowledged'] } }),
+      MonitoringAlert.countDocuments({ status: { $in: ['active', 'acknowledged', 'ACTIVE', 'EXPLAINED'] } }),
       EmployeeActivity.distinct('employee', {
         timestamp: { $gte: hourAgo },
         employee: { $in: eligibleIds }

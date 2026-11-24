@@ -31,13 +31,6 @@ module.exports = (req, res, next) => {
     req.user = decoded;
     next();
   } catch (error) {
-    try {
-      const decoded = jwt.decode(token);
-      if (decoded && (decoded.id || decoded._id)) {
-        req.user = { id: decoded.id || decoded._id, role: decoded.role || 'Admin', ...decoded };
-        return next();
-      }
-    } catch (e) {}
-    res.status(401).json({ error: "Token is not valid" });
+    return res.status(401).json({ error: "Token is not valid" });
   }
 };

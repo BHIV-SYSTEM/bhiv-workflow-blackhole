@@ -25,15 +25,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu"
-import { 
-  Users, 
-  UserCheck, 
-  UserX, 
-  Search, 
-  MoreHorizontal, 
-  Eye, 
+import {
+  Users,
+  UserCheck,
+  UserX,
+  UserPlus,
+  Search,
+  MoreHorizontal,
+  Eye,
   EyeOff,
-  Edit, 
+  Edit,
   Trash,
   AlertTriangle,
   CheckCircle,
@@ -61,23 +62,78 @@ export function UserManagement() {
   const [isUpdating, setIsUpdating] = useState(false)
   const [activeTab, setActiveTab] = useState("active")
   const [singleUserAction, setSingleUserAction] = useState(null) // { userId, stillExist, userName }
-  
+
   // View and Edit states
   const [viewingUser, setViewingUser] = useState(null)
   const [editingUser, setEditingUser] = useState(null)
   const [showViewDialog, setShowViewDialog] = useState(false)
   const [showEditDialog, setShowEditDialog] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
-  
+
   // Delete user states
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [userToDelete, setUserToDelete] = useState(null)
   const [isDeleting, setIsDeleting] = useState(false)
 
+  // Create user states
+  const [showCreateDialog, setShowCreateDialog] = useState(false)
+  const [isCreating, setIsCreating] = useState(false)
+  const [departmentsList, setDepartmentsList] = useState([])
+  const [createFormData, setCreateFormData] = useState({
+    name: "",
+    email: "",
+    password: "",
+    role: "User",
+    department: "",
+    branch: "blackhole_mumbai"
+  })
+
   // Fetch all users including exited ones
   useEffect(() => {
     fetchUsers()
+    api.admin.getDepartments()
+      .then(deps => setDepartmentsList(Array.isArray(deps) ? deps : []))
+      .catch(() => { })
   }, [])
+
+  const handleCreateUser = async (e) => {
+    if (e && e.preventDefault) e.preventDefault()
+    if (!createFormData.name || !createFormData.email || !createFormData.password) {
+      toast({
+        title: "Missing Fields",
+        description: "Name, email, and password are required",
+        variant: "destructive"
+      })
+      return
+    }
+    try {
+      setIsCreating(true)
+      await api.admin.createUser(createFormData)
+      toast({
+        title: "Employee Created",
+        description: `Successfully registered ${createFormData.name}`,
+      })
+      setShowCreateDialog(false)
+      setCreateFormData({
+        name: "",
+        email: "",
+        password: "",
+        role: "User",
+        department: "",
+        branch: "blackhole_mumbai"
+      })
+      fetchUsers()
+    } catch (err) {
+      console.error("Create user failed:", err)
+      toast({
+        title: "Registration Failed",
+        description: err.message || "Failed to create user",
+        variant: "destructive"
+      })
+    } finally {
+      setIsCreating(false)
+    }
+  }
 
   // Filter users based on search query and active tab
   useEffect(() => {
@@ -168,8 +224,8 @@ export function UserManagement() {
       await Promise.all(promises)
 
       // Update local state
-      setUsers(prev => prev.map(user => 
-        selectedUsers.includes(user._id) 
+      setUsers(prev => prev.map(user =>
+        selectedUsers.includes(user._id)
           ? { ...user, stillExist }
           : user
       ))
@@ -215,11 +271,11 @@ export function UserManagement() {
     try {
       setIsUpdating(true)
       await api.admin.updateUserStatus(singleUserAction.userId, singleUserAction.stillExist)
-      
+
       // Update local state
-      setUsers(prev => prev.map(user => 
-        user._id === singleUserAction.userId 
-          ? { ...user, stillExist: singleUserAction.stillExist } 
+      setUsers(prev => prev.map(user =>
+        user._id === singleUserAction.userId
+          ? { ...user, stillExist: singleUserAction.stillExist }
           : user
       ))
 
@@ -254,10 +310,10 @@ export function UserManagement() {
     try {
       setIsDeleting(true)
       await api.admin.deleteUser(userToDelete._id)
-      
+
       // Remove user from local state
       setUsers(prev => prev.filter(user => user._id !== userToDelete._id))
-      
+
       setShowDeleteDialog(false)
       setUserToDelete(null)
 
@@ -270,7 +326,7 @@ export function UserManagement() {
       const errorMessage = error.message || "Failed to delete user"
       toast({
         title: "Error",
-        description: errorMessage.includes("assigned tasks") 
+        description: errorMessage.includes("assigned tasks")
           ? "Cannot delete user with assigned tasks. Consider marking as exited instead."
           : errorMessage,
         variant: "destructive",
@@ -298,9 +354,9 @@ export function UserManagement() {
       }
 
       await api.admin.updateUser(editingUser._id, userToUpdate)
-      
+
       // Update local state
-      setUsers(prev => prev.map(user => 
+      setUsers(prev => prev.map(user =>
         user._id === editingUser._id ? editingUser : user
       ))
 
@@ -390,29 +446,41 @@ export function UserManagement() {
               />
             </div>
 
-            {/* Bulk Actions */}
-            {selectedUsers.length > 0 && (
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleBulkAction("exit")}
-                  className="text-red-600 hover:text-red-700"
-                >
-                  <UserX className="h-4 w-4 mr-2" />
-                  Mark as Exited ({selectedUsers.length})
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleBulkAction("reactivate")}
-                  className="text-green-600 hover:text-green-700"
-                >
-                  <UserCheck className="h-4 w-4 mr-2" />
-                  Reactivate ({selectedUsers.length})
-                </Button>
-              </div>
-            )}
+            <div className="flex items-center gap-3">
+              {/* Add Employee Button */}
+              <Button
+                id="btn-add-employee"
+                onClick={() => setShowCreateDialog(true)}
+                className="bg-purple-600 hover:bg-purple-700 text-white font-semibold flex items-center gap-2"
+              >
+                <UserPlus className="h-4 w-4" />
+                Add Employee
+              </Button>
+
+              {/* Bulk Actions */}
+              {selectedUsers.length > 0 && (
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleBulkAction("exit")}
+                    className="text-red-600 hover:text-red-700"
+                  >
+                    <UserX className="h-4 w-4 mr-2" />
+                    Mark as Exited ({selectedUsers.length})
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleBulkAction("reactivate")}
+                    className="text-green-600 hover:text-green-700"
+                  >
+                    <UserCheck className="h-4 w-4 mr-2" />
+                    Reactivate ({selectedUsers.length})
+                  </Button>
+                </div>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -455,20 +523,20 @@ export function UserManagement() {
         <CardHeader>
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="p-1 border border-border/40">
-              <TabsTrigger 
-                value="active" 
+              <TabsTrigger
+                value="active"
                 className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white dark:data-[state=active]:bg-emerald-500 dark:data-[state=active]:text-zinc-950 font-semibold transition-colors"
               >
                 Active Users ({activeUsers.length})
               </TabsTrigger>
-              <TabsTrigger 
-                value="exited" 
+              <TabsTrigger
+                value="exited"
                 className="data-[state=active]:bg-red-600 data-[state=active]:text-white dark:data-[state=active]:bg-red-500 dark:data-[state=active]:text-zinc-950 font-semibold transition-colors"
               >
                 Exited Users ({exitedUsers.length})
               </TabsTrigger>
-              <TabsTrigger 
-                value="all" 
+              <TabsTrigger
+                value="all"
                 className="data-[state=active]:bg-blue-600 data-[state=active]:text-white dark:data-[state=active]:bg-blue-500 dark:data-[state=active]:text-zinc-950 font-semibold transition-colors"
               >
                 All Users ({users.length})
@@ -537,7 +605,7 @@ export function UserManagement() {
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                            <DropdownMenuItem 
+                            <DropdownMenuItem
                               onClick={(e) => {
                                 e.preventDefault()
                                 e.stopPropagation()
@@ -550,7 +618,7 @@ export function UserManagement() {
                               <Eye className="mr-2 h-4 w-4" />
                               View Details
                             </DropdownMenuItem>
-                            <DropdownMenuItem 
+                            <DropdownMenuItem
                               onClick={(e) => {
                                 e.preventDefault()
                                 e.stopPropagation()
@@ -649,14 +717,14 @@ export function UserManagement() {
                 </>
               ) : (
                 <>
-              Are you sure you want to {actionType === "reactivate" ? "reactivate" : "mark as exited"} {selectedUsers.length} user(s)?
-              {actionType === "exit" && (
-                <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-md">
-                  <p className="text-sm text-amber-800">
-                    <strong>Note:</strong> Exited users will no longer appear in most lists and won't be able to access the system.
-                    They can be reactivated later if needed.
-                  </p>
-                </div>
+                  Are you sure you want to {actionType === "reactivate" ? "reactivate" : "mark as exited"} {selectedUsers.length} user(s)?
+                  {actionType === "exit" && (
+                    <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-md">
+                      <p className="text-sm text-amber-800">
+                        <strong>Note:</strong> Exited users will no longer appear in most lists and won't be able to access the system.
+                        They can be reactivated later if needed.
+                      </p>
+                    </div>
                   )}
                 </>
               )}
@@ -685,7 +753,7 @@ export function UserManagement() {
               ) : (
                 <XCircle className="mr-2 h-4 w-4" />
               )}
-              {singleUserAction 
+              {singleUserAction
                 ? (actionType === "reactivate" ? "Reactivate User" : "Mark as Exited")
                 : (actionType === "reactivate" ? "Reactivate Users" : "Mark as Exited")
               }
@@ -712,7 +780,7 @@ export function UserManagement() {
               </div>
             </div>
           </DialogHeader>
-          
+
           {viewingUser && (
             <div className="space-y-6 py-4">
               {/* User Header Card */}
@@ -788,16 +856,16 @@ export function UserManagement() {
               </div>
             </div>
           )}
-          
+
           <DialogFooter className="pt-5 border-t border-border/60 gap-2 bg-muted/30 -mx-6 -mb-6 px-6 pb-6 mt-6 rounded-b-lg">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={() => setShowViewDialog(false)}
               className="rounded-xl font-semibold"
             >
               Close
             </Button>
-            <Button 
+            <Button
               onClick={() => {
                 setShowViewDialog(false)
                 setEditingUser(viewingUser)
@@ -831,7 +899,7 @@ export function UserManagement() {
               </div>
             </div>
           </DialogHeader>
-          
+
           {editingUser && (
             <div className="grid gap-5 py-4">
               {/* Full Name */}
@@ -943,7 +1011,7 @@ export function UserManagement() {
               </div>
             </div>
           )}
-          
+
           <DialogFooter className="pt-5 border-t border-border/60 gap-2 bg-muted/30 -mx-6 -mb-6 px-6 pb-6 mt-6 rounded-b-lg">
             <Button
               variant="outline"
@@ -957,8 +1025,8 @@ export function UserManagement() {
             >
               Cancel
             </Button>
-            <Button 
-              onClick={handleUpdateUser} 
+            <Button
+              onClick={handleUpdateUser}
               disabled={isUpdating}
               className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 dark:from-blue-500 dark:to-blue-600 dark:hover:from-blue-600 dark:hover:to-blue-700 min-w-[140px] shadow-lg font-semibold"
             >
@@ -1041,6 +1109,126 @@ export function UserManagement() {
               )}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create New Employee Dialog */}
+      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        <DialogContent className="sm:max-w-[500px] border-l-4 border-l-purple-600 shadow-2xl">
+          <DialogHeader className="pb-4 border-b border-border/60">
+            <DialogTitle className="flex items-center gap-2 text-xl font-bold">
+              <UserPlus className="h-5 w-5 text-purple-600" />
+              Add New Employee
+            </DialogTitle>
+            <DialogDescription>
+              Create an authorized team member account for the organization.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleCreateUser} className="space-y-4 pt-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="create-name">Full Name *</Label>
+              <Input
+                id="create-name"
+                placeholder="e.g. Niyantran E2E Test Employee"
+                value={createFormData.name}
+                onChange={(e) => setCreateFormData({ ...createFormData, name: e.target.value })}
+                required
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="create-email">Corporate Email Address *</Label>
+              <Input
+                id="create-email"
+                type="email"
+                placeholder="e.g. niyantran.e2e.test@localhost.invalid"
+                value={createFormData.email}
+                onChange={(e) => setCreateFormData({ ...createFormData, email: e.target.value })}
+                required
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="create-password">Temporary Password *</Label>
+              <Input
+                id="create-password"
+                type="password"
+                placeholder="Secure password"
+                value={createFormData.password}
+                onChange={(e) => setCreateFormData({ ...createFormData, password: e.target.value })}
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="create-role">Role</Label>
+                <Select
+                  value={createFormData.role}
+                  onValueChange={(val) => setCreateFormData({ ...createFormData, role: val })}
+                >
+                  <SelectTrigger id="create-role">
+                    <SelectValue placeholder="Select role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="User">Employee (User)</SelectItem>
+                    <SelectItem value="Manager">Manager</SelectItem>
+                    <SelectItem value="Tester">Tester</SelectItem>
+                    <SelectItem value="Admin">Administrator</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="create-dept">Department</Label>
+                <Select
+                  value={createFormData.department}
+                  onValueChange={(val) => setCreateFormData({ ...createFormData, department: val })}
+                >
+                  <SelectTrigger id="create-dept">
+                    <SelectValue placeholder="Select department" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {departmentsList.map((dept) => (
+                      <SelectItem key={dept._id || dept.id} value={dept._id || dept.id}>
+                        {dept.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <DialogFooter className="pt-4 border-t border-border/60 gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowCreateDialog(false)}
+                disabled={isCreating}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                id="btn-submit-create-employee"
+                disabled={isCreating}
+                className="bg-purple-600 hover:bg-purple-700 text-white font-semibold"
+              >
+                {isCreating ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="mr-2 h-4 w-4" />
+                    Create Employee
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

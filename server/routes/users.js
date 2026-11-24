@@ -3,6 +3,7 @@ const router = express.Router()
 const User = require("../models/User")
 const Task = require("../models/Task")
 const TaskSubmission = require("../models/TaskSubmission")
+const Notification = require("../models/Notification")
 const auth = require("../middleware/auth")
 const adminAuth = require("../middleware/adminAuth")
 const auditLogService = require('../services/auditLogService');
@@ -577,10 +578,16 @@ router.delete("/:id", auth, adminAuth, async (req, res) => {
   }
 })
 
-// Get tasks assigned to user - SHOW ALL USERS
-router.get("/:id/tasks", async (req, res) => {
+// Get tasks assigned to user - Protected by auth
+router.get("/:id/tasks", auth, async (req, res) => {
   try {
     const { status } = req.query
+
+    // Check authorization: user can only view their own tasks unless Admin
+    const authUserId = req.user ? (req.user.id || req.user._id) : null;
+    if (!req.user || (req.user.role !== "Admin" && (!authUserId || authUserId.toString() !== req.params.id))) {
+      return res.status(403).json({ error: "Not authorized to access these tasks" });
+    }
 
     // Verify user exists
     const user = await User.findById(req.params.id)
@@ -695,39 +702,30 @@ router.get("/:id/notifications", auth, async (req, res) => {
       return res.status(403).json({ error: "Not authorized to access these notifications" })
     }
 
-    // In a real app, you would fetch notifications from a database
-    // For now, we'll return mock data
-    const notifications = [
-      {
-        id: "1",
-        type: "submission_approved",
-        title: "Submission Approved",
-        message: "Your task submission for 'Create Login Page' has been approved!",
-        createdAt: new Date(Date.now() - 1000 * 60 * 30).toISOString(), // 30 minutes ago
-        read: false,
-        taskId: "task123",
-      },
-      {
-        id: "2",
-        type: "submission_rejected",
-        title: "Submission Needs Revision",
-        message: "Your task submission for 'API Integration' requires some changes.",
-        createdAt: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(), // 2 hours ago
-        read: false,
-        taskId: "task456",
-      },
-      {
-        id: "3",
-        type: "task_assigned",
-        title: "New Task Assigned",
-        message: "You have been assigned a new task: 'Database Schema Design'",
-        createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(), // 1 day ago
-        read: true,
-        taskId: "task789",
-      },
-    ]
+    const dbNotifications = await Notification.find({
+      $or: [
+        { recipient: req.params.id },
+        { user: req.params.id }
+      ]
+    })
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .populate("task", "title")
+      .lean();
 
-    res.json(notifications)
+    const notifications = dbNotifications.map(n => ({
+      id: n._id.toString(),
+      _id: n._id.toString(),
+      type: n.type,
+      title: n.title,
+      message: n.message,
+      createdAt: n.createdAt,
+      read: !!n.read,
+      taskId: n.task?._id ? n.task._id.toString() : (n.task ? n.task.toString() : null),
+      taskTitle: n.task?.title || null
+    }));
+
+    res.json(notifications);
   } catch (error) {
     console.error("Error fetching notifications:", error)
     res.status(500).json({ error: "Server error" })
@@ -748,9 +746,21 @@ router.put("/:id/notifications/read-all", auth, async (req, res) => {
       return res.status(403).json({ error: "Not authorized to access these notifications" })
     }
 
-    // In a real app, you would update notifications in the database
-    // For now, we'll just return a success message
-    res.json({ message: "All notifications marked as read" })
+    const result = await Notification.updateMany(
+      {
+        $or: [
+          { recipient: req.params.id },
+          { user: req.params.id }
+        ],
+        read: false
+      },
+      { $set: { read: true } }
+    );
+
+    res.json({
+      message: "All notifications marked as read",
+      modifiedCount: result.modifiedCount || 0
+    });
   } catch (error) {
     console.error("Error marking notifications as read:", error)
     res.status(500).json({ error: "Server error" })

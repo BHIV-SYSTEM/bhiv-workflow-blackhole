@@ -113,19 +113,13 @@ function categorizeActivity(activity, rules) {
   }
 
   const app = normalizeText(activity && activity.active_application && activity.active_application.name);
-  const title = normalizeText(activity && activity.active_application && activity.active_application.title);
-  const domain = extractDomain(title) || '';
   const prepared = prepareRules(rules);
 
+  // Under V2 privacy boundaries, only application executable names are categorized.
+  // Window titles and visited URLs are never inspected.
   for (const rule of prepared) {
-    if (rule.field === 'app' && app.includes(rule.pattern)) {
+    if (app.includes(rule.pattern)) {
       return { category: rule.category, label: rule.label, matched_pattern: rule.pattern, source: 'app_rule' };
-    }
-    if (rule.field === 'title' && (title.includes(rule.pattern) || domain.includes(rule.pattern))) {
-      return { category: rule.category, label: rule.label, matched_pattern: rule.pattern, source: 'title_rule' };
-    }
-    if (rule.field === 'any' && (app.includes(rule.pattern) || title.includes(rule.pattern) || domain.includes(rule.pattern))) {
-      return { category: rule.category, label: rule.label, matched_pattern: rule.pattern, source: 'any_rule' };
     }
   }
 

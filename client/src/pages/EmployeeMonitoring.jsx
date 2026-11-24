@@ -16,7 +16,6 @@ import {
   Clock,
   TrendingUp,
   Shield,
-  Camera,
   Globe,
   Play,
   Square,
@@ -42,7 +41,6 @@ import { DailyMonitoringView } from '@/components/monitoring/DailyMonitoringView
 import { MonthlyMonitoringView } from '@/components/monitoring/MonthlyMonitoringView';
 import { MonitoringDashboard } from '@/components/monitoring/MonitoringDashboard';
 import { ActivityChart } from '@/components/monitoring/ActivityChart';
-import { ScreenshotGallery } from '@/components/monitoring/ScreenshotGallery';
 import { AlertsPanel } from '@/components/monitoring/AlertsPanel';
 import { ReportsGenerator } from '@/components/monitoring/ReportsGenerator';
 import { BulkMonitoringControls } from '@/components/monitoring/BulkMonitoringControls';
@@ -275,8 +273,8 @@ export function EmployeeMonitoring() {
       const bExited = b.stillExist === 0 || b.currentStatus === 'Exited';
       if (aExited !== bExited) return aExited ? 1 : -1;
 
-      const aStarted = (a.hasStartedDay || a.currentStatus === 'Active' || a.currentStatus === 'Idle' || a.activeSeconds > 0 || a.keystrokesToday > 0) ? 1 : 0;
-      const bStarted = (b.hasStartedDay || b.currentStatus === 'Active' || b.currentStatus === 'Idle' || b.activeSeconds > 0 || b.keystrokesToday > 0) ? 1 : 0;
+      const aStarted = (a.hasStartedDay || a.currentStatus === 'Active' || a.currentStatus === 'Idle' || a.activeSeconds > 0) ? 1 : 0;
+      const bStarted = (b.hasStartedDay || b.currentStatus === 'Active' || b.currentStatus === 'Idle' || b.activeSeconds > 0) ? 1 : 0;
       if (aStarted !== bStarted) return bStarted - aStarted;
 
       return (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
@@ -474,14 +472,6 @@ export function EmployeeMonitoring() {
           </TabsTrigger>
 
           <TabsTrigger
-            value="screenshots"
-            className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-zinc-400 hover:text-white bg-transparent data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-blue-900/40 data-[state=active]:border data-[state=active]:border-blue-400 ring-2 ring-transparent data-[state=active]:ring-blue-500/30"
-          >
-            <Camera className="h-3.5 w-3.5" />
-            Screenshots
-          </TabsTrigger>
-
-          <TabsTrigger
             value="alerts"
             className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-zinc-400 hover:text-white bg-transparent data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-blue-900/40 data-[state=active]:border data-[state=active]:border-blue-400 ring-2 ring-transparent data-[state=active]:ring-blue-500/30"
           >
@@ -641,15 +631,6 @@ export function EmployeeMonitoring() {
         </TabsContent>
 
         {/* OTHER SUB-TABS */}
-        <TabsContent value="screenshots" className="mt-6">
-          <ScreenshotGallery
-            employee={selectedEmployee || filteredEmployeesList[0]}
-            employees={filteredEmployeesList}
-            onSelectEmployee={selectUnifiedEmployee}
-            hideEmployeeSelector={true}
-          />
-        </TabsContent>
-
         <TabsContent value="alerts" className="mt-6">
           <AlertsPanel employee={selectedEmployee || filteredEmployeesList[0]} />
         </TabsContent>

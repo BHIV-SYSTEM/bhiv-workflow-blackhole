@@ -25,7 +25,7 @@ router.get("/users", auth, async (req, res) => {
   try {
     const { includeExited } = req.query;
     const branchQuery = getBranchQuery(req);
-    
+
     // Build filter - show users filtered by branch
     const baseFilter = { ...branchQuery };
     if (!includeExited || includeExited !== 'true') {
@@ -39,9 +39,9 @@ router.get("/users", auth, async (req, res) => {
         return res.json([])
       }
 
-      const users = await User.find({ 
+      const users = await User.find({
         ...baseFilter,
-        department: manager.department 
+        department: manager.department
       }).select("-password").sort({ name: 1 })
 
       // Add blackhole indicator
@@ -78,7 +78,7 @@ router.get("/users/all", auth, adminAuth, async (req, res) => {
   try {
     const branchQuery = getBranchQuery(req);
     const users = await User.find(branchQuery).select("-password").populate("department", "name").sort({ name: 1 })
-    
+
     // Add blackhole indicator
     const usersWithIndicators = users.map(user => ({
       ...user.toObject(),
@@ -149,7 +149,7 @@ router.get("/users/:id", auth, async (req, res) => {
 // @access  Admin only
 router.post("/users", auth, adminAuth, async (req, res) => {
   try {
-    const { name, email, password, role, department, avatar } = req.body
+    const { name, email, password, role, department, avatar, branch } = req.body
 
     // Validate required fields
     if (!name || !email || !password) {
@@ -172,8 +172,9 @@ router.post("/users", auth, adminAuth, async (req, res) => {
       email: email.toLowerCase(),
       password, // Store password directly without hashing
       role: role || "User",
-      department: department || null,
+      department: (department && department !== "" && department !== "null") ? department : null,
       avatar: avatar || null,
+      branch: branch || "blackhole_mumbai",
       stillExist: 1 // Default to active
     })
 
@@ -335,7 +336,7 @@ router.put("/users/:id/status", auth, adminAuth, async (req, res) => {
 
     const user = await User.findByIdAndUpdate(
       userId,
-      { $set: { stillExist } }, 
+      { $set: { stillExist } },
       { new: true }
     ).select("-password").populate("department", "name")
 
@@ -433,8 +434,8 @@ router.get("/users/role/:role", auth, async (req, res) => {
       return res.status(400).json({ error: "Invalid role" })
     }
 
-    const baseFilter = { 
-      role, 
+    const baseFilter = {
+      role,
       stillExist: 1,
       ...branchQuery
     }
@@ -586,7 +587,7 @@ router.get("/departments", auth, async (req, res) => {
 router.get("/departments/:id", auth, async (req, res) => {
   try {
     const branchQuery = getBranchQuery(req);
-    
+
     const department = await Department.findById(req.params.id)
       .populate({
         path: "lead",
@@ -634,8 +635,8 @@ router.post("/departments", auth, adminAuth, async (req, res) => {
 
     // If lead is specified, check if they are active and have org email
     if (lead) {
-      const leadUser = await User.findOne({ 
-        _id: lead, 
+      const leadUser = await User.findOne({
+        _id: lead,
         stillExist: 1,
         ...orgEmailMongoFilter(),
       })
@@ -705,8 +706,8 @@ router.put("/departments/:id", auth, adminAuth, async (req, res) => {
 
     // If lead is being changed, check if new lead is active and has org email
     if (lead) {
-      const leadUser = await User.findOne({ 
-        _id: lead, 
+      const leadUser = await User.findOne({
+        _id: lead,
         stillExist: 1,
         ...orgEmailMongoFilter(),
       })
@@ -786,7 +787,7 @@ router.delete("/departments/:id", auth, adminAuth, async (req, res) => {
 
     // Update all users who belong to this department
     await User.updateMany(
-      { department: departmentId }, 
+      { department: departmentId },
       { $set: { department: null } }
     )
 
@@ -832,8 +833,8 @@ router.put("/departments/:id/members", auth, async (req, res) => {
     }
 
     // For NEW assignments, verify all users are active and have org emails
-    const activeUsers = await User.find({ 
-      _id: { $in: userIds }, 
+    const activeUsers = await User.find({
+      _id: { $in: userIds },
       stillExist: 1,
       ...orgEmailMongoFilter(),
     })
@@ -936,7 +937,7 @@ router.get("/departments/:id/tasks", auth, async (req, res) => {
     // Handle assignee population manually - SHOW ALL EXISTING ASSIGNEES
     const tasksWithAssignees = await Promise.all(tasks.map(async (task) => {
       const taskObj = task.toObject()
-      
+
       if (!task.assignee) {
         taskObj.assignee = null
         return taskObj
@@ -944,7 +945,7 @@ router.get("/departments/:id/tasks", auth, async (req, res) => {
 
       // Get the actual user without filtering - SHOW EXISTING ASSIGNEES
       const actualUser = await User.findById(task.assignee).select("name avatar email stillExist")
-      
+
       if (!actualUser) {
         taskObj.assignee = null
         return taskObj

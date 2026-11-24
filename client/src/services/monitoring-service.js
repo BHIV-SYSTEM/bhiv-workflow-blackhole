@@ -17,7 +17,6 @@
 const FLUSH_INTERVAL_MS = 10_000; // send batch every 10 s
 const HEARTBEAT_INTERVAL_MS = 30_000; // session heartbeat every 30 s
 const TRINETRA_INTERVAL_MS = 5_000; // live browser sample → /agent/activity/ingest
-import KeystrokeTextCapture from '../lib/keystroke-text-capture';
 
 class MonitoringService {
   constructor() {
@@ -32,7 +31,7 @@ class MonitoringService {
     this._heartbeatTimer = null;
     this._pranaUnsubscribe = null;
 
-    // Active window / URL tracking
+    // Active window / URL tracking (Excised under V2 privacy boundaries)
     this._lastUrl = null;
     this._lastTitle = null;
     this._urlObserver = null;
@@ -44,7 +43,9 @@ class MonitoringService {
       const hidden = document.hidden;
       this._pushSignal('browser_hidden', hidden, { visibilityState: document.visibilityState });
     };
-    this._onBeforeUnload = () => this._flush(true);
+    this._onBeforeUnload = () => {
+      this._flush(true);
+    };
 
     // TRINETRA feed — browser input counters → /agent/activity/ingest
     this._trinetraTimer = null;
@@ -55,13 +56,6 @@ class MonitoringService {
     this._tAttendanceId = null;
     this._tFeedEnabled = true;
     this._tBackoffUntil = 0;
-    // Typed-text capture for the workflow tab (what employees actually write).
-    this._textCapture = new KeystrokeTextCapture();
-    this._onCountKey = (event) => {
-      this._tKeys += 1;
-      this._tLastInputAt = Date.now();
-      this._textCapture.onKeydown(event);
-    };
     this._onCountMove = () => {
       const now = Date.now();
       this._tLastInputAt = now;
@@ -100,7 +94,6 @@ class MonitoringService {
     this._tAttendanceId = null;
     this._tFeedEnabled = true;
     this._tBackoffUntil = 0;
-    if (this._textCapture) this._textCapture.reset();
 
     this._attachBrowserListeners();
     this._attachPranaListener();
@@ -121,11 +114,6 @@ class MonitoringService {
 
   stop() {
     if (!this._employeeId) return;
-
-    // Best-effort final upload of anything still buffered as typed text.
-    if (this._textCapture && this._textCapture.hasPending() && this._tFeedEnabled) {
-      this._flushTypedText().catch(() => {});
-    }
 
     this._flush(true);
 
@@ -166,7 +154,6 @@ class MonitoringService {
     this._tAttendanceId = null;
     this._tFeedEnabled = true;
     this._tBackoffUntil = 0;
-    if (this._textCapture) this._textCapture.reset();
     if (typeof window !== 'undefined') {
       window.__monitoringServiceActive = false;
     }
@@ -245,11 +232,8 @@ class MonitoringService {
       });
     }
 
-    // 1 & 2. Active application + website activity
+    // 1. Active application activity (URL and window title tracking excised)
     this._pushSignal('task_tab_active', s.task_tab_active, {
-      url: window.location.href,
-      domain: window.location.hostname,
-      title: document.title,
       app_switches: s.app_switches,
     });
 
@@ -291,14 +275,12 @@ class MonitoringService {
   // ─── TRINETRA feed (browser input → /agent/activity/ingest) ───────────────
 
   _attachInputCounters() {
-    document.addEventListener('keydown', this._onCountKey, { passive: true });
     document.addEventListener('mousemove', this._onCountMove, { passive: true });
     document.addEventListener('mousedown', this._onCountMouseAction, { passive: true });
     document.addEventListener('wheel', this._onCountMouseAction, { passive: true });
   }
 
   _detachInputCounters() {
-    document.removeEventListener('keydown', this._onCountKey);
     document.removeEventListener('mousemove', this._onCountMove);
     document.removeEventListener('mousedown', this._onCountMouseAction);
     document.removeEventListener('wheel', this._onCountMouseAction);
@@ -352,8 +334,8 @@ class MonitoringService {
         mouseEvents,
         keyboardEvents,
         idleSeconds,
-        activeApp: document.title || window.location.hostname,
-        activeAppTitle: document.title || window.location.href,
+        activeApp: 'Browser',
+        activeAppTitle: 'Browser Session',
         source: 'browser',
         intervalDuration: TRINETRA_INTERVAL_MS / 1000
       });
@@ -372,96 +354,17 @@ class MonitoringService {
             this._detachInputCounters();
           }
         }
-      } else {
-        // Activity accepted — push whatever was typed in this window too.
-        await this._flushTypedText();
       }
     } catch (_) {
       // Network failure — the next tick retries with fresh counters.
     }
   }
 
-  /**
-   * Upload reconstructed typed-text segments from the workflow tab to
-   * POST /agent/keystroke/ingest (server re-checks consent + workday and
-   * classifies each segment: valuable vs key-mashing).
-   */
-  async _flushTypedText() {
-    if (!this._employeeId || !this._tFeedEnabled || !this._textCapture.hasPending()) return;
-    if (Date.now() < this._tBackoffUntil) return;
+  // ─── URL / active window tracking (EXCISED under V2 privacy boundaries) ───
 
-    const segments = this._textCapture.drain();
-    if (segments.length === 0) return;
+  _startUrlTracking() {}
 
-    try {
-      const hasDay = await this._ensureAttendanceId();
-      if (!hasDay) {
-        this._textCapture.requeue(segments);
-        return;
-      }
-
-      const res = await this._post('/agent/keystroke/ingest', {
-        attendanceId: this._tAttendanceId,
-        activeApp: document.title || window.location.hostname,
-        activeAppTitle: document.title || window.location.href,
-        segments
-      });
-
-      if (!res.ok) {
-        let body = {};
-        try {
-          body = await res.json();
-        } catch {
-          body = {};
-        }
-        if (res.status === 403 && (body.code === 'MONITORING_PAUSED' || body.code === 'CONSENT_DENIED')) {
-          // Employee opted out — drop the text entirely.
-          this._tFeedEnabled = false;
-          this._detachInputCounters();
-        } else {
-          // Retryable (day gate, 5xx, network): keep for the next tick.
-          this._textCapture.requeue(segments);
-        }
-      }
-    } catch {
-      this._textCapture.requeue(segments);
-    }
-  }
-
-  // ─── URL / active window tracking ─────────────────────────────────────────
-
-  _startUrlTracking() {
-    this._lastUrl = window.location.href;
-    this._lastTitle = document.title;
-
-    // SPA navigation detection
-    this._urlObserver = new MutationObserver(() => {
-      const url = window.location.href;
-      if (url !== this._lastUrl) {
-        this._lastUrl = url;
-        this._lastTitle = document.title;
-        this._pushSignal('app_switch', url, {
-          url,
-          domain: window.location.hostname,
-          title: document.title,
-        });
-      }
-    });
-
-    this._urlObserver.observe(document.body, { childList: true, subtree: true });
-    window.addEventListener('popstate', () => this._pushSignal('app_switch', window.location.href, {
-      url: window.location.href,
-      domain: window.location.hostname,
-      title: document.title,
-    }));
-  }
-
-  _stopUrlTracking() {
-    if (this._urlObserver) {
-      this._urlObserver.disconnect();
-      this._urlObserver = null;
-    }
-  }
+  _stopUrlTracking() {}
 
   // ─── Signal buffer ─────────────────────────────────────────────────────────
 

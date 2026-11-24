@@ -13,6 +13,9 @@ const { branchFilter } = require("../middleware/branchMiddleware")
 const { formatEmployeeId } = require("../utils/employeeId")
 const {
   COMPLETED_STATUSES,
+  COMPLETED_MATCH,
+  IN_PROGRESS_MATCH,
+  PENDING_MATCH,
   isTaskCompleted,
   aggregateTaskBuckets,
 } = require("../utils/taskStats")
@@ -100,11 +103,74 @@ router.get("/stats", async (req, res) => {
       finalVerdict: { $in: ["APPROVED", "APPROVED WITH MINOR FIXES"] },
     })
 
-    // Get change percentages (mock data - in a real app, you'd compare with historical data)
-    const totalTasksChange = 12 // +12% from last month
-    const completedTasksChange = 8 // +8% from last month
-    const inProgressTasksChange = 2 // +2 tasks since yesterday
-    const pendingTasksChange = -2 // -2 tasks since yesterday
+    // Calculate change percentages via authentic Task historical aggregation
+    const now = new Date();
+    const startOfCurrentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfPrevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const endOfPrevMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+
+    const [metricsAgg] = await Task.aggregate([
+      { $match: branchQuery || {} },
+      {
+        $facet: {
+          tasksThisMonth: [
+            { $match: { createdAt: { $gte: startOfCurrentMonth } } },
+            { $count: "count" }
+          ],
+          tasksPrevMonth: [
+            { $match: { createdAt: { $gte: startOfPrevMonth, $lte: endOfPrevMonth } } },
+            { $count: "count" }
+          ],
+          completedThisMonth: [
+            { $match: { ...COMPLETED_MATCH, updatedAt: { $gte: startOfCurrentMonth } } },
+            { $count: "count" }
+          ],
+          completedPrevMonth: [
+            { $match: { ...COMPLETED_MATCH, updatedAt: { $gte: startOfPrevMonth, $lte: endOfPrevMonth } } },
+            { $count: "count" }
+          ],
+          inProgressToday: [
+            { $match: { ...IN_PROGRESS_MATCH, updatedAt: { $gte: startOfToday } } },
+            { $count: "count" }
+          ],
+          inProgressYesterday: [
+            { $match: { ...IN_PROGRESS_MATCH, updatedAt: { $gte: startOfYesterday, $lt: startOfToday } } },
+            { $count: "count" }
+          ],
+          pendingToday: [
+            { $match: { ...PENDING_MATCH, updatedAt: { $gte: startOfToday } } },
+            { $count: "count" }
+          ],
+          pendingYesterday: [
+            { $match: { ...PENDING_MATCH, updatedAt: { $gte: startOfYesterday, $lt: startOfToday } } },
+            { $count: "count" }
+          ],
+        }
+      }
+    ]);
+
+    const countOf = (arr) => arr?.[0]?.count || 0;
+    const tasksThisMonthCount = countOf(metricsAgg?.tasksThisMonth);
+    const tasksPrevMonthCount = countOf(metricsAgg?.tasksPrevMonth);
+    const completedThisMonthCount = countOf(metricsAgg?.completedThisMonth);
+    const completedPrevMonthCount = countOf(metricsAgg?.completedPrevMonth);
+    const inProgressTodayCount = countOf(metricsAgg?.inProgressToday);
+    const inProgressYesterdayCount = countOf(metricsAgg?.inProgressYesterday);
+    const pendingTodayCount = countOf(metricsAgg?.pendingToday);
+    const pendingYesterdayCount = countOf(metricsAgg?.pendingYesterday);
+
+    const totalTasksChange = tasksPrevMonthCount > 0
+      ? Math.round(((tasksThisMonthCount - tasksPrevMonthCount) / tasksPrevMonthCount) * 100)
+      : (tasksThisMonthCount > 0 ? 100 : 0);
+
+    const completedTasksChange = completedPrevMonthCount > 0
+      ? Math.round(((completedThisMonthCount - completedPrevMonthCount) / completedPrevMonthCount) * 100)
+      : (completedThisMonthCount > 0 ? 100 : 0);
+
+    const inProgressTasksChange = inProgressTodayCount - inProgressYesterdayCount;
+    const pendingTasksChange = pendingTodayCount - pendingYesterdayCount;
 
     res.json({
       totalTasks,
@@ -202,86 +268,114 @@ router.get("/tasks-overview", async (req, res) => {
   }
 })
 
-// Get recent activity
+// Helpers for formatting relative time and initials for authentic activity feed
+function formatRelativeTime(date) {
+  if (!date) return "Recently";
+  const seconds = Math.floor((new Date() - new Date(date)) / 1000);
+  if (seconds < 60) return "Just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days !== 1 ? 's' : ''} ago`;
+}
+
+function getInitials(name) {
+  if (!name) return "U";
+  return name.split(" ").map(p => p[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
+}
+
+// Get recent activity (authentic queries over Task and Progress)
 router.get("/activity", async (req, res) => {
   try {
-    // In a real app, you'd have an Activity model to track user actions
-    // For this example, we'll return mock data
-    const activities = [
-      {
-        id: 1,
-        user: {
-          name: "John Doe",
-          avatar: "/placeholder.svg?height=40&width=40",
-          initials: "JD",
-        },
-        action: "completed",
-        task: "Q1 Marketing Campaign Planning",
-        department: "Marketing",
-        time: "2 hours ago",
-      },
-      {
-        id: 2,
-        user: {
-          name: "Jane Smith",
-          avatar: "/placeholder.svg?height=40&width=40",
-          initials: "JS",
-        },
-        action: "updated",
-        task: "Sales Presentation for Client XYZ",
-        department: "Sales",
-        time: "3 hours ago",
-      },
-      {
-        id: 3,
-        user: {
-          name: "Mike Johnson",
-          avatar: "/placeholder.svg?height=40&width=40",
-          initials: "MJ",
-        },
-        action: "created",
-        task: "Inventory Management System Update",
-        department: "Operations",
-        time: "5 hours ago",
-      },
-      {
-        id: 4,
-        user: {
-          name: "Sarah Williams",
-          avatar: "/placeholder.svg?height=40&width=40",
-          initials: "SW",
-        },
-        action: "assigned",
-        task: "Customer Feedback Analysis",
-        department: "Marketing",
-        time: "6 hours ago",
-      },
-      {
-        id: 5,
-        user: {
-          name: "Alex Brown",
-          avatar: "/placeholder.svg?height=40&width=40",
-          initials: "AB",
-        },
-        action: "commented on",
-        task: "Supply Chain Optimization",
-        department: "Operations",
-        time: "8 hours ago",
-      },
-    ]
+    const branchQuery = getBranchQuery(req);
 
-    res.json(activities)
+    const [recentTasks, recentProgress] = await Promise.all([
+      Task.find(branchQuery)
+        .sort({ updatedAt: -1 })
+        .limit(10)
+        .populate("assignee", "name avatar department")
+        .populate("department", "name")
+        .lean(),
+      Progress.find()
+        .sort({ createdAt: -1 })
+        .limit(10)
+        .populate({
+          path: "user",
+          select: "name avatar department branch",
+          match: branchQuery.branch ? { branch: branchQuery.branch } : {}
+        })
+        .populate({
+          path: "task",
+          select: "title department",
+          populate: { path: "department", select: "name" }
+        })
+        .lean(),
+    ]);
+
+    const activityList = [];
+
+    for (const t of recentTasks) {
+      if (!t.assignee) continue;
+      let action = "updated";
+      if (isTaskCompleted(t)) {
+        action = "completed";
+      } else if (t.createdAt && t.updatedAt && Math.abs(new Date(t.updatedAt) - new Date(t.createdAt)) < 10000) {
+        action = "created";
+      } else if (t.status === "Pending") {
+        action = "assigned";
+      }
+
+      activityList.push({
+        id: `task-${t._id}`,
+        timestamp: t.updatedAt || t.createdAt,
+        user: {
+          name: t.assignee.name || "Unknown",
+          avatar: t.assignee.avatar || "",
+          initials: getInitials(t.assignee.name),
+        },
+        action,
+        task: t.title,
+        department: t.department?.name || "General",
+        time: formatRelativeTime(t.updatedAt || t.createdAt),
+      });
+    }
+
+    for (const p of recentProgress) {
+      if (!p.user) continue;
+      activityList.push({
+        id: `prog-${p._id}`,
+        timestamp: p.createdAt || p.date,
+        user: {
+          name: p.user.name || "Unknown",
+          avatar: p.user.avatar || "",
+          initials: getInitials(p.user.name),
+        },
+        action: p.progressPercentage >= 100 ? "completed" : "updated",
+        task: p.task?.title || p.notes || "General Progress",
+        department: p.task?.department?.name || "General",
+        time: formatRelativeTime(p.createdAt || p.date),
+      });
+    }
+
+    activityList.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    res.json(activityList.slice(0, 10));
   } catch (error) {
-    console.error("Error fetching recent activity:", error)
-    res.status(500).json({ error: "Server error" })
+    console.error("Error fetching recent activity:", error);
+    res.status(500).json({ error: "Server error" });
   }
-})
+});
 
 // Get user stats
 router.get("/user-stats/:userId", async (req, res) => {
     try {
-      let userId = req.params.userId.trim(); // 👉 remove spaces/newlines
+      let userId = (req.params.userId || '').trim();
       console.log('user id in backend for userstats', userId);
+
+      if (!mongoose.Types.ObjectId.isValid(userId)) {
+        return res.status(400).json({ error: 'Invalid user id' });
+      }
 
       const today = new Date();
       const nextWeek = new Date();

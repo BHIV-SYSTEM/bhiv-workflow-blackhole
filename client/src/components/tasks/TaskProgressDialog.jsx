@@ -53,6 +53,20 @@ export function TaskProgressDialog({ open, onOpenChange, task, onProgressSaved }
     e?.preventDefault();
     if (isSubmitting) return;
 
+    // Daily progress integrity: all three text sections are mandatory.
+    if (!notes.trim()) {
+      toast({ title: "Notes required", description: "Please describe today's progress.", variant: "destructive" });
+      return;
+    }
+    if (!achievements.trim()) {
+      toast({ title: "Achievements required", description: "Please list today's key achievements.", variant: "destructive" });
+      return;
+    }
+    if (!blockers.trim()) {
+      toast({ title: "Blockers required", description: "Enter 'None' if there were no blockers.", variant: "destructive" });
+      return;
+    }
+
     try {
       setIsSubmitting(true);
       const token = localStorage.getItem("WorkflowToken");
@@ -63,7 +77,7 @@ export function TaskProgressDialog({ open, onOpenChange, task, onProgressSaved }
         user: userId,
         task: task._id,
         progressPercentage: Number(progressValue) || 0,
-        notes: notes.trim() || `Daily progress update: ${progressValue}%`,
+        notes: notes.trim(),
         blockers: blockers.trim(),
         achievements: achievements.trim(),
         date: new Date().toISOString()
@@ -185,7 +199,8 @@ export function TaskProgressDialog({ open, onOpenChange, task, onProgressSaved }
           <div className="space-y-1.5">
             <Label htmlFor="progress-notes" className="text-xs font-semibold flex items-center gap-1.5 text-foreground">
               <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />
-              Today's Progress Notes:
+              Today&apos;s Progress Notes:
+              <span className="text-destructive">*</span>
             </Label>
             <Textarea
               id="progress-notes"
@@ -193,6 +208,8 @@ export function TaskProgressDialog({ open, onOpenChange, task, onProgressSaved }
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={3}
+              required
+              aria-required="true"
               className="text-xs bg-background leading-relaxed"
             />
           </div>
@@ -201,14 +218,17 @@ export function TaskProgressDialog({ open, onOpenChange, task, onProgressSaved }
           <div className="space-y-1.5">
             <Label htmlFor="progress-blockers" className="text-xs font-semibold flex items-center gap-1.5 text-foreground">
               <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
-              Blockers or Challenges (Optional):
+              Blockers or Challenges:
+              <span className="text-destructive">*</span>
             </Label>
             <Textarea
               id="progress-blockers"
-              placeholder="Any issues, dependency blockers, or missing credentials preventing progress?"
+              placeholder="Any issues, dependency blockers, or missing credentials preventing progress? Enter 'None' if there were none."
               value={blockers}
               onChange={(e) => setBlockers(e.target.value)}
               rows={2}
+              required
+              aria-required="true"
               className="text-xs bg-background leading-relaxed"
             />
           </div>
@@ -217,7 +237,8 @@ export function TaskProgressDialog({ open, onOpenChange, task, onProgressSaved }
           <div className="space-y-1.5">
             <Label htmlFor="progress-achievements" className="text-xs font-semibold flex items-center gap-1.5 text-foreground">
               <Award className="h-3.5 w-3.5 text-cyan-500" />
-              Key Achievements (Optional):
+              Key Achievements:
+              <span className="text-destructive">*</span>
             </Label>
             <Textarea
               id="progress-achievements"
@@ -225,6 +246,8 @@ export function TaskProgressDialog({ open, onOpenChange, task, onProgressSaved }
               value={achievements}
               onChange={(e) => setAchievements(e.target.value)}
               rows={2}
+              required
+              aria-required="true"
               className="text-xs bg-background leading-relaxed"
             />
           </div>

@@ -1,15 +1,92 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Outlet, useLocation } from "react-router-dom"
+import { Outlet, useLocation, useNavigate } from "react-router-dom"
 import { DashboardSidebar } from "../components/dashboard/sidebar"
 import UniverseBackground from "../components/UniverseBackground"
 import { useTheme } from "../components/theme-provider"
+import { useAuth } from "../context/auth-context"
 import { DashboardHeader } from "../components/dashboard/header"
+import EnhancedStartDayDialog from "../components/attendance/EnhancedStartDayDialog"
+import api from "../lib/api"
 
 export function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const { theme } = useTheme()
+  const { user } = useAuth()
+  const navigate = useNavigate()
+  const [showStartDayDialog, setShowStartDayDialog] = useState(false)
+  const [showAimReminder, setShowAimReminder] = useState(false)
+  const [checkedPrompt, setCheckedPrompt] = useState(false)
+
+  const dismissAimReminder = () => {
+    if (user) {
+      const dateKey = new Date().toISOString().slice(0, 10)
+      localStorage.removeItem(`aimReminderPending:${user.id}:${dateKey}`)
+    }
+    setShowAimReminder(false)
+  }
+
+// Show the "Set your aim today" reminder if a Start Day just completed.
+// The Start Day dialog reloads the page, so the flag is persisted in
+// localStorage and re-checked here on every mount (and when user loads).
+useEffect(() => {
+  const checkFlag = () => {
+    let u = user
+    if (!u) {
+      try { u = JSON.parse(localStorage.getItem("WorkflowUser") || "null") } catch (e) { u = null }
+    }
+    if (!u?.id) return
+    const dateKey = new Date().toISOString().slice(0, 10)
+    const flag = `aimReminderPending:${u.id}:${dateKey}`
+    if (localStorage.getItem(flag) === "1") {
+      setShowAimReminder(true)
+    }
+  }
+  checkFlag()
+}, [user])
+
+  useEffect(() => {
+    // Only check once after login
+    if (!user || checkedPrompt) return
+
+    const dateKey = new Date().toISOString().slice(0, 10)
+    const storageKey = `startDayPromptShown:${user.id}:${dateKey}`
+
+    // If user already started day previously or we've shown the prompt manually today, skip
+    if (localStorage.getItem(storageKey)) {
+      setCheckedPrompt(true)
+      return
+    }
+
+    // Use verify endpoint to determine if the user can start day
+    api
+      .get(`/attendance/verify/${user.id}`)
+      .then((res) => {
+        const data = res?.data || res // handle both {success,data} and direct data
+        if (data && data.canStartDay) {
+          setShowStartDayDialog(true)
+        }
+      })
+      .catch(() => {
+        // On failure, do nothing; user can still start from Start Day page
+      })
+      .finally(() => {
+        setCheckedPrompt(true)
+      })
+  }, [user, checkedPrompt])
+
+  const handleStartDaySuccess = () => {
+    if (!user) return
+    const dateKey = new Date().toISOString().slice(0, 10)
+    const storageKey = `startDayPromptShown:${user.id}:${dateKey}`
+    localStorage.setItem(storageKey, "1")
+    setShowStartDayDialog(false)
+    // Persist the aim reminder across the page reload triggered by the dialog,
+    // and also show it immediately in case no reload happens.
+    localStorage.setItem(`aimReminderPending:${user.id}:${dateKey}`, "1")
+    setShowAimReminder(true)
+  }
 
   const location = useLocation()
 
@@ -86,6 +163,41 @@ export function DashboardLayout() {
           </div>
         </main>
       </div>
+      {/* Start Day Dialog */}
+      <EnhancedStartDayDialog
+        isOpen={showStartDayDialog}
+        onClose={() => setShowStartDayDialog(false)}
+        onSuccess={handleStartDaySuccess}
+      />
+
+      {/* Set Aim Today reminder (shown right after Start Day) */}
+      {showAimReminder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="bg-background rounded-lg shadow-xl p-6 w-full max-w-md">
+            <h2 className="text-lg font-bold mb-2">Set your aim for today</h2>
+            <p className="text-sm text-muted-foreground mb-4">
+              Your work day has started. Take a moment to set today's aim so your progress can be tracked.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                className="px-4 py-2 rounded-md border text-sm"
+                onClick={dismissAimReminder}
+              >
+                Later
+              </button>
+              <button
+                className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm"
+                onClick={() => {
+                  dismissAimReminder()
+                  navigate("/aims")
+                }}
+              >
+                Set Aim Now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

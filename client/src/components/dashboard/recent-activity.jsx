@@ -25,33 +25,8 @@ export function RecentActivity() {
           description: "Failed to load recent activity",
           variant: "destructive",
         })
-        // Set fallback activities
-        setActivities([
-          {
-            id: 1,
-            user: {
-              name: "John Doe",
-              avatar: "/placeholder.svg?height=40&width=40",
-              initials: "JD",
-            },
-            action: "completed",
-            task: "Q1 Marketing Campaign Planning",
-            department: "Marketing",
-            time: "2 hours ago",
-          },
-          {
-            id: 2,
-            user: {
-              name: "Jane Smith",
-              avatar: "/placeholder.svg?height=40&width=40",
-              initials: "JS",
-            },
-            action: "updated",
-            task: "Sales Presentation for Client XYZ",
-            department: "Sales",
-            time: "3 hours ago",
-          },
-        ])
+        // Set empty activities on error
+        setActivities([])
       } finally {
         setIsLoading(false)
       }

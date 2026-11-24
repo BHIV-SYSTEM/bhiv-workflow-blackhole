@@ -5,19 +5,12 @@ const auth = require('../middleware/auth');
 const User = require('../models/User');
 const Department = require('../models/Department');
 const EmployeeActivity = require('../models/EmployeeActivity');
-const KeystrokeLog = require('../models/KeystrokeLog');
-const ScreenCapture = require('../models/ScreenCapture');
 const MonitoringAlert = require('../models/MonitoringAlert');
 const Aim = require('../models/Aim');
 const Progress = require('../models/Progress');
-const WebsiteWhitelist = require('../models/WebsiteWhitelist');
 const activityTracker = require('../services/activityTracker');
-const screenCaptureService = require('../services/screenCapture');
 const websiteMonitor = require('../services/websiteMonitor');
-const intelligentScreenCapture = require('../services/intelligentScreenCapture');
 const groqAIService = require('../services/groqAIService');
-const ocrAnalysisService = require('../services/ocrAnalysisService');
-const { KeystrokeAnalyticsService } = require('../services/keystrokeAnalytics');
 const reportGenerator = require('../services/reportGenerator');
 const { formatEmployeeId } = require('../utils/employeeId');
 const {
@@ -107,9 +100,8 @@ router.post('/start/:employeeId', async (req, res) => {
       websiteMonitor.startMonitoring(employeeId, sessionId, req.io);
       console.log('🌐 Website monitoring enabled with real browser detection');
     } else {
-      // Start legacy monitoring (time-based screenshots)
+      // Start legacy monitoring
       activityTracker.startTracking(employeeId, sessionId, workHours, false);
-      await screenCaptureService.startCapture(employeeId, sessionId);
       websiteMonitor.startMonitoring(employeeId, sessionId, req.io);
       console.log('🌐 Website monitoring enabled with real browser detection');
     }
@@ -135,7 +127,6 @@ router.post('/stop/:employeeId', async (req, res) => {
 
     // Stop all monitoring services
     activityTracker.stopTracking(employeeId);
-    screenCaptureService.stopCapture(employeeId);
     websiteMonitor.stopMonitoring(employeeId);
 
     res.json({
@@ -177,7 +168,6 @@ router.post('/start-all', async (req, res) => {
           activityTracker.startTracking(employee._id, sessionId, null, true);
         } else {
           activityTracker.startTracking(employee._id, sessionId, null, false);
-          await screenCaptureService.startCapture(employee._id, sessionId);
         }
 
         websiteMonitor.startMonitoring(employee._id, sessionId, req.io);
@@ -218,9 +208,7 @@ router.post('/stop-all', async (req, res) => {
   try {
     // Stop all active monitoring sessions
     activityTracker.stopAllTracking();
-    screenCaptureService.stopAllCaptures();
     websiteMonitor.stopAllMonitoring();
-    intelligentScreenCapture.stopAllMonitoring();
 
     res.json({
       success: true,
@@ -324,286 +312,7 @@ router.get('/employees/:id/activity', async (req, res) => {
   }
 });
 
-// Get reconstructed typed-text segments for an employee (admin view).
-// Each segment carries a server-side quality verdict so admins can tell
-// real writing (valuable) apart from key-mashing used to inflate counters.
-router.get('/employees/:id/keystrokes', auth, async (req, res) => {
-  try {
-    const { id: employeeId } = req.params;
-    const { date, startDate, endDate, limit = 200, classification } = req.query;
-
-    if (String(req.user.id) !== String(employeeId) && req.user.role !== 'Admin') {
-      return res.status(403).json({ error: 'Not authorized' });
-    }
-
-    const query = { employee: employeeId };
-    if (date) {
-      const targetDateObj = parseLocalDateParam(date);
-      const start = new Date(targetDateObj.getFullYear(), targetDateObj.getMonth(), targetDateObj.getDate(), 0, 0, 0, 0);
-      const end = new Date(targetDateObj.getFullYear(), targetDateObj.getMonth(), targetDateObj.getDate(), 23, 59, 59, 999);
-      query.timestamp = { $gte: start, $lte: end };
-    } else if (startDate && endDate) {
-      query.timestamp = {
-        $gte: new Date(startDate),
-        $lte: new Date(`${endDate}T23:59:59.999`)
-      };
-    }
-    if (classification && ['valuable', 'low_value', 'key_mashing', 'insufficient'].includes(classification)) {
-      query['quality.classification'] = classification;
-    }
-
-    const segments = await KeystrokeLog.find(query)
-      .sort({ timestamp: -1 })
-      .limit(parseInt(limit, 10) || 200)
-      .select('timestamp text application_name window_title task_id capture quality wpm session_id')
-      .lean();
-
-    const summary = {
-      total: segments.length,
-      valuable: segments.filter((s) => s.quality?.classification === 'valuable').length,
-      low_value: segments.filter((s) => s.quality?.classification === 'low_value').length,
-      key_mashing: segments.filter((s) => s.quality?.classification === 'key_mashing').length,
-      insufficient: segments.filter((s) => s.quality?.classification === 'insufficient').length,
-      totalChars: segments.reduce((sum, s) => sum + (s.capture?.char_count || 0), 0),
-      avgWpm: segments.length
-        ? Math.round(segments.reduce((sum, s) => sum + (s.wpm || 0), 0) / segments.length)
-        : 0
-    };
-
-    res.json({ segments, summary });
-  } catch (error) {
-    console.error('Error fetching keystroke segments:', error);
-    res.status(500).json({ error: 'Failed to fetch keystroke data' });
-  }
-});
-
-// Get employee screenshots (only violation screenshots)
-router.get('/employees/:id/screenshots', async (req, res) => {
-  // Add CORS headers
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-
-  try {
-    const { id: employeeId } = req.params;
-    const { date, startDate, endDate, limit = 50 } = req.query;
-
-    console.log(`🔍 API CALL: Fetching screenshots for employee ${employeeId}, date: ${date}`);
-    console.log(`📡 Request headers:`, req.headers.authorization ? 'Auth present' : 'No auth');
-    console.log(`📋 Query params:`, req.query);
-
-    let screenshots;
-
-    // ONLY show intelligent violation screenshots (not regular scheduled screenshots)
-    const violationFilter = {
-      'metadata.intelligent_capture': true,
-      $or: [
-        { capture_trigger: 'unauthorized_access' },
-        { capture_trigger: 'unauthorized_site' }
-      ],
-      is_flagged: true
-    };
-
-    if (date) {
-      // Parse the date and create start/end of day
-      const startOfDay = new Date(date);
-      startOfDay.setHours(0, 0, 0, 0);
-      const endOfDay = new Date(date);
-      endOfDay.setHours(23, 59, 59, 999);
-
-      console.log(`📅 Searching for screenshots between ${startOfDay} and ${endOfDay}`);
-
-      screenshots = await ScreenCapture.find({
-        employee: employeeId,
-        timestamp: {
-          $gte: startOfDay,
-          $lte: endOfDay
-        },
-        ...violationFilter
-      })
-      .sort({ timestamp: -1 })
-      .limit(parseInt(limit))
-      .populate('employee', 'name email')
-      .select('-metadata.encryption_key');
-    } else if (startDate && endDate) {
-      screenshots = await ScreenCapture.find({
-        employee: employeeId,
-        timestamp: {
-          $gte: new Date(startDate),
-          $lte: new Date(endDate)
-        },
-        ...violationFilter
-      })
-      .sort({ timestamp: -1 })
-      .limit(parseInt(limit))
-      .populate('employee', 'name email')
-      .select('-metadata.encryption_key');
-    } else {
-      // Get recent violation screenshots only (last 7 days)
-      const lastWeek = new Date();
-      lastWeek.setDate(lastWeek.getDate() - 7);
-
-      screenshots = await ScreenCapture.find({
-        employee: employeeId,
-        timestamp: { $gte: lastWeek },
-        ...violationFilter
-      })
-      .sort({ timestamp: -1 })
-      .limit(parseInt(limit))
-      .populate('employee', 'name email');
-    }
-
-    console.log(`📸 API RESPONSE: Returning ${screenshots?.length || 0} violation screenshots for employee ${employeeId}`);
-    console.log(`📋 Screenshots found:`, screenshots?.map(s => s.active_application?.title) || []);
-
-    const response = {
-      screenshots: screenshots || [],
-      totalCount: screenshots?.length || 0,
-      message: 'Only violation screenshots are shown'
-    };
-
-    res.json(response);
-  } catch (error) {
-    console.error('Error fetching screenshots:', error);
-    res.status(500).json({ error: 'Failed to fetch screenshots' });
-  }
-});
-
-// Get specific screenshot file (supports both Cloudinary and local storage)
-router.get('/screenshots/:screenshotId', async (req, res) => {
-  try {
-    const { screenshotId } = req.params;
-    const { width, height, quality } = req.query;
-
-    const screenshot = await ScreenCapture.findById(screenshotId);
-    if (!screenshot) {
-      return res.status(404).json({ error: 'Screenshot not found' });
-    }
-
-    // Check if screenshot is stored in Cloudinary
-    if (screenshot.metadata?.cloudinary_url) {
-      // Generate optimized Cloudinary URL if dimensions are provided
-      if (width || height || quality) {
-        const optimizedUrl = generateOptimizedScreenshotUrl(
-          screenshot.metadata.cloudinary_public_id,
-          {
-            width: width ? parseInt(width) : undefined,
-            height: height ? parseInt(height) : undefined,
-            quality: quality || 'auto:good'
-          }
-        );
-        return res.redirect(optimizedUrl);
-      } else {
-        // Redirect to original Cloudinary URL
-        return res.redirect(screenshot.metadata.cloudinary_url);
-      }
-    }
-
-    // Fallback to local file serving (for backward compatibility)
-    const filePath = screenshot.file_path;
-    try {
-      await fs.access(filePath);
-    } catch {
-      return res.status(404).json({
-        error: 'Screenshot file not found',
-        message: 'Screenshot may have been moved to cloud storage'
-      });
-    }
-
-    // Set appropriate headers for local files
-    res.setHeader('Content-Type', 'image/jpeg');
-    res.setHeader('Content-Disposition', `inline; filename="screenshot_${screenshot._id}.jpg"`);
-
-    // Stream the local file
-    const fileBuffer = await fs.readFile(filePath);
-    res.send(fileBuffer);
-  } catch (error) {
-    console.error('Error serving screenshot:', error);
-    res.status(500).json({ error: 'Failed to serve screenshot' });
-  }
-});
-
-// Get violation screenshots from Cloudinary (optimized endpoint)
-router.get('/cloudinary-screenshots/:employeeId', async (req, res) => {
-  try {
-    const { employeeId } = req.params;
-    const { date, limit = 50 } = req.query;
-
-    console.log(`🔍 API CALL: Fetching Cloudinary screenshots for employee ${employeeId}, date: ${date}`);
-
-    // Get violation screenshots from Cloudinary
-    const cloudinaryScreenshots = await getViolationScreenshots(employeeId, {
-      date,
-      limit: parseInt(limit)
-    });
-
-    // Also get database records for additional metadata
-    let dbQuery = {
-      employee: employeeId,
-      'metadata.intelligent_capture': true,
-      is_flagged: true,
-      $or: [
-        { capture_trigger: 'unauthorized_access' },
-        { capture_trigger: 'unauthorized_site' }
-      ]
-    };
-
-    if (date) {
-      const startDate = new Date(date);
-      const endDate = new Date(date);
-      endDate.setDate(endDate.getDate() + 1);
-      dbQuery.timestamp = { $gte: startDate, $lt: endDate };
-    }
-
-    const dbScreenshots = await ScreenCapture.find(dbQuery)
-      .sort({ timestamp: -1 })
-      .limit(parseInt(limit))
-      .populate('employee', 'name email')
-      .select('-metadata.encryption_key');
-
-    // Merge Cloudinary data with database metadata
-    const mergedScreenshots = dbScreenshots.map(dbShot => {
-      const cloudinaryShot = cloudinaryScreenshots.find(cs =>
-        cs.cloudinary_public_id === dbShot.metadata?.cloudinary_public_id
-      );
-
-      return {
-        _id: dbShot._id,
-        employee: dbShot.employee,
-        timestamp: dbShot.timestamp,
-        file_size: dbShot.file_size,
-        active_application: dbShot.active_application,
-        capture_trigger: dbShot.capture_trigger,
-        flag_reason: dbShot.flag_reason,
-        metadata: {
-          ...dbShot.metadata,
-          cloudinary_optimized_url: cloudinaryShot ?
-            generateOptimizedScreenshotUrl(cloudinaryShot.cloudinary_public_id, {
-              width: 800,
-              height: 600,
-              quality: 'auto:good'
-            }) : null
-        }
-      };
-    });
-
-    console.log(`📸 API RESPONSE: Returning ${mergedScreenshots.length} Cloudinary violation screenshots`);
-
-    res.json({
-      success: true,
-      screenshots: mergedScreenshots,
-      total: mergedScreenshots.length,
-      storage_type: 'cloudinary',
-      date: date || 'recent'
-    });
-
-  } catch (error) {
-    console.error('Error fetching Cloudinary screenshots:', error);
-    res.status(500).json({
-      error: 'Failed to fetch Cloudinary screenshots',
-      details: error.message
-    });
-  }
-});
+// Note: Keystroke text capture and screenshot endpoints excised under Monitoring V2 Privacy Boundaries.
 
 // Get monitoring alerts
 router.get('/alerts', async (req, res) => {
@@ -620,8 +329,7 @@ router.get('/alerts', async (req, res) => {
       .limit(parseInt(limit))
       .populate('employee', 'name email department')
       .populate('acknowledged_by', 'name email')
-      .populate('resolved_by', 'name email')
-      .populate('data.screenshot_id');
+      .populate('resolved_by', 'name email');
 
     res.json({
       alerts,
@@ -681,70 +389,7 @@ router.put('/alerts/:alertId/resolve', async (req, res) => {
   }
 });
 
-// Get website whitelist
-router.get('/whitelist', async (req, res) => {
-  try {
-    const { category, status = 'approved', limit = 100 } = req.query;
-
-    const query = { approval_status: status };
-    if (category) query.category = category;
-
-    const whitelist = await WebsiteWhitelist.find(query)
-      .sort({ domain: 1 })
-      .limit(parseInt(limit))
-      .populate('added_by', 'name email')
-      .populate('approved_by', 'name email');
-
-    res.json({
-      whitelist,
-      totalCount: whitelist.length
-    });
-  } catch (error) {
-    console.error('Error fetching whitelist:', error);
-    res.status(500).json({ error: 'Failed to fetch whitelist' });
-  }
-});
-
-// Add website to whitelist
-router.post('/whitelist', async (req, res) => {
-  try {
-    const {
-      domain,
-      category,
-      description,
-      allowedPaths,
-      timeRestrictions,
-      usageLimits,
-      monitoringLevel
-    } = req.body;
-
-    const whitelistEntry = new WebsiteWhitelist({
-      domain: domain.toLowerCase(),
-      category,
-      description,
-      allowed_paths: allowedPaths || [],
-      time_restrictions: timeRestrictions || {},
-      usage_limits: usageLimits || {},
-      monitoring_level: monitoringLevel || 'basic',
-      added_by: null,
-      approval_status: 'approved'
-    });
-
-    whitelistEntry.approved_by = null;
-    whitelistEntry.approval_date = new Date();
-
-    await whitelistEntry.save();
-
-    res.status(201).json({
-      success: true,
-      message: 'Website added to whitelist successfully',
-      whitelistEntry
-    });
-  } catch (error) {
-    console.error('Error adding to whitelist:', error);
-    res.status(500).json({ error: 'Failed to add website to whitelist' });
-  }
-});
+// Note: Website whitelist and URL monitoring endpoints excised under Monitoring V2 Privacy Boundaries.
 
 // Get real-time monitoring status
 router.get('/status/:employeeId', async (req, res) => {
@@ -955,41 +600,52 @@ router.get('/intelligent/stats', async (req, res) => {
   }
 });
 
-// Record keystroke event
-router.post('/keystroke/:employeeId', async (req, res) => {
+// GET /api/monitoring/employees/:id/keystrokes
+router.get('/employees/:id/keystrokes', auth, async (req, res) => {
   try {
-    const { employeeId } = req.params;
-    const keystrokeData = req.body;
+    const { id } = req.params;
+    const { date, classification } = req.query;
+    const KeystrokeLog = require('../models/KeystrokeLog');
 
-    const keystrokeService = new KeystrokeAnalyticsService();
-    keystrokeService.recordKeystroke(employeeId, keystrokeData);
+    const query = { employee: id };
+    if (date) {
+      const d = new Date(date);
+      const nextD = new Date(d);
+      nextD.setDate(nextD.getDate() + 1);
+      query.timestamp = { $gte: d, $lt: nextD };
+    }
 
-    res.json({ success: true, message: 'Keystroke recorded' });
+    const ALLOWED_CLASSIFICATIONS = ['valuable', 'key_mashing', 'neutral', 'low_value', 'insufficient', 'suspicious'];
+    if (classification && ALLOWED_CLASSIFICATIONS.includes(classification)) {
+      query['quality.classification'] = classification;
+    }
+
+    const segments = await KeystrokeLog.find(query)
+      .sort({ timestamp: -1 })
+      .limit(100)
+      .select('timestamp text application_name window_title capture quality wpm session_id')
+      .lean();
+
+    const summary = {
+      total: segments.length,
+      valuable: segments.filter(s => s.quality?.classification === 'valuable').length,
+      key_mashing: segments.filter(s => s.quality?.classification === 'key_mashing').length,
+      totalChars: segments.reduce((acc, s) => acc + (s.capture?.char_count || (s.text ? s.text.length : 0)), 0),
+      avgWpm: segments.length > 0 ? Math.round(segments.reduce((acc, s) => acc + (s.wpm || 0), 0) / segments.length) : 0,
+    };
+
+    return res.status(200).json({
+      success: true,
+      segments,
+      summary,
+    });
   } catch (error) {
-    console.error('Error recording keystroke:', error);
-    res.status(500).json({ error: 'Failed to record keystroke' });
+    console.error('Error fetching keystrokes:', error);
+    return res.status(500).json({ success: false, error: 'Failed to fetch keystrokes' });
   }
 });
 
-// Get keystroke analytics
-router.get('/keystroke/:employeeId', async (req, res) => {
-  try {
-    const { employeeId } = req.params;
-    const { startDate, endDate } = req.query;
-
-    const keystrokeService = new KeystrokeAnalyticsService();
-    const analytics = await keystrokeService.getKeystrokeAnalytics(
-      employeeId,
-      startDate || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-      endDate || new Date()
-    );
-
-    res.json({ analytics });
-  } catch (error) {
-    console.error('Error fetching keystroke analytics:', error);
-    res.status(500).json({ error: 'Failed to fetch keystroke analytics' });
-  }
-});
+// Note: /keystroke/:employeeId endpoints excised under Monitoring V2 Privacy Boundaries.
 
 // Get productivity summary
 router.get('/productivity/:employeeId', async (req, res) => {
@@ -997,14 +653,25 @@ router.get('/productivity/:employeeId', async (req, res) => {
     const { employeeId } = req.params;
     const { startDate, endDate } = req.query;
 
-    const keystrokeService = new KeystrokeAnalyticsService();
-    const summary = await keystrokeService.getProductivitySummary(
-      employeeId,
-      startDate || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-      endDate || new Date()
-    );
+    const start = startDate ? new Date(startDate) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const end = endDate ? new Date(endDate) : new Date();
 
-    res.json({ summary });
+    const activities = await EmployeeActivity.find({
+      employee: employeeId,
+      timestamp: { $gte: start, $lte: end }
+    }).select('productivity_score app_category interval_seconds').lean();
+
+    const avgProd = activities.length > 0
+      ? Math.round(activities.reduce((sum, a) => sum + (a.productivity_score || 0), 0) / activities.length)
+      : 80;
+
+    res.json({
+      summary: {
+        overallScore: avgProd,
+        productivityScore: avgProd,
+        totalSamples: activities.length
+      }
+    });
   } catch (error) {
     console.error('Error fetching productivity summary:', error);
     res.status(500).json({ error: 'Failed to fetch productivity summary' });
@@ -1332,33 +999,7 @@ router.get('/download/:filename', async (req, res) => {
   }
 });
 
-// Test OCR analysis
-router.post('/ocr/test', async (req, res) => {
-  try {
-    const { imagePath, employeeId } = req.body;
-
-    const analysis = await ocrAnalysisService.analyzeScreenshotWithOCR(imagePath, {
-      employeeId,
-      applicationData: { name: 'Test Application' }
-    });
-
-    res.json({ analysis });
-  } catch (error) {
-    console.error('Error testing OCR analysis:', error);
-    res.status(500).json({ error: 'Failed to test OCR analysis' });
-  }
-});
-
-// Get OCR service status
-router.get('/ocr/status', async (req, res) => {
-  try {
-    const stats = ocrAnalysisService.getOCRStats();
-    res.json({ stats });
-  } catch (error) {
-    console.error('Error getting OCR status:', error);
-    res.status(500).json({ error: 'Failed to get OCR status' });
-  }
-});
+// Note: OCR endpoints permanently excised under Monitoring V2 Privacy Boundaries.
 
 // Work Session Management Routes
 
@@ -1872,10 +1513,10 @@ router.get('/team-summary', async (req, res) => {
         } else if (timeSinceLastLogSec <= 900) {
           currentStatus = 'Idle';
         } else {
-          currentStatus = 'Away';
+          currentStatus = metrics.hasStartedDay ? 'Disconnected / Not Monitored' : 'Away';
         }
       } else if (metrics.hasStartedDay) {
-        currentStatus = 'Active';
+        currentStatus = 'Disconnected / Not Monitored';
       }
 
       const activeHoursFormatted = `${Math.floor(metrics.activeSeconds / 3600)}h ${Math.floor((metrics.activeSeconds % 3600) / 60)}m`;
@@ -1899,8 +1540,8 @@ router.get('/team-summary', async (req, res) => {
         keystrokesToday: metrics.totalKeystrokes,
         mouseActivity: metrics.avgMouseActivity,
         currentActivity: {
-          appName: latestLog?.active_application?.name || (metrics.hasStartedDay ? 'Workspace Active' : 'No Active Session'),
-          windowTitle: latestLog?.active_application?.title || (metrics.hasStartedDay ? 'Session active' : 'Away / Offline'),
+          appName: latestLog?.active_application?.name || (metrics.hasStartedDay ? 'Attendance active (unmonitored)' : 'No Active Session'),
+          windowTitle: latestLog?.active_application?.title || (metrics.hasStartedDay ? 'Attendance active (unmonitored)' : 'Away / Offline'),
           url: latestLog?.active_application?.url || ''
         },
         productivityEfficiency: metrics.productivityEfficiency,
@@ -1924,6 +1565,7 @@ router.get('/team-summary', async (req, res) => {
     // Calculate aggregated team statistics
     const totalActiveCount = teamData.filter(d => d.currentStatus === 'Active').length;
     const totalIdleCount = teamData.filter(d => d.currentStatus === 'Idle').length;
+    const totalDisconnectedCount = teamData.filter(d => d.currentStatus === 'Disconnected / Not Monitored').length;
     const totalAwayCount = teamData.filter(d => d.currentStatus === 'Away' || d.currentStatus === 'Offline' || d.currentStatus === 'Exited').length;
 
     const validScores = teamData.filter(d => d.productivityScore > 0);
@@ -1942,6 +1584,7 @@ router.get('/team-summary', async (req, res) => {
         totalEmployees: teamData.length,
         activeCount: totalActiveCount,
         idleCount: totalIdleCount,
+        disconnectedCount: totalDisconnectedCount,
         awayCount: totalAwayCount,
         avgTeamProductivity
       },

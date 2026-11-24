@@ -24,16 +24,16 @@ const sampleDepartments = [
 // Passwords will be generated at runtime
 const sampleUsers = [
   {
-    name: 'John Doe',
-    email: 'john.doe@company.com',
+    name: 'Alex Taylor',
+    email: 'alex.taylor@company.com',
     role: 'User',
     departmentName: 'Engineering',
     employeeId: 'EMP001',
     tag: 'Employee'
   },
   {
-    name: 'Jane Smith',
-    email: 'jane.smith@company.com',
+    name: 'Jordan Lee',
+    email: 'jordan.lee@company.com',
     role: 'User',
     departmentName: 'Marketing',
     employeeId: 'EMP002',

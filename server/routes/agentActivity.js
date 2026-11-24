@@ -2,8 +2,6 @@ const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
 const EmployeeActivity = require('../models/EmployeeActivity');
-const KeystrokeLog = require('../models/KeystrokeLog');
-const { analyzeKeystrokeSegment } = require('../services/keystrokeQuality');
 
 /**
  * Shared gate for every agent telemetry ingest: monitoring must not be
@@ -230,20 +228,24 @@ router.post('/activity/ingest', auth, async (req, res) => {
 
 /**
  * POST /api/agent/keystroke/ingest
- * Receive reconstructed typed text segments from the desktop agent.
- * Gated exactly like activity ingest: consent + active workday required.
- * Each segment is quality-classified (valuable vs key-mashing) server-side
- * so the verdict cannot be gamed by the agent.
+ * Ingest keystroke segments from desktop agent with server-side quality classification
  */
-const MAX_TEXT_LENGTH = 4000;
-const MAX_SEGMENTS_PER_BATCH = 25;
-
 router.post('/keystroke/ingest', auth, async (req, res) => {
   try {
-    const { attendanceId, segments, activeApp, activeAppTitle, activeTaskId } = req.body;
+    const { attendanceId, segments, activeApp, activeAppTitle } = req.body;
 
     if (!attendanceId) {
-      return res.status(400).json({ success: false, error: 'Attendance ID is required' });
+      return res.status(400).json({
+        success: false,
+        error: 'Attendance ID is required',
+      });
+    }
+
+    if (!segments || !Array.isArray(segments) || segments.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Segments array is required',
+      });
     }
 
     const gateRejection = await monitoringGate(req);
@@ -255,92 +257,84 @@ router.post('/keystroke/ingest', auth, async (req, res) => {
     if (!activeDay) {
       return res.status(403).json({
         success: false,
-        error: 'Cannot accept keystroke data: workday not started',
+        error: 'Cannot accept activity data: workday not started',
         code: 'DAY_NOT_ACTIVE',
         hint: 'Employee must start their day first from the dashboard'
       });
     }
 
-    if (!Array.isArray(segments) || segments.length === 0) {
-      return res.status(400).json({ success: false, error: 'segments array is required' });
+    const validSegments = segments.filter(seg => seg && ((typeof seg.text === 'string' && seg.text.length > 0) || (typeof seg.keyCount === 'number' && seg.keyCount > 0)));
+    if (validSegments.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'No valid segments to store',
+      });
     }
 
-    const docs = [];
-    for (const segment of segments.slice(0, MAX_SEGMENTS_PER_BATCH)) {
-      if (!segment || typeof segment !== 'object') continue;
+    const { analyzeKeystrokeSegment } = require('../services/keystrokeQuality');
+    const KeystrokeLog = require('../models/KeystrokeLog');
 
-      const text = typeof segment.text === 'string'
-        ? segment.text.slice(0, MAX_TEXT_LENGTH)
-        : '';
-      const keyCount = Math.max(0, Number(segment.keyCount) || 0);
-      const backspaceCount = Math.max(0, Number(segment.backspaceCount) || 0);
-      const pasteCount = Math.max(0, Number(segment.pasteCount) || 0);
-      const charCount = text.replace(/\s+/g, '').length;
-
-      // Skip empty noise segments with no keys at all.
-      if (!text.trim() && keyCount === 0) continue;
+    const classifications = {};
+    const docs = validSegments.map(seg => {
+      const text = seg.text.slice(0, 4000);
+      const keyCount = seg.keyCount !== undefined ? seg.keyCount : text.length;
+      const durationMs = seg.durationMs || 0;
+      const intervals = seg.intervals || [];
 
       const quality = analyzeKeystrokeSegment({
         text,
         keyCount,
-        backspaceCount,
-        pasteCount,
-        intervals: Array.isArray(segment.intervals) ? segment.intervals.slice(0, 500) : [],
-        timing: segment.timing
+        intervals,
+        durationMs,
+        backspaceCount: seg.backspaceCount || 0,
+        pasteCount: seg.pasteCount || 0,
       });
 
-      const durationMs = Math.max(0, Number(segment.durationMs) || 0);
-      const wordCount = (text.trim().match(/[\p{L}\p{N}_]+/gu) || []).length;
-      const wpm = durationMs > 0 && wordCount > 0
-        ? Math.round((wordCount / (durationMs / 60000)))
-        : 0;
+      const cls = quality?.classification || 'neutral';
+      classifications[cls] = (classifications[cls] || 0) + 1;
 
-      docs.push({
+      const meanInterval = (quality && typeof quality.meanIntervalMs === 'number')
+        ? quality.meanIntervalMs
+        : (intervals.length > 0
+            ? Math.round(intervals.reduce((a, b) => a + b, 0) / intervals.length)
+            : (durationMs && keyCount ? Math.round(durationMs / keyCount) : 0));
+
+      const minutes = (durationMs > 0 ? durationMs : (intervals.length > 0 ? intervals.reduce((a, b) => a + b, 0) : 0)) / 60000;
+      const wpm = minutes > 0 ? Math.round((text.length / 5) / minutes) : 0;
+
+      return {
         employee: req.user.id,
-        session_id: String(attendanceId),
-        timestamp: segment.start ? new Date(segment.start) : new Date(),
+        session_id: attendanceId,
+        application_name: activeApp || 'Unknown',
+        window_title: activeAppTitle || '',
         text,
-        application_name: segment.activeApp || activeApp || 'Unknown',
-        window_title: segment.activeAppTitle || activeAppTitle || '',
-        task_id: activeTaskId ? String(activeTaskId) : undefined,
+        timestamp: seg.start ? new Date(seg.start) : new Date(),
+        quality,
         capture: {
+          char_count: text.length || keyCount,
           key_count: keyCount,
-          backspace_count: backspaceCount,
-          paste_count: pasteCount,
-          char_count: charCount,
+          backspace_count: seg.backspaceCount || 0,
+          paste_count: seg.pasteCount || 0,
           duration_ms: durationMs,
-          mean_interval_ms: quality.meanIntervalMs,
-          std_interval_ms: quality.stdIntervalMs
+          mean_interval_ms: meanInterval,
         },
-        quality: {
-          classification: quality.classification,
-          score: quality.score,
-          word_score: quality.wordScore,
-          repetition_score: quality.repetitionScore,
-          correction_ratio: quality.correctionRatio,
-          reasons: quality.reasons
-        },
-        wpm: Math.max(0, Math.min(400, wpm))
-      });
-    }
+        wpm,
+      };
+    });
 
-    if (docs.length > 0) {
-      await KeystrokeLog.insertMany(docs, { ordered: false });
-    }
+    await KeystrokeLog.insertMany(docs);
 
-    console.log(`⌨️ Keystroke segments saved for user ${req.user.id}: ${docs.length}/${segments.length}`);
-
-    res.json({
+    return res.status(200).json({
       success: true,
       stored: docs.length,
-      classifications: docs.reduce((acc, d) => {
-        acc[d.quality.classification] = (acc[d.quality.classification] || 0) + 1;
-        return acc;
-      }, {})
+      classifications,
     });
   } catch (error) {
     console.error('Keystroke ingestion error:', error);
-    res.status(500).json({ success: false, error: 'Failed to ingest keystroke data' });
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to ingest keystroke data',
+    });
   }
 });
 

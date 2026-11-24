@@ -483,55 +483,57 @@ async function resolveTaskAssigneeAndDepartment(candidateHint, departmentHint, m
   let department = null;
 
   try {
-    // 1. Explicit Assignee Override from Metadata
+    // Determine tenant isolation query scope
+    const tenantFilter = {};
+    const tenantId = metadata.tenantId || metadata.tenant_id;
+    const organization = metadata.organization;
+    if (tenantId) {
+      tenantFilter.tenantId = tenantId;
+    } else if (organization) {
+      tenantFilter.organization = organization;
+    }
+
+    // 1. Explicit Assignee Override from Metadata (strictly validated)
     if (metadata.assignee) {
       if (require("mongoose").Types.ObjectId.isValid(metadata.assignee)) {
-        assigneeUser = await User.findById(metadata.assignee).exec();
+        assigneeUser = await User.findOne({ _id: metadata.assignee, ...tenantFilter }).exec();
       } else {
+        const cleanAssignee = String(metadata.assignee).trim();
         assigneeUser = await User.findOne({
+          ...tenantFilter,
           $or: [
-            { email: new RegExp(metadata.assignee, "i") },
-            { name: new RegExp(metadata.assignee, "i") },
+            { canonicalEmployeeId: cleanAssignee },
+            { employeeId: cleanAssignee },
+            { email: cleanAssignee.toLowerCase() },
+            { username: cleanAssignee },
           ],
         }).exec();
       }
     }
 
-    // 2. Candidate Hint Detection
+    // 2. Candidate Hint Detection (Exact canonical ID, exact email, or exact username only)
     if (!assigneeUser && candidateHint) {
+      const cleanHint = String(candidateHint).trim();
       assigneeUser = await User.findOne({
+        ...tenantFilter,
         $or: [
-          { email: new RegExp(candidateHint, "i") },
-          { username: new RegExp(candidateHint, "i") },
-          { name: new RegExp(candidateHint, "i") },
+          { canonicalEmployeeId: cleanHint },
+          { employeeId: cleanHint },
+          { email: cleanHint.toLowerCase() },
+          { username: cleanHint },
         ],
       }).exec();
-
-      // Word split fallback (e.g. "Rudra")
-      if (!assigneeUser && String(candidateHint).trim().includes(" ")) {
-        const firstWord = String(candidateHint).trim().split(/\s+/)[0];
-        assigneeUser = await User.findOne({
-          $or: [
-            { email: new RegExp(firstWord, "i") },
-            { username: new RegExp(firstWord, "i") },
-            { name: new RegExp(firstWord, "i") },
-          ],
-        }).exec();
-      }
     }
 
-    // Fallback to creator or first active non-admin employee
-    if (!assigneeUser && metadata.creatorId) {
-      assigneeUser = await User.findById(metadata.creatorId).exec();
-    }
-    if (!assigneeUser) {
-      assigneeUser = await User.findOne({ role: { $ne: "Admin" } }).exec();
-    }
-    if (!assigneeUser) {
-      assigneeUser = await User.findOne().exec();
+    // 3. Fallback to creator if creator matches tenant
+    if (!assigneeUser && metadata.creatorId && require("mongoose").Types.ObjectId.isValid(metadata.creatorId)) {
+      assigneeUser = await User.findOne({ _id: metadata.creatorId, ...tenantFilter }).exec();
     }
 
-    // 3. Department Resolution
+    // REMOVED: Silent fallback to random non-admin employee (lines 527-532).
+    // If candidate cannot be found, leave assigneeUser as null for unassigned handling.
+
+    // 4. Department Resolution
     if (metadata.department && require("mongoose").Types.ObjectId.isValid(metadata.department)) {
       department = await Department.findById(metadata.department).exec();
     }
@@ -566,22 +568,14 @@ async function resolveTaskAssigneeAndDepartment(candidateHint, departmentHint, m
     };
   }
 
-  // Pure in-memory fallback for candidate hint if DB lookup returned null
-  if (!assigneeUser && candidateHint) {
-    const dummyId = new (require("mongoose").Types.ObjectId)();
-    assigneeUser = {
-      _id: dummyId,
-      name: candidateHint,
-      email: `${String(candidateHint).toLowerCase().replace(/\s+/g, ".")}@blackholeinfiverse.com`,
-      username: candidateHint,
-    };
-  }
+  // REMOVED: Dummy in-memory user creation. If unassigned, assignee remains null.
 
   return {
     assignee: assigneeUser ? assigneeUser._id : null,
-    assigneeUser,
+    assigneeUser: assigneeUser || null,
     department,
     departmentObj: department,
+    status: assigneeUser ? "Pending" : "Pending Admin Assignment",
   };
 }
 
@@ -647,7 +641,7 @@ async function processTaskIngestion(fileBuffer, metadata = {}) {
   }
 
   // Step 6: Route Task Creation through 11-Stage SETU EOS Pipeline
-  const taskStatus = requireApproval ? "Pending Approval" : "Pending";
+  const taskStatus = !resolution.assignee ? "Pending Admin Assignment" : (requireApproval ? "Pending Approval" : "Pending");
   let createdTask = null;
 
   console.log(`[SETU-INGESTION] Routing Canonical Task Packet through 11-Stage SETU EOS Pipeline...`);
@@ -668,7 +662,7 @@ async function processTaskIngestion(fileBuffer, metadata = {}) {
           title: canonicalPacket.taskDetails.title,
           description: canonicalPacket.taskDetails.description,
           priority: canonicalPacket.taskDetails.priority,
-          status: taskStatus === "Pending Approval" ? "Pending" : taskStatus,
+          status: taskStatus,
           department: resolution.department ? (resolution.department._id || resolution.department) : null,
           assignee: resolution.assignee ? (resolution.assignee._id || resolution.assignee) : null,
           dueDate: canonicalPacket.taskDetails.dueDate,
@@ -720,7 +714,7 @@ async function processTaskIngestion(fileBuffer, metadata = {}) {
     title: canonicalPacket.taskDetails.title,
     description: canonicalPacket.taskDetails.description,
     priority: canonicalPacket.taskDetails.priority,
-    status: taskStatus === "Pending Approval" ? "Pending" : taskStatus,
+    status: taskStatus,
     department: resolution.department ? (resolution.department._id || resolution.department) : null,
     assignee: resolution.assignee ? (resolution.assignee._id || resolution.assignee) : null,
     dueDate: canonicalPacket.taskDetails.dueDate,

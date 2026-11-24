@@ -1,5 +1,5 @@
 const mongoose = require("mongoose")
-const { formatEmployeeId } = require("../utils/employeeId")
+const { formatEmployeeId, formatCanonicalEmployeeId } = require("../utils/employeeId")
 
 const UserSchema = new mongoose.Schema({
   name: {
@@ -68,6 +68,24 @@ const UserSchema = new mongoose.Schema({
     trim: true,
     index: true,
   },
+  // Canonical Employee Identity & Multi-Tenancy
+  canonicalEmployeeId: {
+    type: String,
+    unique: true,
+    sparse: true,
+    trim: true,
+    index: true,
+  },
+  tenantId: {
+    type: String,
+    default: 'ten-bhiv-core',
+    index: true,
+  },
+  organization: {
+    type: String,
+    default: 'BHIV',
+    index: true,
+  },
   hourlyRate: {
     type: Number,
     default: 25, // Default hourly rate in USD
@@ -107,13 +125,37 @@ UserSchema.index({ department: 1, stillExist: 1 })
 
 // Virtual for formatted employee ID
 UserSchema.virtual("formattedEmployeeId").get(function () {
-  return formatEmployeeId(this.email, this.employeeId)
+  return this.canonicalEmployeeId || formatEmployeeId(this.email, this.employeeId, this.organization || "BHIV")
 })
 
-// Update the updatedAt field and ensure formatted employeeId before saving
+// Update the updatedAt field and ensure formatted canonicalEmployeeId before saving
 UserSchema.pre("save", function (next) {
   this.updatedAt = Date.now()
-  if (!this.employeeId || this.isModified("email")) {
+
+  // Resolve tenant code for ID formatting
+  let tenantCode = "BHIV"
+  if (this.organization) {
+    tenantCode = this.organization.trim().toUpperCase()
+  } else if (this.tenantId) {
+    if (this.tenantId.toLowerCase().includes("sips")) {
+      tenantCode = "SIPS"
+    } else {
+      tenantCode = this.tenantId.replace(/^ten-/, "").toUpperCase()
+    }
+  }
+
+  // Format canonicalEmployeeId if not already set (DO NOT overwrite existing canonicalEmployeeId)
+  if (!this.canonicalEmployeeId) {
+    const formatted = formatCanonicalEmployeeId(this.email, this.employeeId, tenantCode)
+    if (formatted && formatted !== "N/A") {
+      this.canonicalEmployeeId = formatted
+    }
+  }
+
+  // Synchronize legacy employeeId if missing
+  if (!this.employeeId && this.canonicalEmployeeId) {
+    this.employeeId = this.canonicalEmployeeId
+  } else if (!this.employeeId || this.isModified("email")) {
     const formatted = formatEmployeeId(this.email, this.employeeId)
     if (formatted && formatted !== "N/A") {
       this.employeeId = formatted
