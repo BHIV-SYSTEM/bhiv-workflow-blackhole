@@ -7,6 +7,7 @@ import UniverseBackground from "../components/UniverseBackground"
 import { useTheme } from "../components/theme-provider"
 import { useAuth } from "../context/auth-context"
 import { DashboardHeader } from "../components/dashboard/header"
+import EnhancedStartDayDialog from "../components/attendance/EnhancedStartDayDialog"
 
 export function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
