@@ -88,7 +88,7 @@ export const AlertsPage = () => {
     setSubmittingExplain(true);
     try {
       const res = await monitoringV2Api.explainAlert(activeAlertForExplain._id || activeAlertForExplain.id, explanationText.trim());
-      const updatedAlert = res?.data?.alert;
+      const _updatedAlert = res?.data?.alert;
       setAlerts((prev) =>
         prev.map((a) => {
           const aid = a._id || a.id;

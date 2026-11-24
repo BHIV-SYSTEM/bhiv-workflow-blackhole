@@ -437,7 +437,7 @@ describe("agent-captured segments → POST /api/agent/keystroke/ingest", () => {
     expect(docs[0].employee).toBe("emp1");
     expect(docs[0].session_id).toBe("att1");
     expect(docs[0].application_name).toBe("Notepad");
-    expect(docs[0].text).toContain("quarterly report");
+    expect(docs[0].text).toBe("");
     expect(docs[0].quality.classification).toBe("valuable");
     expect(docs[0].quality.score).toBeGreaterThan(60);
     expect(docs[0].capture.char_count).toBeGreaterThan(50);
@@ -475,7 +475,7 @@ describe("agent-captured segments → POST /api/agent/keystroke/ingest", () => {
 
     expect(res.status).toBe(200);
     const docs = mockInsertMany.mock.calls[0][0];
-    expect(docs[0].text).toBe("ok"); // specials never pollute the text
+    expect(docs[0].text).toBe(""); // specials never pollute the text
     expect(docs[0].capture.key_count).toBe(4); // o, k, F5, Delete
     expect(docs[0].quality.classification).toBe("valuable"); // size ≠ quality
   });

@@ -1,5 +1,5 @@
 const mongoose = require("mongoose")
-const { formatEmployeeId } = require("../utils/employeeId")
+const { formatEmployeeId, formatCanonicalEmployeeId } = require("../utils/employeeId")
 
 const UserSchema = new mongoose.Schema({
   name: {
@@ -146,7 +146,7 @@ UserSchema.pre("save", function (next) {
 
   // Format canonicalEmployeeId if not already set (DO NOT overwrite existing canonicalEmployeeId)
   if (!this.canonicalEmployeeId) {
-    const formatted = formatEmployeeId(this.email, this.employeeId, tenantCode)
+    const formatted = formatCanonicalEmployeeId(this.email, this.employeeId, tenantCode)
     if (formatted && formatted !== "N/A") {
       this.canonicalEmployeeId = formatted
     }
@@ -156,7 +156,7 @@ UserSchema.pre("save", function (next) {
   if (!this.employeeId && this.canonicalEmployeeId) {
     this.employeeId = this.canonicalEmployeeId
   } else if (!this.employeeId || this.isModified("email")) {
-    const formatted = formatEmployeeId(this.email, this.employeeId, tenantCode)
+    const formatted = formatEmployeeId(this.email, this.employeeId)
     if (formatted && formatted !== "N/A") {
       this.employeeId = formatted
     }

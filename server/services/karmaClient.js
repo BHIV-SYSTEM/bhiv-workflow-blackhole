@@ -117,6 +117,10 @@ async function publishSignal({
 }
 
 async function signalExcessiveIdle(userId, idleMinutes, traceId) {
+  if (process.env.ENABLE_MONITORING_V2 === 'true') {
+    console.log(`[KARMA] Automated idle penalty neutralized for user ${userId} (${idleMinutes}m idle). Zero automated penalties.`);
+    return { success: true, signal: SIGNALS.ALLOW, neutralized: true };
+  }
   const severity = Math.min(1.0, Math.round(((idleMinutes || 0) / 60) * 100) / 100);
   return publishSignal({
     subjectId: userId,
@@ -129,6 +133,10 @@ async function signalExcessiveIdle(userId, idleMinutes, traceId) {
 }
 
 async function signalDisallowedSite(userId, traceId) {
+  if (process.env.ENABLE_MONITORING_V2 === 'true') {
+    console.log(`[KARMA] Disallowed site penalty neutralized for user ${userId}. Zero automated penalties.`);
+    return { success: true, signal: SIGNALS.ALLOW, neutralized: true };
+  }
   return publishSignal({
     subjectId: userId,
     signal: SIGNALS.RESTRICT,
@@ -140,6 +148,10 @@ async function signalDisallowedSite(userId, traceId) {
 }
 
 async function signalKeystrokeAnomaly(userId, anomalyScore, traceId) {
+  if (process.env.ENABLE_MONITORING_V2 === 'true') {
+    console.log(`[KARMA] Keystroke anomaly penalty neutralized for user ${userId}. Zero automated penalties.`);
+    return { success: true, signal: SIGNALS.ALLOW, neutralized: true };
+  }
   const numScore = typeof anomalyScore === "number" ? anomalyScore : 0.5;
   const severity = Math.min(1.0, Math.max(0.0, numScore));
   return publishSignal({

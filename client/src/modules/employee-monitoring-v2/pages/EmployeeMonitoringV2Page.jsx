@@ -62,7 +62,7 @@ function EmployeeMonitoringV2Content() {
         } else {
           setV1Active(false);
         }
-      } catch (_) { setV1Active(false); }
+      } catch { setV1Active(false); }
     };
     check();
     const t = setInterval(check, 15000);

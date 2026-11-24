@@ -16,7 +16,23 @@
  * @param {string} [tenantCode='BHIV'] - Authoritative tenant code (e.g. 'BHIV', 'SIPS')
  * @returns {string} Formatted Canonical Employee ID (e.g. 'EMP-BHIV-080')
  */
-function formatEmployeeId(email, existingEmployeeId = null, tenantCode = "BHIV") {
+/**
+ * Canonical and Legacy Employee ID Formatter
+ *
+ * Rules:
+ * 1. If tenantCode is explicitly provided, formats into standard canonical employee identity:
+ *    EMP-<TENANT_CODE>-<ID> (e.g., EMP-BHIV-080, EMP-SIPS-012).
+ * 2. If tenantCode is omitted, preserves legacy format (e.g. BHIV147, BHIV20, BHIVMSSU0030)
+ *    to maintain backwards compatibility with existing test suites and services.
+ * 3. Never overwrites an already valid canonical ID (EMP-<TENANT_CODE>-<ID>).
+ * 4. Supports BHIVMSSU format (e.g. BHIVMSSU0030).
+ *
+ * @param {string} email - Employee email or identifier string
+ * @param {string} [existingEmployeeId] - Existing employeeId if set
+ * @param {string} [tenantCode] - Authoritative tenant code (e.g. 'BHIV', 'SIPS')
+ * @returns {string} Formatted Employee ID
+ */
+function formatCanonicalEmployeeId(email, existingEmployeeId = null, tenantCode = "BHIV") {
   const cleanTenant = String(tenantCode || "BHIV").trim().toUpperCase();
 
   // 1. If existingEmployeeId is already a valid canonical ID, preserve it immutably
@@ -52,7 +68,7 @@ function formatEmployeeId(email, existingEmployeeId = null, tenantCode = "BHIV")
     return `BHIVMSSU${mssuMatch[1]}`;
   }
 
-  // 2. Extract numeric ID using tenant-aware matching
+  // Extract numeric ID using tenant-aware matching
   let numMatch = null;
 
   if (cleanTenant === "BHIV") {
@@ -79,14 +95,14 @@ function formatEmployeeId(email, existingEmployeeId = null, tenantCode = "BHIV")
     }
   }
 
-  // 3. Format into canonical EMP-<TENANT_CODE>-<ID>
+  // Format into canonical EMP-<TENANT_CODE>-<ID>
   if (numMatch && numMatch[1]) {
     const rawNum = numMatch[1];
     const padded = rawNum.length < 3 ? rawNum.padStart(3, "0") : rawNum;
     return `EMP-${cleanTenant}-${padded}`;
   }
 
-  // 4. Fallback to existing valid ID if available
+  // Fallback to existing valid ID if available
   if (existingEmployeeId && typeof existingEmployeeId === "string" && existingEmployeeId.trim() && existingEmployeeId.trim() !== "N/A") {
     return existingEmployeeId.trim();
   }
@@ -94,7 +110,52 @@ function formatEmployeeId(email, existingEmployeeId = null, tenantCode = "BHIV")
   return "N/A";
 }
 
-const formatCanonicalEmployeeId = formatEmployeeId;
+function formatLegacyEmployeeId(email, existingEmployeeId = null) {
+  if (existingEmployeeId && typeof existingEmployeeId === "string") {
+    const trimmed = existingEmployeeId.trim();
+    if (/^BHIV(?:MSSU)?\d+$/i.test(trimmed)) {
+      return trimmed.toUpperCase();
+    }
+    if (/^EMP-[A-Z0-9]+-[A-Z0-9]+$/i.test(trimmed)) {
+      return trimmed.toUpperCase();
+    }
+    if (trimmed && trimmed !== "N/A") {
+      return trimmed;
+    }
+  }
+
+  if (!email || typeof email !== "string") {
+    return (existingEmployeeId && existingEmployeeId.trim()) || "N/A";
+  }
+
+  const cleanEmail = email.trim();
+  const localPart = cleanEmail.split("@")[0].trim().toLowerCase();
+
+  const mssuMatch = localPart.match(/^bhiv[-_.]?mssu[^\d]*(\d+)/i);
+  if (mssuMatch && mssuMatch[1]) {
+    return `BHIVMSSU${mssuMatch[1]}`;
+  }
+
+  const match = localPart.match(/(?:blackhole(?:infiverse?|infivers)?|bhiv)[^\d]*(\d+)/i)
+    || localPart.match(/(\d+)$/);
+
+  if (match && match[1]) {
+    return `BHIV${match[1]}`;
+  }
+
+  if (existingEmployeeId && typeof existingEmployeeId === "string" && existingEmployeeId.trim()) {
+    return existingEmployeeId.trim();
+  }
+
+  return "N/A";
+}
+
+function formatEmployeeId(email, existingEmployeeId = null, tenantCode = undefined) {
+  if (tenantCode !== undefined && tenantCode !== null) {
+    return formatCanonicalEmployeeId(email, existingEmployeeId, tenantCode);
+  }
+  return formatLegacyEmployeeId(email, existingEmployeeId);
+}
 
 module.exports = {
   formatEmployeeId,

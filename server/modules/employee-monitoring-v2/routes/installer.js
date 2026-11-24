@@ -14,36 +14,58 @@ const fs = require('fs');
 const crypto = require('crypto');
 const v2Auth = require('../security/v2Auth');
 
-// Single source of truth: every download button in the web app serves the
-// current V1 desktop agent build, so the download section is always up to date.
-const DIST_DIR = path.resolve(__dirname, '../../../../employee-agent/dist');
-const EXE_INSTALLER_PATH = path.join(DIST_DIR, 'Employee Activity Agent Setup 1.0.0.exe');
+// Paths to pre-packaged installer deliverables (V2 primary, V1 fallback)
+const DIST_DIR_V2 = path.resolve(__dirname, '../../../../employee-agent-v2/dist');
+const EXE_INSTALLER_V2 = path.join(DIST_DIR_V2, 'NiyantranMonitoringAgentV2-Setup.exe');
+const ZIP_INSTALLER_V2 = path.join(DIST_DIR_V2, 'Niyantran-Agent-V2-Setup.zip');
+
+const DIST_DIR_V1 = path.resolve(__dirname, '../../../../employee-agent/dist');
+const EXE_INSTALLER_V1 = path.join(DIST_DIR_V1, 'Employee Activity Agent Setup 1.0.0.exe');
+
+function resolveInstallerPath(format) {
+  const wantsZip = format && format.toLowerCase() === 'zip';
+  if (wantsZip && fs.existsSync(ZIP_INSTALLER_V2)) {
+    return ZIP_INSTALLER_V2;
+  }
+  if (fs.existsSync(EXE_INSTALLER_V2)) {
+    return EXE_INSTALLER_V2;
+  }
+  if (fs.existsSync(ZIP_INSTALLER_V2)) {
+    return ZIP_INSTALLER_V2;
+  }
+  if (fs.existsSync(EXE_INSTALLER_V1)) {
+    return EXE_INSTALLER_V1;
+  }
+  return null;
+}
 
 function getInstallerMeta() {
-  const chosenPath = EXE_INSTALLER_PATH;
-  if (fs.existsSync(chosenPath)) {
+  const chosenPath = resolveInstallerPath();
+  if (chosenPath && fs.existsSync(chosenPath)) {
     const stats = fs.statSync(chosenPath);
     const fileBuffer = fs.readFileSync(chosenPath);
     const rawSha256 = crypto.createHash('sha256').update(fileBuffer).digest('hex');
     const sha256 = rawSha256.toUpperCase();
+    const isV2 = chosenPath.includes('employee-agent-v2');
+    const isExe = chosenPath.endsWith('.exe');
     return {
       available: true,
-      fileName: 'Employee Activity Agent Setup 1.0.0.exe',
-      format: 'exe',
+      fileName: path.basename(chosenPath),
+      format: isExe ? 'exe' : 'zip',
       fileSize: stats.size,
       sizeBytes: stats.size,
       sha256,
-      version: '1.0.0',
+      version: isV2 ? '2.0.0' : '1.0.0',
       platform: 'win32-x64',
       lastModified: stats.mtime.toISOString(),
-      supportsSilentInstall: true,
-      silentArgs: '/S'
+      supportsSilentInstall: isExe,
+      silentArgs: isExe ? '/S' : '-SkipPrompt'
     };
   }
 
   return {
     available: false,
-    version: '1.0.0',
+    version: '2.0.0',
     platform: 'win32-x64'
   };
 }
@@ -74,18 +96,18 @@ router.get('/download', v2Auth, (req, res) => {
     });
   }
 
-  // Only one agent ships now (V1); both formats resolve to the same package.
-  const targetPath = EXE_INSTALLER_PATH;
+  const targetPath = resolveInstallerPath(format);
 
-  if (!fs.existsSync(targetPath)) {
+  if (!targetPath || !fs.existsSync(targetPath)) {
     return res.status(404).json({
       error: 'Agent installer package not found on server',
       code: 'INSTALLER_NOT_FOUND'
     });
   }
 
-  const filename = 'Employee Activity Agent Setup 1.0.0.exe';
-  const contentType = 'application/vnd.microsoft.portable-executable';
+  const isExe = targetPath.endsWith('.exe');
+  const filename = path.basename(targetPath);
+  const contentType = isExe ? 'application/vnd.microsoft.portable-executable' : 'application/zip';
 
   res.setHeader('Content-Type', contentType);
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);

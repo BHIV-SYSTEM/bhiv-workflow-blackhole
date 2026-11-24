@@ -263,7 +263,7 @@ router.post('/keystroke/ingest', auth, async (req, res) => {
       });
     }
 
-    const validSegments = segments.filter(seg => seg && typeof seg.text === 'string' && seg.text.length > 0);
+    const validSegments = segments.filter(seg => seg && ((typeof seg.text === 'string' && seg.text.length > 0) || (typeof seg.keyCount === 'number' && seg.keyCount > 0)));
     if (validSegments.length === 0) {
       return res.status(400).json({
         success: false,
@@ -311,7 +311,7 @@ router.post('/keystroke/ingest', auth, async (req, res) => {
         timestamp: seg.start ? new Date(seg.start) : new Date(),
         quality,
         capture: {
-          char_count: text.length,
+          char_count: text.length || keyCount,
           key_count: keyCount,
           backspace_count: seg.backspaceCount || 0,
           paste_count: seg.pasteCount || 0,

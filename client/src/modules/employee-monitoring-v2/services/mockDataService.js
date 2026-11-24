@@ -34,9 +34,34 @@ export const MockDataService = {
   // Fleet & Admin methods
   getSummaryStats: () => ({ ...MOCK_SUMMARY_STATS }),
 
-  getLiveTeam: () => [],
+  getLiveTeam: ({ department = 'All Departments', search = '', sessionStatus = 'ALL' } = {}) => {
+    let list = [...MOCK_LIVE_TEAM];
 
-  getEmployeeById: () => null,
+    if (department && department !== 'All Departments') {
+      list = list.filter((m) => m.department.toLowerCase() === department.toLowerCase());
+    }
+
+    if (search && search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter(
+        (m) =>
+          m.name.toLowerCase().includes(q) ||
+          m.role.toLowerCase().includes(q) ||
+          m.department.toLowerCase().includes(q) ||
+          m.focusedApp.toLowerCase().includes(q)
+      );
+    }
+
+    if (sessionStatus && sessionStatus !== 'ALL') {
+      list = list.filter((m) => m.sessionStatus.toUpperCase() === sessionStatus.toUpperCase());
+    }
+
+    return list;
+  },
+
+  getEmployeeById: (id) => {
+    return MOCK_LIVE_TEAM.find((m) => m.id === id) || null;
+  },
 
   getDailyTrends: () => [...MOCK_DAILY_TRENDS],
   getCategoryBreakdown: () => [...MOCK_CATEGORY_BREAKDOWN],
@@ -95,7 +120,11 @@ export const MockDataService = {
     currentSessionState = {
       ...currentSessionState,
       currentDeviceMode: targetMode,
-      activeDevice: null,
+      activeDevice: {
+        ...currentSessionState.activeDevice,
+        name: targetMode === 'PHONE' ? 'OnePlus 11 (Mobile PWA)' : 'ThinkPad P14s (Workstation)',
+        platform: targetMode === 'PHONE' ? 'Android 14' : 'Windows 11 Pro',
+      },
     };
     return { ...currentSessionState };
   },

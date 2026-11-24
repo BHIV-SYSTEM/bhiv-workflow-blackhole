@@ -54,19 +54,31 @@ const AggregatedTelemetryV2 = require('../models/AggregatedTelemetryV2');
 const DeviceAuditLog = require('../models/DeviceAuditLog');
 
 // Wire In-Memory implementations
-RegisteredDevice.findOne = async (query) => {
-  if (query.device_id) {
-    const found = inMemoryDb.devices.find((d) => d.device_id === query.device_id);
-    if (!found) return null;
-    return {
-      ...found,
-      save: async function () {
-        Object.assign(found, this);
-        return found;
+RegisteredDevice.findOne = (query) => {
+  const execute = async () => {
+    if (query.device_id) {
+      const found = inMemoryDb.devices.find((d) => d.device_id === query.device_id);
+      if (!found) return null;
+      return {
+        ...found,
+        save: async function () {
+          Object.assign(found, this);
+          return found;
+        }
+      };
+    }
+    return null;
+  };
+
+  return {
+    then: (resolve, reject) => execute().then(resolve, reject),
+    lean: async () => {
+      if (query.device_id) {
+        return inMemoryDb.devices.find((d) => d.device_id === query.device_id) || null;
       }
-    };
-  }
-  return null;
+      return null;
+    }
+  };
 };
 
 RegisteredDevice.find = (query) => ({

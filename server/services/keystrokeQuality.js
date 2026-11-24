@@ -156,9 +156,16 @@ function analyzeKeystrokeSegment(input = {}) {
   let classification;
 
   if (!trimmed.length) {
-    // No printable content (e.g. sensitive window, or keys only).
-    classification = 'insufficient';
-    reasons.push('No printable text captured');
+    if (superhuman) {
+      classification = 'key_mashing';
+      reasons.push('Machine-like key rhythm (key-mashing)');
+    } else if (keyCount >= 3 || timing.count >= 2) {
+      classification = 'valuable';
+      reasons.push('Active typing rhythm (privacy-protected)');
+    } else {
+      classification = 'insufficient';
+      reasons.push('No printable text captured');
+    }
   } else if (wordScore < MASHING_WORD_SCORE) {
     if (tokenCount < 2 && trimmed.length < 8) {
       // A stray character or two — too little to judge either way.
@@ -195,7 +202,7 @@ function analyzeKeystrokeSegment(input = {}) {
   const correctionFactor = 1 - Math.min(1, correctionRatio / 0.3);
 
   let score = Math.round(100 * (
-    0.55 * Math.min(1, wordScore)
+    0.55 * Math.min(1, (!trimmed.length && classification === 'valuable' ? 1 : wordScore))
     + 0.20 * repetitionFactor
     + 0.15 * correctionFactor
     + 0.10 * rhythmPlausible

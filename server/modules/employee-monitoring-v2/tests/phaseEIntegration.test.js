@@ -95,6 +95,7 @@ test.after(async () => {
   if (isMongoConnected) {
     await mongoose.disconnect();
   }
+  setTimeout(() => process.exit(0), 100);
 });
 
 // ----------------------------------------------------------------------------

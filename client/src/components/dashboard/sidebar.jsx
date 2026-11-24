@@ -78,6 +78,8 @@ export function DashboardSidebar({ onNavigate, isMobile = false } = {}) {
   const getNavigationSections = () => {
     let role = user?.role;
     if (!role && import.meta.env.DEV) {
+      if (location.pathname.startsWith('/monitoring-v2/admin')) role = 'Admin';
+      else if (location.pathname.startsWith('/monitoring-v2/employee')) role = 'User';
     }
 
     if (role === "User") {
