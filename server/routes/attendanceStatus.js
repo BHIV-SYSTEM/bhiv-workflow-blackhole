@@ -3,7 +3,11 @@ const router = express.Router();
 const auth = require('../middleware/auth');
 const Attendance = require('../models/Attendance');
 const WorkSession = require('../models/WorkSession');
-const { getIstDayBounds } = require('../utils/progressValidation');
+const {
+  getIstDayBounds,
+  checkPreviousDayMissingProgress,
+  checkTodayAimStatus,
+} = require('../utils/progressValidation');
 
 /**
  * GET /api/attendance/status
@@ -122,6 +126,11 @@ router.get('/status', auth, async (req, res) => {
       (todayWorkSession && todayWorkSession.status === 'completed' ? todayWorkSession.endTime : null) ||
       null;
 
+    const [prevMissing, aimStatus] = await Promise.all([
+      checkPreviousDayMissingProgress(userId).catch(() => ({ missing: false })),
+      checkTodayAimStatus(userId).catch(() => ({ hasAimToday: true, aimReminder: false }))
+    ]);
+
     return res.json({
       dayStarted: false,
       dayEndedToday: Boolean(endedTime),
@@ -133,7 +142,12 @@ router.get('/status', auth, async (req, res) => {
       userEmail: realEmail,
       monitoringConsent: false,
       monitoringStatus: 'Disconnected / Not Monitored',
-      activeSessionId: null
+      activeSessionId: null,
+      previousDayProgressMissing: Boolean(prevMissing.missing),
+      previousWorkDate: prevMissing.previousWorkDate || null,
+      previousDateLabel: prevMissing.previousDateLabel || null,
+      hasAimToday: Boolean(aimStatus.hasAimToday),
+      aimReminder: Boolean(aimStatus.aimReminder)
     });
   } catch (error) {
     console.error('❌ Attendance status check error:', error);

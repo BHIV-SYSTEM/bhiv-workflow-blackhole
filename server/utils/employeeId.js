@@ -5,14 +5,15 @@
  * - blackholeinfivers20 => BHIV20
  * - blackholeinfiverse64@gmail.com => BHIV64
  * - bhivtest2@outlook.com => BHIV2
+ * - BHIVMSSU0030@outlook.com => BHIVMSSU0030
  * - Fallback: existing valid employeeId, or 'N/A'
  *
  * @param {string} email - Employee email or identifier string
  * @param {string} [existingEmployeeId] - Existing employeeId if set
- * @returns {string} Formatted Employee ID (e.g. 'BHIV147')
+ * @returns {string} Formatted Employee ID (e.g. 'BHIV147', 'BHIVMSSU0030')
  */
 function formatEmployeeId(email, existingEmployeeId = null) {
-  if (existingEmployeeId && /^BHIV\d+$/i.test(existingEmployeeId.trim())) {
+  if (existingEmployeeId && /^BHIV(?:MSSU)?\d+$/i.test(existingEmployeeId.trim())) {
     return existingEmployeeId.trim().toUpperCase();
   }
 
@@ -21,6 +22,11 @@ function formatEmployeeId(email, existingEmployeeId = null) {
   }
 
   const localPart = email.split('@')[0].trim().toLowerCase();
+
+  const mssuMatch = localPart.match(/^bhiv[-_.]?mssu[^\d]*(\d+)/i);
+  if (mssuMatch && mssuMatch[1]) {
+    return `BHIVMSSU${mssuMatch[1]}`;
+  }
 
   // Match BHIV / Blackhole patterns followed by numbers, or any trailing numbers
   const match = localPart.match(/(?:blackhole(?:infiverse?|infivers)?|bhiv)[^\d]*(\d+)/i)

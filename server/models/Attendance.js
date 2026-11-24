@@ -254,6 +254,21 @@ const attendanceSchema = new mongoose.Schema({
     type: String,
     maxlength: 300
   },
+
+  // Daily progress tracking & missed-progress reason
+  dailyProgressCompleted: {
+    type: Boolean,
+    default: false
+  },
+  missedProgressReason: {
+    type: String,
+    maxlength: 500
+  },
+  missedProgressReasonSubmittedAt: Date,
+  progressReminderSent: {
+    type: Boolean,
+    default: false
+  },
   
   // Metadata
   deviceInfo: {

@@ -13,7 +13,12 @@ const auth = require('../middleware/auth');
 const adminAuth = require('../middleware/adminAuth');
 const DailyAttendance = require('../models/DailyAttendance');
 const { reverseGeocode } = require('../utils/reverseGeocode');
-const { findDailyProgressStatus } = require('../utils/progressValidation');
+const {
+  findDailyProgressStatus,
+  validateAndRecordMissedProgressReason,
+  checkPreviousDayMissingProgress,
+  checkTodayAimStatus,
+} = require('../utils/progressValidation');
 const {
   signalNormalActivity,
   signalLateCheckin,
@@ -186,7 +191,7 @@ router.post('/start', auth, async (req, res) => {
 router.post('/start-day/:userId', auth, async (req, res) => {
   try {
     const { userId } = req.params;
-    let { latitude, longitude, address, accuracy, workFromHome, homeLocation, deviceInfo, monitoringConsent = false, deviceId: explicitDeviceId } = req.body;
+    let { latitude, longitude, address, accuracy, workFromHome, homeLocation, deviceInfo, monitoringConsent = false, deviceId: explicitDeviceId, previousDayProgressReason } = req.body;
     
     // Verify user authorization
     if (req.user.id !== userId && req.user.role !== 'Admin') {
@@ -251,6 +256,22 @@ router.post('/start-day/:userId', auth, async (req, res) => {
         error: 'Day already started',
         startTime: existingRecord.startDayTime,
         code: 'DAY_ALREADY_STARTED'
+      });
+    }
+
+    // Require explanation if employee missed updating daily progress on their previous working day
+    const prevProgressCheck = await validateAndRecordMissedProgressReason({
+      userId,
+      reason: previousDayProgressReason
+    });
+    if (!prevProgressCheck.ok) {
+      return res.status(400).json({
+        success: false,
+        error: prevProgressCheck.error,
+        code: prevProgressCheck.code,
+        previousWorkDate: prevProgressCheck.previousWorkDate,
+        previousDateLabel: prevProgressCheck.previousDateLabel,
+        minLength: prevProgressCheck.minLength
       });
     }
     
@@ -529,10 +550,17 @@ router.post('/start-day/:userId', auth, async (req, res) => {
     // KARMA: runtime milestone — day started
     signalNormalActivity(String(userId)).catch(() => {});
 
+    const aimStatus = await checkTodayAimStatus(userId).catch(() => ({
+      hasAimToday: false,
+      aimReminder: true,
+      aimReminderMessage: "Day started! Please set your Aim for today in the Set Aims tab."
+    }));
+
     res.json({
       success: true,
       message: `Day started successfully${workFromHome ? ' from home' : ' from office'}!`,
       startTime,
+      attendanceId: attendanceRecord._id,
       location: { latitude, longitude, address: finalAddress },
       workLocationType,
       attendance: attendanceRecord,
@@ -540,6 +568,10 @@ router.post('/start-day/:userId', auth, async (req, res) => {
       monitoringConsent: Boolean(monitoringConsent),
       monitoringStatus,
       monitoringSession,
+      hasAimToday: aimStatus.hasAimToday,
+      aimReminder: aimStatus.aimReminder,
+      aimReminderMessage: aimStatus.aimReminder ? aimStatus.aimReminderMessage : null,
+      previousDayReasonRecorded: Boolean(prevProgressCheck.recordedReason),
       distanceFromOffice: workFromHome ? null : geolib.getDistance(
         { latitude: OFFICE_COORDINATES.latitude, longitude: OFFICE_COORDINATES.longitude },
         { latitude, longitude }
@@ -620,13 +652,9 @@ router.post('/end-day/:userId', auth, async (req, res) => {
       console.warn('findDailyProgressStatus failed:', e.message);
     }
     
-    // MANDATORY VALIDATION: Block end day if user has not updated daily progress
+    // Check progress status without blocking End Day (prevents bloated 20+h sessions; missed progress is prompted next Start Day)
     if (!hasProgressContent) {
-      console.log(`⛔ User ${userId} attempted to end day without progress update - blocking`);
-      return res.status(400).json({
-        error: 'Please submit your daily progress in the Progress tab before ending your work day.',
-        code: 'PROGRESS_NOT_SET'
-      });
+      console.log(`ℹ️ User ${userId} ending day without daily progress - allowing End Day with reminder`);
     }
     
     // 🎯 Get aim for reference but don't block end-day if not completed
@@ -707,11 +735,13 @@ router.post('/end-day/:userId', auth, async (req, res) => {
       attendanceRecord.overtimeHours = 0;
     }
 
-    // Mark as verified since it's manually ended with validations
+    // Mark as verified since it's manually ended cleanly
     attendanceRecord.isVerified = true;
     attendanceRecord.approvalStatus = 'Auto-Approved';
     attendanceRecord.spamStatus = 'Valid'; // Normal end-day flow - not spam
     attendanceRecord.autoEnded = false;
+    attendanceRecord.dailyProgressCompleted = Boolean(hasProgressContent);
+    attendanceRecord.progressReminderSent = !hasProgressContent;
 
     await attendanceRecord.save();
     
@@ -744,7 +774,8 @@ router.post('/end-day/:userId', auth, async (req, res) => {
       dailyRecord.breakTime = breakTimeMinutes; // Set break time from work session
       dailyRecord.isPresent = true;
       dailyRecord.status = 'Present';
-      dailyRecord.dailyProgressCompleted = true;
+      dailyRecord.dailyProgressCompleted = Boolean(hasProgressContent);
+      dailyRecord.progressReminderSent = !hasProgressContent;
       dailyRecord.dailyAimCompleted = todayAim ? (todayAim.completionStatus !== 'Pending') : false;
       dailyRecord.aimCompletionStatus = todayAim?.completionStatus || 'Not Set';
       dailyRecord.aimCompletionComment = todayAim?.completionComment || '';
@@ -801,7 +832,8 @@ router.post('/end-day/:userId', auth, async (req, res) => {
         userId,
         endTime,
         hoursWorked: attendanceRecord.hoursWorked,
-        progressCompleted: true,
+        progressCompleted: Boolean(hasProgressContent),
+        progressReminder: !hasProgressContent,
         aimCompleted: todayAim ? (todayAim.completionStatus !== 'Pending') : false
       });
       req.io.emit('monitoring:session-ended', {
@@ -820,13 +852,22 @@ router.post('/end-day/:userId', auth, async (req, res) => {
     // KARMA: runtime milestone — day ended (zero automated behavioral penalties)
     signalNormalActivity(String(userId)).catch(() => {});
 
+    const reminderMessage = !hasProgressContent
+      ? "Reminder: Today's daily progress was not updated. You will be asked for a reason at tomorrow's Start Day."
+      : null;
+
     res.json({
       success: true,
-      message: `Day ended successfully! You worked ${attendanceRecord.hoursWorked} hours.`,
+      message: hasProgressContent
+        ? `Day ended successfully! You worked ${attendanceRecord.hoursWorked} hours.`
+        : `Day ended! You worked ${attendanceRecord.hoursWorked} hours. Reminder: Today's daily progress was not updated.`,
       attendance: attendanceRecord,
       workday: dailyRecord,
       dailyReport,
       telemetryFlushed: true,
+      progressReminder: !hasProgressContent,
+      progressCompleted: Boolean(hasProgressContent),
+      reminderMessage,
       data: {
         endTime,
         startTime: attendanceRecord.startDayTime,
@@ -834,8 +875,10 @@ router.post('/end-day/:userId', auth, async (req, res) => {
         overtimeHours: attendanceRecord.overtimeHours,
         isOvertime: attendanceRecord.overtimeHours > 0,
         attendanceId: attendanceRecord._id,
+        progressReminder: !hasProgressContent,
+        reminderMessage,
         validations: {
-          progressCompleted: true,
+          progressCompleted: Boolean(hasProgressContent),
           aimCompleted: todayAim ? (todayAim.completionStatus !== 'Pending') : false,
           aimStatus: todayAim?.completionStatus || 'Not Set'
         }
@@ -1234,12 +1277,28 @@ router.get('/verify/:userId', auth, async (req, res) => {
       date: targetDate
     }).populate('user', 'name email');
 
+    const [prevMissing, aimStatus] = await Promise.all([
+      checkPreviousDayMissingProgress(userId).catch(() => ({ missing: false })),
+      checkTodayAimStatus(userId).catch(() => ({ hasAimToday: false, aimReminder: true }))
+    ]);
+
+    const extraPromptInfo = {
+      previousDayProgressMissing: Boolean(prevMissing.missing),
+      previousWorkDate: prevMissing.previousWorkDate || null,
+      previousDateLabel: prevMissing.previousDateLabel || null,
+      minReasonLength: prevMissing.minLength || 10,
+      hasAimToday: Boolean(aimStatus.hasAimToday),
+      aimReminder: Boolean(aimStatus.aimReminder),
+    };
+
     if (!attendance) {
       return res.json({
         success: true,
         data: {
           isPresent: false,
           isVerified: false,
+          canStartDay: true,
+          ...extraPromptInfo,
           message: 'No attendance record found for this date'
         }
       });
@@ -1249,6 +1308,8 @@ router.get('/verify/:userId', auth, async (req, res) => {
       success: true,
       data: {
         ...attendance.toObject(),
+        canStartDay: !attendance.startDayTime || Boolean(attendance.endDayTime),
+        ...extraPromptInfo,
         statusDisplay: attendance.statusDisplay,
         statusColor: attendance.statusColor
       }
@@ -1769,6 +1830,175 @@ router.post('/confirm-upload', auth, async (req, res) => {
     res.status(500).json({ 
       success: false,
       error: error.message || 'Failed to confirm upload' 
+    });
+  }
+});
+
+/**
+ * GET /api/attendance/missed-progress-reasons
+ * Admin endpoint to list all explanations submitted on Start Day when previous day's progress was missed.
+ */
+router.get('/missed-progress-reasons', auth, adminAuth, async (req, res) => {
+  try {
+    const {
+      startDate,
+      endDate,
+      employeeId,
+      department,
+      statusTab = 'all',
+      search = '',
+      limit = 200
+    } = req.query;
+
+    const branchQuery = getBranchQuery(req);
+    const baseFilter = {
+      missedProgressReason: { $exists: true, $nin: [null, ''] },
+      ...branchQuery
+    };
+
+    if (employeeId && employeeId !== 'all' && mongoose.Types.ObjectId.isValid(employeeId)) {
+      baseFilter.user = employeeId;
+    }
+
+    if (startDate || endDate) {
+      const dateCond = {};
+      if (startDate) {
+        const s = new Date(startDate);
+        if (!Number.isNaN(s.getTime())) {
+          s.setHours(0, 0, 0, 0);
+          dateCond.$gte = s;
+        }
+      }
+      if (endDate) {
+        const e = new Date(endDate);
+        if (!Number.isNaN(e.getTime())) {
+          e.setHours(23, 59, 59, 999);
+          dateCond.$lte = e;
+        }
+      }
+      if (Object.keys(dateCond).length > 0) {
+        baseFilter.date = dateCond;
+      }
+    }
+
+    const populateOpt = {
+      path: 'user',
+      select: 'name email employeeId avatar department stillExist branch',
+      populate: { path: 'department', select: 'name' }
+    };
+
+    const maxDocs = Math.min(500, Math.max(20, parseInt(limit, 10) || 200));
+    const { branch: _ignoredBranch, ...dailyFilter } = baseFilter;
+
+    const [attendanceDocs, dailyDocs] = await Promise.all([
+      Attendance.find(baseFilter)
+        .populate(populateOpt)
+        .sort({ missedProgressReasonSubmittedAt: -1, date: -1 })
+        .limit(maxDocs)
+        .lean(),
+      DailyAttendance.find(dailyFilter)
+        .populate(populateOpt)
+        .sort({ missedProgressReasonSubmittedAt: -1, date: -1 })
+        .limit(maxDocs)
+        .lean()
+    ]);
+
+    // Merge Attendance + DailyAttendance and deduplicate per (userId, missedWorkDate)
+    const mergedMap = new Map();
+    const toDateKey = (val) => {
+      if (!val) return '';
+      const d = new Date(val);
+      if (Number.isNaN(d.getTime())) return '';
+      const ist = new Date(d.getTime() + 5.5 * 60 * 60 * 1000);
+      return ist.toISOString().slice(0, 10);
+    };
+
+    const ingestDoc = (doc, sourceModel) => {
+      if (!doc || !doc.user) return;
+      const u = doc.user;
+      if (branchQuery.branch && u.branch && u.branch !== branchQuery.branch) return;
+
+      const userIdStr = String(u._id);
+      const workDateKey = toDateKey(doc.startDayTime || doc.date);
+      const dedupeKey = `${userIdStr}_${workDateKey}`;
+
+      const entry = {
+        id: String(doc._id),
+        sourceModel,
+        userId: userIdStr,
+        name: u.name || 'Employee',
+        email: u.email || '',
+        employeeId: u.employeeId || '',
+        avatar: u.avatar || null,
+        departmentId: u.department?._id ? String(u.department._id) : (u.department ? String(u.department) : ''),
+        departmentName: u.department?.name || 'General',
+        stillExist: u.stillExist !== undefined ? u.stillExist : 1,
+        missedWorkDate: doc.date || doc.startDayTime,
+        missedWorkDateKey: workDateKey,
+        startDayTime: doc.startDayTime || null,
+        endDayTime: doc.endDayTime || null,
+        hoursWorked: Number(doc.hoursWorked ?? doc.totalHoursWorked ?? 0),
+        reason: String(doc.missedProgressReason || '').trim(),
+        submittedAt: doc.missedProgressReasonSubmittedAt || doc.updatedAt || doc.date
+      };
+
+      const existing = mergedMap.get(dedupeKey);
+      if (!existing || (sourceModel === 'Attendance' && existing.sourceModel !== 'Attendance')) {
+        mergedMap.set(dedupeKey, entry);
+      }
+    };
+
+    attendanceDocs.forEach((d) => ingestDoc(d, 'Attendance'));
+    dailyDocs.forEach((d) => ingestDoc(d, 'DailyAttendance'));
+
+    let records = Array.from(mergedMap.values());
+
+    if (employeeId && employeeId !== 'all') {
+      records = records.filter((r) => r.userId === String(employeeId));
+    }
+
+    if (department && department !== 'all') {
+      records = records.filter((r) => r.departmentId === String(department));
+    }
+
+    if (statusTab === 'active') {
+      records = records.filter((r) => r.stillExist !== 0);
+    } else if (statusTab === 'exited') {
+      records = records.filter((r) => r.stillExist === 0);
+    }
+
+    if (search && search.trim()) {
+      const q = search.trim().toLowerCase();
+      records = records.filter(
+        (r) =>
+          r.name.toLowerCase().includes(q) ||
+          r.email.toLowerCase().includes(q) ||
+          r.employeeId.toLowerCase().includes(q) ||
+          r.departmentName.toLowerCase().includes(q) ||
+          r.reason.toLowerCase().includes(q)
+      );
+    }
+
+    records.sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
+
+    const todayKey = toDateKey(new Date());
+    const uniqueEmployees = new Set(records.map((r) => r.userId)).size;
+    const submittedToday = records.filter((r) => toDateKey(r.submittedAt) === todayKey).length;
+
+    res.json({
+      success: true,
+      records,
+      summary: {
+        totalReasons: records.length,
+        uniqueEmployees,
+        submittedToday
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching missed progress reasons:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch missed progress reasons'
     });
   }
 });

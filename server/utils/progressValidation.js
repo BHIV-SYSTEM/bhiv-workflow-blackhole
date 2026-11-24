@@ -100,6 +100,203 @@ async function findDailyProgressStatus(ProgressModel, userId, referenceDates = [
   };
 }
 
+const MIN_MISSED_PROGRESS_REASON_LENGTH = 10;
+
+/**
+ * Format a Date in IST as DD MMM YYYY for clear user-facing prompts.
+ */
+function formatIstDateLabel(date) {
+  const istShifted = new Date(new Date(date).getTime() + IST_OFFSET_MS);
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const day = String(istShifted.getUTCDate()).padStart(2, "0");
+  const month = months[istShifted.getUTCMonth()];
+  const year = istShifted.getUTCFullYear();
+  return `${day} ${month} ${year}`;
+}
+
+/**
+ * Check if the employee's most recent previous working day (strictly before today)
+ * missed a meaningful daily progress update and has not yet recorded a reason.
+ */
+async function checkPreviousDayMissingProgress(userId, now = new Date()) {
+  const Attendance = require("../models/Attendance");
+  const DailyAttendance = require("../models/DailyAttendance");
+  const Progress = require("../models/Progress");
+
+  const ist = getIstDayBounds(now);
+  const localMidnight = new Date(now);
+  localMidnight.setHours(0, 0, 0, 0);
+  const todayCutoff = new Date(Math.min(ist.start.getTime(), localMidnight.getTime()));
+
+  const prevFilter = {
+    user: userId,
+    startDayTime: { $exists: true, $ne: null, $lt: todayCutoff },
+    isLeave: { $ne: true },
+  };
+
+  const [prevAttendance, prevDaily] = await Promise.all([
+    Attendance.findOne(prevFilter).sort({ startDayTime: -1, date: -1 }),
+    DailyAttendance.findOne(prevFilter).sort({ startDayTime: -1, date: -1 }),
+  ]);
+
+  const latestRecord =
+    prevAttendance && prevDaily
+      ? new Date(prevAttendance.startDayTime) >= new Date(prevDaily.startDayTime)
+        ? prevAttendance
+        : prevDaily
+      : prevAttendance || prevDaily;
+
+  if (!latestRecord) {
+    return { missing: false, reasonRequired: false };
+  }
+
+  // If a reason was already recorded on either previous record, do not block again
+  const existingReason =
+    (prevAttendance?.missedProgressReason && prevAttendance.missedProgressReason.trim()) ||
+    (prevDaily?.missedProgressReason && prevDaily.missedProgressReason.trim()) ||
+    "";
+  if (existingReason) {
+    return { missing: false, reasonRequired: false };
+  }
+
+  const refDate = latestRecord.startDayTime || latestRecord.date;
+  const prevBounds = getIstDayBounds(refDate);
+  const prevLocal = new Date(refDate);
+  prevLocal.setHours(0, 0, 0, 0);
+
+  const windowStart = new Date(Math.min(prevBounds.start.getTime(), prevLocal.getTime()));
+  let windowEnd = Math.max(prevBounds.end.getTime(), prevLocal.getTime() + DAY_MS);
+  if (latestRecord.endDayTime) {
+    const endMs = new Date(latestRecord.endDayTime).getTime();
+    if (!Number.isNaN(endMs) && endMs > windowEnd) {
+      windowEnd = endMs + 60 * 60 * 1000;
+    }
+  }
+  windowEnd = new Date(Math.min(windowEnd, ist.start.getTime()));
+
+  const entries = await Progress.find({
+    user: userId,
+    $or: [
+      { date: { $gte: windowStart, $lt: windowEnd } },
+      { createdAt: { $gte: windowStart, $lt: windowEnd } },
+    ],
+  }).sort({ updatedAt: -1, createdAt: -1 });
+
+  const hasProgress = entries.some(hasMeaningfulProgress);
+  if (hasProgress) {
+    return { missing: false, reasonRequired: false };
+  }
+
+  const previousDateLabel = formatIstDateLabel(refDate);
+
+  return {
+    missing: true,
+    reasonRequired: true,
+    previousWorkDate: prevBounds.start,
+    previousDateLabel,
+    attendanceId: prevAttendance?._id || null,
+    dailyAttendanceId: prevDaily?._id || null,
+    minLength: MIN_MISSED_PROGRESS_REASON_LENGTH,
+  };
+}
+
+/**
+ * Require and persist an explanation when starting a new day after a workday with missing progress.
+ */
+async function validateAndRecordMissedProgressReason({
+  userId,
+  reason,
+  now = new Date(),
+  minLength = MIN_MISSED_PROGRESS_REASON_LENGTH,
+}) {
+  const check = await checkPreviousDayMissingProgress(userId, now);
+  if (!check.missing) {
+    return { ok: true, missing: false };
+  }
+
+  const trimmed = typeof reason === "string" ? reason.trim() : "";
+  if (trimmed.length < minLength) {
+    return {
+      ok: false,
+      missing: true,
+      code: "PREVIOUS_DAY_PROGRESS_REASON_REQUIRED",
+      status: 400,
+      error: `Why was the previous day's progress (${check.previousDateLabel}) not updated? Please enter a valid reason (at least ${minLength} characters) to start your day.`,
+      previousWorkDate: check.previousWorkDate,
+      previousDateLabel: check.previousDateLabel,
+      minLength,
+    };
+  }
+
+  const Attendance = require("../models/Attendance");
+  const DailyAttendance = require("../models/DailyAttendance");
+  const cleanReason = trimmed.slice(0, 500);
+  const updates = [];
+
+  if (check.attendanceId) {
+    updates.push(
+      Attendance.findByIdAndUpdate(check.attendanceId, {
+        $set: {
+          missedProgressReason: cleanReason,
+          missedProgressReasonSubmittedAt: now,
+          dailyProgressCompleted: false,
+        },
+      })
+    );
+  }
+  if (check.dailyAttendanceId) {
+    updates.push(
+      DailyAttendance.findByIdAndUpdate(check.dailyAttendanceId, {
+        $set: {
+          missedProgressReason: cleanReason,
+          missedProgressReasonSubmittedAt: now,
+          dailyProgressCompleted: false,
+        },
+      })
+    );
+  }
+
+  await Promise.all(updates);
+
+  return {
+    ok: true,
+    missing: true,
+    recordedReason: cleanReason,
+    previousWorkDate: check.previousWorkDate,
+    previousDateLabel: check.previousDateLabel,
+  };
+}
+
+/**
+ * Check whether the employee has already created today's Aim (for Start Day reminder).
+ */
+async function checkTodayAimStatus(userId, now = new Date()) {
+  const Aim = require("../models/Aim");
+  const ist = getIstDayBounds(now);
+  const localStart = new Date(now);
+  localStart.setHours(0, 0, 0, 0);
+  const localEnd = new Date(localStart.getTime() + DAY_MS);
+
+  const start = new Date(Math.min(ist.start.getTime(), localStart.getTime()));
+  const end = new Date(Math.max(ist.end.getTime(), localEnd.getTime()));
+
+  const todayAim = await Aim.findOne({
+    user: userId,
+    $or: [
+      { date: { $gte: start, $lt: end } },
+      { createdAt: { $gte: start, $lt: end } },
+    ],
+  }).sort({ createdAt: -1 });
+
+  return {
+    hasAimToday: Boolean(todayAim && todayAim.aims && todayAim.aims.trim() !== ""),
+    aimReminder: !(todayAim && todayAim.aims && todayAim.aims.trim() !== ""),
+    aimReminderMessage:
+      "Day started! Please set your Aim for today in the Set Aims tab.",
+    todayAim: todayAim || null,
+  };
+}
+
 /**
  * Keep open Attendance & DailyAttendance records in sync when ending a monitoring WorkSession directly.
  */
@@ -108,6 +305,7 @@ async function syncAttendanceCloseFromWorkSession({
   session,
   endTime = new Date(),
   io = null,
+  progressCompleted = false,
 }) {
   const Attendance = require("../models/Attendance");
   const DailyAttendance = require("../models/DailyAttendance");
@@ -138,6 +336,8 @@ async function syncAttendanceCloseFromWorkSession({
   attendanceRecord.approvalStatus = "Auto-Approved";
   attendanceRecord.spamStatus = "Valid";
   attendanceRecord.autoEnded = false;
+  attendanceRecord.dailyProgressCompleted = Boolean(progressCompleted);
+  attendanceRecord.progressReminderSent = !progressCompleted;
   await attendanceRecord.save();
 
   const dailyRecord = await DailyAttendance.findOne({
@@ -153,7 +353,8 @@ async function syncAttendanceCloseFromWorkSession({
     dailyRecord.breakTime = breakTimeMinutes;
     dailyRecord.isPresent = true;
     dailyRecord.status = "Present";
-    dailyRecord.dailyProgressCompleted = true;
+    dailyRecord.dailyProgressCompleted = Boolean(progressCompleted);
+    dailyRecord.progressReminderSent = !progressCompleted;
     dailyRecord.spamStatus = "Valid";
     dailyRecord.autoEnded = false;
     await dailyRecord.save();
@@ -164,7 +365,8 @@ async function syncAttendanceCloseFromWorkSession({
       userId: employeeId,
       endTime,
       hoursWorked,
-      progressCompleted: true,
+      progressCompleted: Boolean(progressCompleted),
+      progressReminder: !progressCompleted,
     });
   }
 
@@ -172,10 +374,14 @@ async function syncAttendanceCloseFromWorkSession({
 }
 
 module.exports = {
+  MIN_MISSED_PROGRESS_REASON_LENGTH,
   getIstDayBounds,
   getDailyProgressWindow,
   hasMeaningfulProgress,
   findDailyProgressStatus,
+  checkPreviousDayMissingProgress,
+  validateAndRecordMissedProgressReason,
+  checkTodayAimStatus,
   syncAttendanceCloseFromWorkSession,
 };
 

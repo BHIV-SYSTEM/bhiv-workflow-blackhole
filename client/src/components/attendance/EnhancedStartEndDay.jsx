@@ -22,6 +22,8 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog';
+import { Textarea } from '../ui/textarea';
 import { useAuth } from '../../context/auth-context';
 import api from '../../lib/api';
 import { formatDate } from '../../lib/dateFormat';
@@ -36,6 +38,8 @@ const EnhancedStartEndDay = () => {
   const [location, setLocation] = useState(null);
   const [locationLoading, setLocationLoading] = useState(false);
   const [deviceInfo, setDeviceInfo] = useState(null);
+  const [reasonModal, setReasonModal] = useState({ open: false, previousDateLabel: '', minLength: 10 });
+  const [previousDayReason, setPreviousDayReason] = useState('');
 
   useEffect(() => {
     fetchTodayStatus();
@@ -484,7 +488,7 @@ const EnhancedStartEndDay = () => {
     });
   };
 
-  const handleStartDay = async () => {
+  const handleStartDay = async (reasonOverride = null) => {
     try {
       setActionLoading(true);
       const isMobileDevice = /Mobile|Android|iPhone|iPad/i.test(navigator.userAgent);
@@ -507,8 +511,10 @@ const EnhancedStartEndDay = () => {
         }
       }
       
+      const reasonToSend = typeof reasonOverride === 'string' ? reasonOverride : previousDayReason;
       const response = await api.post('/enhanced-attendance/start-day', {
         ...locationData,
+        ...(reasonToSend && reasonToSend.trim() ? { previousDayProgressReason: reasonToSend.trim() } : {}),
         deviceInfo: {
           ...deviceInfo,
           deviceType: isMobileDevice ? 'Mobile' : 'Desktop'
@@ -517,12 +523,27 @@ const EnhancedStartEndDay = () => {
 
       if (response.data.success) {
         toast.success(response.data.message);
+        if (response.data.aimReminder || response.data.data?.aimReminder) {
+          toast('🎯 Reminder: Please set your Aim for today in the Set Aims tab.', { duration: 6000 });
+        }
+        setReasonModal({ open: false, previousDateLabel: '', minLength: 10 });
+        setPreviousDayReason('');
         await fetchTodayStatus();
       }
     } catch (error) {
       console.error('Error starting day:', error);
-      const errorMessage = error.response?.data?.error || error.message || 'Failed to start day';
-      toast.error(errorMessage);
+      const errData = error.response?.data || {};
+      if (errData.code === 'PREVIOUS_DAY_PROGRESS_REASON_REQUIRED') {
+        setReasonModal({
+          open: true,
+          previousDateLabel: errData.previousDateLabel || 'previous working day',
+          minLength: errData.minLength || 10
+        });
+        toast.error(errData.error || "Why was the previous day's progress not updated?");
+      } else {
+        const errorMessage = errData.error || error.message || 'Failed to start day';
+        toast.error(errorMessage);
+      }
     } finally {
       setActionLoading(false);
     }
@@ -565,6 +586,12 @@ const EnhancedStartEndDay = () => {
 
       if (response.data?.success || response.success) {
         toast.success(response.data?.message || response.message || 'Day ended successfully');
+        const hasReminder = Boolean(response.data?.progressReminder || response.progressReminder);
+        if (hasReminder) {
+          toast("⚠️ Reminder: Today's daily progress was not updated. You will be asked for a reason at tomorrow's Start Day.", {
+            duration: 6000,
+          });
+        }
         await fetchTodayStatus();
       }
     } catch (error) {
@@ -885,6 +912,49 @@ const EnhancedStartEndDay = () => {
           </Card>
         </motion.div>
       )}
+
+      {/* Strict Warning Prompt: Missing Previous Day Progress */}
+      <Dialog open={reasonModal.open} onOpenChange={(open) => !open && setReasonModal((prev) => ({ ...prev, open: false }))}>
+        <DialogContent className="w-[95vw] max-w-md border border-red-500/40 bg-card text-card-foreground shadow-2xl rounded-2xl p-6">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-red-500 flex items-center gap-2">
+              <AlertCircle className="w-5 h-5" />
+              Previous Day Progress Not Updated
+            </DialogTitle>
+            <DialogDescription className="text-sm text-muted-foreground pt-1">
+              Why was the previous day&apos;s progress ({reasonModal.previousDateLabel}) not updated? Please enter a valid reason before starting your day.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Textarea
+              value={previousDayReason}
+              onChange={(e) => setPreviousDayReason(e.target.value)}
+              placeholder="Explain why yesterday's progress update was missed..."
+              rows={3}
+              maxLength={500}
+            />
+            <p className="text-xs text-muted-foreground">
+              {previousDayReason.trim().length} / {reasonModal.minLength || 10} characters minimum
+            </p>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setReasonModal((prev) => ({ ...prev, open: false }))}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={actionLoading || previousDayReason.trim().length < (reasonModal.minLength || 10)}
+              onClick={() => handleStartDay(previousDayReason)}
+            >
+              {actionLoading ? 'Starting Day...' : 'Submit Reason & Start Day'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

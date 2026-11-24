@@ -12,7 +12,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   logout: () => ipcRenderer.invoke('logout'),
   
   // Attendance
-  startDay: () => ipcRenderer.invoke('start-day'),
+  startDay: (payload) => ipcRenderer.invoke('start-day', payload),
   endDay: () => ipcRenderer.invoke('end-day'),
   
   // App state

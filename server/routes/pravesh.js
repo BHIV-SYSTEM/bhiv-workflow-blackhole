@@ -18,6 +18,7 @@
 const express = require("express");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+const { isValidOrgEmail } = require("../utils/orgEmail");
 
 const {
   praveshEnabled,
@@ -82,7 +83,18 @@ router.post("/exchange", async (req, res) => {
   if (!appAllowed(identity)) {
     return res.status(403).json({
       success: false,
-      error: `Access denied: app '${process.env.PRAVESH_APP_SLUG || "niyantran"}' not in token allowedApps`,
+      code: "ACCOUNT_NOT_ALLOWED",
+      email: identity.email || null,
+      error: "This account is not allowed to access Niyantran.",
+    });
+  }
+
+  if (identity.is_guest || !identity.email) {
+    return res.status(403).json({
+      success: false,
+      code: "ACCOUNT_NOT_SUPPORTED",
+      email: identity.email || null,
+      error: "This account is not supported on Niyantran.",
     });
   }
 
@@ -93,53 +105,51 @@ router.post("/exchange", async (req, res) => {
     });
   }
 
+  const normalizedEmail = String(identity.email).toLowerCase().trim();
+
   // Check if this user already exists in Niyantran's MongoDB collection by email
   let existingUser = null;
-  if (identity.email) {
-    try {
-      existingUser = await User.findOne({ email: identity.email.toLowerCase().trim() });
-    } catch (err) {
-      console.warn("[PRAVESH] User lookup error:", err.message);
-    }
+  try {
+    existingUser = await User.findOne({ email: normalizedEmail });
+  } catch (err) {
+    console.warn("[PRAVESH] User lookup error:", err.message);
   }
 
   // Prevent exited users from logging in via SSO
   if (existingUser && existingUser.stillExist === 0) {
     return res.status(403).json({
+      success: false,
       error: "Your account has been marked as exited. Access to Niyantran is deactivated.",
-      code: "ACCOUNT_DEACTIVATED"
+      code: "ACCOUNT_DEACTIVATED",
+      email: existingUser.email,
     });
   }
 
-  let payload;
-  if (existingUser) {
-    // User already has an account on Niyantran: Open their EXACT existing account, role & tasks!
-    payload = {
-      id: String(existingUser._id),
-      user_id: String(existingUser._id),
-      name: existingUser.name,
-      email: existingUser.email,
-      role: existingUser.role, // Exact role from existing account (User, Manager, Admin, etc.)
-      department: existingUser.department,
-      branch: existingUser.branch || "blackhole_mumbai",
-      sso: true,
-      is_guest: false,
-      blackhole_user_id: identity.user_id,
-    };
-  } else {
-    // New user without prior Niyantran account: Map role from Pravesh claims
-    const local = localIdentity(identity);
-    payload = {
-      id: local.local_id,
-      user_id: local.local_id,
-      name: (identity.email || "").split("@")[0] || identity.user_id,
-      email: local.email,
-      role: local.role,
-      sso: true,
-      is_guest: local.is_guest,
-      blackhole_user_id: identity.user_id,
-    };
+  if (!existingUser) {
+    const emailSupported = isValidOrgEmail(normalizedEmail);
+    return res.status(403).json({
+      success: false,
+      code: emailSupported ? "ACCOUNT_NOT_SUPPORTED" : "ACCOUNT_NOT_ALLOWED",
+      email: normalizedEmail,
+      error: emailSupported
+        ? "This account is not allowed or not supported on Niyantran yet. Please ask your administrator to create your Niyantran account first."
+        : "This account is not allowed or not supported on Niyantran. Only supported BHIV / Blackhole organization accounts can access Niyantran.",
+    });
   }
+
+  // User already has an account on Niyantran: Open their EXACT existing account, role & tasks!
+  const payload = {
+    id: String(existingUser._id),
+    user_id: String(existingUser._id),
+    name: existingUser.name,
+    email: existingUser.email,
+    role: existingUser.role, // Exact role from existing account (User, Manager, Admin, etc.)
+    department: existingUser.department,
+    branch: existingUser.branch || "blackhole_mumbai",
+    sso: true,
+    is_guest: false,
+    blackhole_user_id: identity.user_id,
+  };
 
   const token = jwt.sign(
     {

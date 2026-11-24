@@ -216,7 +216,7 @@ const EnhancedAttendanceTracker = () => {
     try {
       setActionLoading(true);
       
-      // Check if user has set progress for today
+      // Check if user has set progress for today (non-blocking reminder only)
       try {
         const progressResponse = await api.get(`/progress/user/${user.id}`);
         const todayProgress = progressResponse.data?.find(p => {
@@ -226,33 +226,17 @@ const EnhancedAttendanceTracker = () => {
         });
 
         if (!todayProgress || !todayProgress.description || todayProgress.description.trim() === '') {
-          toast.error('❌ Please set your progress for today before ending your day!', {
-            duration: 4000,
+          toast("⚠️ Reminder: Today's progress was not updated. You will be asked for a reason at tomorrow's Start Day.", {
+            duration: 5000,
             style: {
-              background: '#fee2e2',
-              color: '#dc2626',
-              border: '1px solid #fecaca',
+              background: '#fef3c7',
+              color: '#92400e',
+              border: '1px solid #fde68a',
             },
           });
-          setActionLoading(false);
-          return;
         }
       } catch (progressError) {
         console.warn('Could not check progress:', progressError);
-        // For demo purposes, show a mock validation
-        const hasProgress = Math.random() > 0.5; // 50% chance of having progress for demo
-        if (!hasProgress) {
-          toast.error('❌ Please set your progress for today before ending your day!', {
-            duration: 4000,
-            style: {
-              background: '#fee2e2',
-              color: '#dc2626',
-              border: '1px solid #fecaca',
-            },
-          });
-          setActionLoading(false);
-          return;
-        }
       }
       
       // Get current location (optional for end day)

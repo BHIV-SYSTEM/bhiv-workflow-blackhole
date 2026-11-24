@@ -6,9 +6,6 @@ import { DashboardSidebar } from "../components/dashboard/sidebar"
 import UniverseBackground from "../components/UniverseBackground"
 import { useTheme } from "../components/theme-provider"
 import { DashboardHeader } from "../components/dashboard/header"
-import EnhancedStartDayDialog from "../components/attendance/EnhancedStartDayDialog"
-import { useAuth } from "../context/auth-context"
-import api from "../lib/api"
 
 export function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -163,7 +160,6 @@ useEffect(() => {
           </div>
         </main>
       </div>
-
       {/* Start Day Dialog */}
       <EnhancedStartDayDialog
         isOpen={showStartDayDialog}

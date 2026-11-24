@@ -35,8 +35,8 @@ function parseLocalDateParam(dateStr) {
 
 function getEfficiencyLabel(score, hasActivity = true) {
   if (!hasActivity) return 'No Activity';
-  if (score >= 60) return 'High Efficiency';
-  if (score >= 40) return 'Moderate Efficiency';
+  if (score >= 50) return 'High Efficiency';
+  if (score >= 30) return 'Moderate Efficiency';
   return 'Low Efficiency';
 }
 
@@ -68,8 +68,11 @@ function evaluateSample(act) {
   const rawIdle = normalizeRawIdleSeconds(act);
   const hasInput = keys > 0 || mouseScore > 0 || mouseEvents > 0;
   const appName = act?.active_application?.name;
-  const isBgBrowserPoll = !hasInput && sampleSec >= 25 && (!appName || appName === 'Unknown' || appName === 'null');
-  const isDesktopSample = sampleSec <= 15 || (Boolean(appName) && appName !== 'Other' && appName !== 'Unknown' && appName !== 'null');
+  const source = String(act?.metadata?.source || '').toLowerCase();
+  const isBrowserSource = source === 'browser';
+  const isBrowserPortalTitle = typeof appName === 'string' && /infiverse\s*-?\s*ai workflow/i.test(appName);
+  const isBgBrowserPoll = !hasInput && (isBrowserSource || isBrowserPortalTitle || (sampleSec >= 25 && (!appName || appName === 'Unknown' || appName === 'null')));
+  const isDesktopSample = !isBrowserSource && !isBrowserPortalTitle && (sampleSec <= 15 || (Boolean(appName) && appName !== 'Other' && appName !== 'Unknown' && appName !== 'null'));
 
   // An interval is truly idle only when there is no input AND system idle >= 300s (5 minutes).
   // Reading/thinking/call pauses under 5 minutes receive graded focus credit instead of 0.
@@ -82,22 +85,22 @@ function evaluateSample(act) {
     const isDistraction = String(act?.app_category || '').toUpperCase() === 'DISTRACTION';
 
     if (hasInput) {
-      const baseCredit = isDistraction ? 20 : 65;
+      const baseCredit = isDistraction ? 20 : 75;
       const keyCadencePerMin = (keys / sampleSec) * 60;
-      const keyBonus = Math.min(1, keyCadencePerMin / 60) * 20;
+      const keyBonus = Math.min(1, keyCadencePerMin / 30) * 15;
 
       const effectiveMouseScore = mouseScore > 0
         ? Math.min(100, mouseScore)
-        : (mouseEvents > 0 ? Math.min(100, Math.round((((mouseEvents / sampleSec) * 60) / 240) * 100)) : 0);
-      const mouseBonus = (effectiveMouseScore / 100) * 15;
+        : (mouseEvents > 0 ? Math.min(100, Math.round((((mouseEvents / sampleSec) * 60) / 120) * 100)) : 0);
+      const mouseBonus = (effectiveMouseScore / 100) * 10;
 
-      qualityScore = Math.min(100, Math.round(baseCredit + keyBonus + mouseBonus));
+      qualityScore = Math.min(100, Math.round(baseCredit + (isDistraction ? keyBonus * 0.3 : keyBonus + mouseBonus)));
     } else if (rawIdle < 30) {
-      qualityScore = isDistraction ? 15 : 55;
+      qualityScore = isDistraction ? 15 : 70;
     } else if (rawIdle < 120) {
-      qualityScore = isDistraction ? 10 : 45;
+      qualityScore = isDistraction ? 10 : 58;
     } else {
-      qualityScore = isDistraction ? 5 : 25;
+      qualityScore = isDistraction ? 5 : 40;
     }
   }
 
@@ -185,15 +188,22 @@ function summarizeActivitiesWithSession(activities = [], sessionInfo = null) {
     .slice(0, 4)
     .map(([name, seconds]) => ({ name, count: Math.max(1, Math.round(seconds / 60)) || 1 }));
 
+  const activeHours = `${Math.floor(activeSeconds / 3600)}h ${Math.floor((activeSeconds % 3600) / 60)}m`;
+  const idleTime = `${Math.floor(totalIdleSeconds / 60)}m`;
+
   return {
     logCount: logs.length,
     totalKeystrokes,
     avgMouseActivity,
+    mouseActivity: avgMouseActivity,
     totalIdleSeconds,
+    idleTime,
     activeSeconds,
+    activeHours,
     telemetryActiveSeconds,
     sessionSeconds: sessionSec,
     avgProductivityScore,
+    productivityScore: avgProductivityScore,
     productivityEfficiency,
     hasActivity,
     hasStartedDay: Boolean(hasSession || hasTelemetry || activeSeconds > 0),

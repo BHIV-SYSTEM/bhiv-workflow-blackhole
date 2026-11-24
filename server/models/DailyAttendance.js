@@ -276,6 +276,15 @@ const dailyAttendanceSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  missedProgressReason: {
+    type: String,
+    maxlength: 500
+  },
+  missedProgressReasonSubmittedAt: Date,
+  progressReminderSent: {
+    type: Boolean,
+    default: false
+  },
   
   // Approval workflow
   approvalStatus: {

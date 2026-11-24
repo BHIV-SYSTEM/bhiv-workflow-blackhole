@@ -15,10 +15,14 @@ const testCases = [
   { input: 'blackholeinfiverse90@gmail.com', expected: 'BHIV90' },
   { input: 'bhivtest2@outlook.com', expected: 'BHIV2' },
   { input: 'bhiv20@gmail.com', expected: 'BHIV20' },
+  { input: 'BHIVMSSU0030@outlook.com', expected: 'BHIVMSSU0030' },
+  { input: 'bhivmssu0007@outlook.com', expected: 'BHIVMSSU0007' },
+  { input: 'BHIVMSSU0034', expected: 'BHIVMSSU0034' },
 
   // 3. Already formatted
   { input: 'any@domain.com', existingId: 'BHIV147', expected: 'BHIV147' },
   { input: 'any@domain.com', existingId: 'bhiv20', expected: 'BHIV20' },
+  { input: 'any@domain.com', existingId: 'bhivmssu0018', expected: 'BHIVMSSU0018' },
 
   // 4. Custom existing ID fallback
   { input: 'admin@company.com', existingId: 'EMP-999', expected: 'EMP-999' },

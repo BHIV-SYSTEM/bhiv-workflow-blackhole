@@ -46,6 +46,7 @@ export function WorkHoursManager({ employee }) {
   const [dayEndReportData, setDayEndReportData] = useState(null);
   const [loadingReport, setLoadingReport] = useState(false);
   const [endDayAlert, setEndDayAlert] = useState(null);
+  const [progressMissingReminder, setProgressMissingReminder] = useState(null);
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -288,6 +289,7 @@ export function WorkHoursManager({ employee }) {
     clearWorkHoursStorage(empId);
     setFrozenProgress(null);
     setClientBreakMinutes(0);
+    setProgressMissingReminder(null);
 
     // After successful location validation, try to start/sync the monitoring work session
     setLoading(true);
@@ -317,10 +319,14 @@ export function WorkHoursManager({ employee }) {
 
     toast({
       title: "Work Day Started",
-      description: `Your work day has begun${data?.workLocationType === 'Home' ? ' from home' : ' from office'}!`,
+      description: data?.aimReminder
+        ? `Work day started${data?.workLocationType === 'Home' ? ' from home' : ' from office'}. Reminder: Don't forget to set today's Aim!`
+        : `Your work day has begun${data?.workLocationType === 'Home' ? ' from home' : ' from office'}!`,
     });
-    
-    setShowStartDayDialog(false);
+
+    if (!data?.aimReminder) {
+      setShowStartDayDialog(false);
+    }
     
     // Refresh the work session to get the latest data
     setTimeout(() => {
@@ -496,6 +502,8 @@ export function WorkHoursManager({ employee }) {
       console.log('Monitoring end day response:', response);
       
       if (response && (response.success || response.data?.success)) {
+        const hasProgressReminder = Boolean(response.progressReminder || response.data?.progressReminder);
+        const reminderMsg = response.reminderMessage || response.data?.reminderMessage;
         setWorkSession(null);
         setFrozenProgress(null);
         setClientBreakMinutes(0);
@@ -504,6 +512,19 @@ export function WorkHoursManager({ employee }) {
           title: "✅ Work Day Ended",
           description: response.message || response.data?.message || "Your work session has been completed.",
         });
+
+        if (hasProgressReminder) {
+          const msg =
+            reminderMsg ||
+            "Today's daily progress was not updated. You will be asked for a reason when starting your next day.";
+          setProgressMissingReminder({ show: true, message: msg });
+          toast({
+            title: "📝 Daily Progress Reminder",
+            description: msg,
+          });
+        } else {
+          setProgressMissingReminder(null);
+        }
         
         // Immediately fetch and display the Day-End Performance Report dialog
         fetchDayEndReport();
@@ -519,23 +540,6 @@ export function WorkHoursManager({ employee }) {
     } catch (error) {
       const errorData = error.response?.data || error;
       const errorMessage = errorData?.error || errorData?.message || error.message || '';
-
-      // If progress is not set, stop immediately and ask user to log progress
-      if (errorData?.code === 'PROGRESS_NOT_SET' || errorMessage.includes('PROGRESS_NOT_SET') || errorMessage.includes('daily progress')) {
-        setLoading(false);
-        setEndDayAlert({
-          title: "Daily Progress Update Required",
-          message: "Please submit your daily progress (notes, achievements, or blockers) in the Progress tab before ending your work day.",
-          actionLabel: "Go to Progress Tab",
-          actionPath: "/progress"
-        });
-        toast({
-          title: "❌ Progress Update Required",
-          description: "Please update your daily progress in the Progress tab before ending your work day.",
-          variant: "destructive"
-        });
-        return;
-      }
 
       console.log('Monitoring session end failed, trying attendance system...', error);
       
@@ -566,6 +570,12 @@ export function WorkHoursManager({ employee }) {
           console.log('Attendance end day response:', attendanceResponse);
           
           if (attendanceResponse && (attendanceResponse.success || attendanceResponse.data?.success)) {
+            const hasProgressReminder = Boolean(
+              attendanceResponse.progressReminder || attendanceResponse.data?.progressReminder
+            );
+            const reminderMsg =
+              attendanceResponse.reminderMessage || attendanceResponse.data?.reminderMessage;
+
             setWorkSession(null);
             setFrozenProgress(null);
             setClientBreakMinutes(0);
@@ -574,6 +584,19 @@ export function WorkHoursManager({ employee }) {
               title: "✅ Work Day Ended",
               description: attendanceResponse.message || attendanceResponse.data?.message || "Your work day has been completed.",
             });
+
+            if (hasProgressReminder) {
+              const msg =
+                reminderMsg ||
+                "Today's daily progress was not updated. You will be asked for a reason when starting your next day.";
+              setProgressMissingReminder({ show: true, message: msg });
+              toast({
+                title: "📝 Daily Progress Reminder",
+                description: msg,
+              });
+            } else {
+              setProgressMissingReminder(null);
+            }
             
             // Immediately fetch and display the Day-End Performance Report dialog
             fetchDayEndReport();
@@ -590,26 +613,10 @@ export function WorkHoursManager({ employee }) {
           console.error('Attendance end day error:', attendanceError);
           
           const attendanceErrorData = attendanceError.response?.data || attendanceError;
-          const attendanceErrorMessage = attendanceErrorData?.error || attendanceErrorData?.message || attendanceError.message || '';
           
           setLoading(false);
           
-          // Check for progress not set error (by code OR message content)
-          if (attendanceErrorData?.code === 'PROGRESS_NOT_SET' || 
-              attendanceErrorMessage.includes('set your daily progress') ||
-              attendanceErrorMessage.includes('PROGRESS_NOT_SET')) {
-            setEndDayAlert({
-              title: "Daily Progress Update Required",
-              message: "Please submit your daily progress (notes, achievements, or blockers) in the Progress tab before ending your work day.",
-              actionLabel: "Go to Progress Tab",
-              actionPath: "/progress"
-            });
-            toast({
-              title: "❌ Progress Required",
-              description: "Please set your daily progress before ending your work day.",
-              variant: "destructive"
-            });
-          } else if (attendanceErrorData?.code === 'AIM_NOT_COMPLETED') {
+          if (attendanceErrorData?.code === 'AIM_NOT_COMPLETED') {
             console.log('Aim details from backend:', attendanceErrorData.aim);
             setEndDayAlert({
               title: "Daily Aim Not Completed",
@@ -653,19 +660,7 @@ export function WorkHoursManager({ employee }) {
       setLoading(false);
       
       // Handle other monitoring system errors
-      if (errorData?.code === 'PROGRESS_NOT_SET') {
-        setEndDayAlert({
-          title: "Daily Progress Update Required",
-          message: "Please submit your daily progress in the Progress tab before ending your work session.",
-          actionLabel: "Go to Progress Tab",
-          actionPath: "/progress"
-        });
-        toast({
-          title: "❌ Progress Required",
-          description: "Please set your daily progress before ending your work session.",
-          variant: "destructive"
-        });
-      } else if (errorData?.code === 'NO_ACTIVE_SESSION') {
+      if (errorData?.code === 'NO_ACTIVE_SESSION') {
         // Already ended
         setWorkSession(null);
         toast({
@@ -822,6 +817,38 @@ export function WorkHoursManager({ employee }) {
           </div>
         )}
 
+        {/* Small Non-Blocking Daily Progress Reminder Banner (after End Day) */}
+        {progressMissingReminder?.show && (
+          <div className="bg-amber-500/10 border border-amber-500/35 rounded-lg p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-amber-500">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                <span className="text-xs font-semibold">Progress Reminder</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setProgressMissingReminder(null)}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              {progressMissingReminder.message}
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => navigate('/progress')}
+              className="h-7 px-2.5 text-xs border-amber-500/40 text-amber-500 hover:bg-amber-500/10"
+            >
+              Set Progress
+              <ArrowRight className="h-3 w-3 ml-1" />
+            </Button>
+          </div>
+        )}
+
         {/* Midnight Warning when session is active late at night */}
         {workSession && !isWorkDayCompleted && currentTime.getHours() >= 23 && (
           <div className="bg-orange-500/10 border border-orange-500/30 rounded-lg p-3">
@@ -928,6 +955,7 @@ export function WorkHoursManager({ employee }) {
         onClose={() => setShowDayEndReport(false)}
         reportData={dayEndReportData}
         isLoading={loadingReport}
+        progressReminder={progressMissingReminder}
       />
 
       {/* End-Day Validation / Blocking Alert Dialog */}

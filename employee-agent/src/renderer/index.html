@@ -1160,7 +1160,22 @@
         </div>
       </div>
 
-      <!-- Quick Daily Progress Drawer (Auto-opens if End Day requires daily progress) -->
+      <!-- Strict Previous Day Missing Progress Prompt (Opens on Start Day if previous day missed progress) -->
+      <div id="prevProgressReasonCard" class="quick-progress-card" style="border-color: rgba(239, 68, 68, 0.5); background: rgba(127, 29, 29, 0.25);">
+        <div class="qp-header">
+          <span class="qp-title" style="color: #fca5a5;">Strict Warning: Previous Day Progress Missing</span>
+        </div>
+        <p class="qp-desc" id="prevProgressReasonDesc" style="color: #fecaca;">
+          Why was the previous day's progress not updated? Please enter a valid reason (min 10 characters) to start your day.
+        </p>
+        <textarea id="prevProgressReasonInput" placeholder="Explain why yesterday's progress update was missed..."></textarea>
+        <div class="qp-actions">
+          <button type="button" id="submitPrevReasonStartBtn" class="btn btn-primary">Submit Reason &amp; Start Day</button>
+          <button type="button" id="cancelPrevReasonBtn" class="btn btn-secondary">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Quick Daily Progress Drawer (Optional fallback) -->
       <div id="quickProgressCard" class="quick-progress-card">
         <div class="qp-header">
           <span class="qp-title">Quick Daily Progress Required</span>

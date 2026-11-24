@@ -414,14 +414,15 @@ const sendWelcomeEmail = async (user) => {
 // Register route
 router.post("/register", async (req, res) => {
   const { name, email, password, role, department, branch } = req.body
+  const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : ""
 
   try {
-    if (!isValidOrgEmail(email)) {
+    if (!isValidOrgEmail(normalizedEmail)) {
       return res.status(400).json({ error: ORG_EMAIL_ERROR })
     }
 
     // Check if user already exists
-    const userExists = await User.findOne({ email })
+    const userExists = await User.findOne({ email: normalizedEmail })
     if (userExists) {
       return res.status(400).json({ error: "User already exists" })
     }
@@ -445,7 +446,7 @@ router.post("/register", async (req, res) => {
     // Create new user with branch
     const newUser = new User({
       name,
-      email,
+      email: normalizedEmail,
       password: password,
       role,
       branch: branch || 'blackhole_mumbai', // Default to blackhole_mumbai if not provided
@@ -512,10 +513,15 @@ router.post("/register", async (req, res) => {
 // Login route
 router.post("/login", async (req, res) => {
   const { email, password } = req.body
+  const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : ""
 
   try {
+    if (!normalizedEmail) {
+      return res.status(400).json({ error: "Invalid credentials" })
+    }
+
     // Find the user by email
-    const user = await User.findOne({ email })
+    const user = await User.findOne({ email: normalizedEmail })
     if (!user) {
       return res.status(400).json({ error: "Invalid credentials" })
     }
@@ -645,10 +651,17 @@ router.get("/me", authMiddleware, async (req, res) => {
 // Forgot Password - Request password reset
 router.post("/forgot-password", async (req, res) => {
   const { email } = req.body
+  const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : ""
 
   try {
+    if (!normalizedEmail) {
+      return res.status(200).json({
+        message: "If an account exists with this email, a password reset link has been sent."
+      })
+    }
+
     // Find user by email
-    const user = await User.findOne({ email: email.toLowerCase() })
+    const user = await User.findOne({ email: normalizedEmail })
     if (!user) {
       // Don't reveal if user exists or not for security
       return res.status(200).json({ 

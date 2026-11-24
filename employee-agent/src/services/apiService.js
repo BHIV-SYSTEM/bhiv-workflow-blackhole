@@ -132,9 +132,10 @@ class ApiService {
 
   /**
    * Start the work day
-   * @returns {Promise<Object>} - { success, attendanceId, error }
+   * @param {Object} options - Optional { previousDayProgressReason }
+   * @returns {Promise<Object>} - { success, attendanceId, aimReminder, aimReminderMessage, code, error }
    */
-  async startDay() {
+  async startDay(options = {}) {
     try {
       // Get user ID from stored token
       const userId = this.getUserIdFromToken();
@@ -160,22 +161,25 @@ class ApiService {
       // so the server never rejects the day with LOCATION_TOO_FAR.
       const atOffice = location.source === 'windows' && isNearOffice(location.latitude, location.longitude);
 
-      const locationData = {
-        latitude: location.latitude,
-        longitude: location.longitude,
-        address: location.address,
-        accuracy: location.accuracy,
-        deviceInfo: { deviceType: 'desktop', userAgent: 'Niyantran Desktop Agent' }
-      };
-      if (atOffice) {
-        locationData.workFromHome = false;
-      } else {
-        locationData.workFromHome = true;
-        locationData.homeLocation = {
+        const locationData = {
           latitude: location.latitude,
-          longitude: location.longitude
+          longitude: location.longitude,
+          address: location.address,
+          accuracy: location.accuracy,
+          deviceInfo: { deviceType: 'desktop', userAgent: 'Niyantran Desktop Agent' },
+          ...(options?.previousDayProgressReason
+            ? { previousDayProgressReason: String(options.previousDayProgressReason).trim() }
+            : {})
         };
-      }
+        if (atOffice) {
+          locationData.workFromHome = false;
+        } else {
+          locationData.workFromHome = true;
+          locationData.homeLocation = {
+            latitude: location.latitude,
+            longitude: location.longitude
+          };
+        }
 
       const response = await this.client.post(`/api/attendance/start-day/${userId}`, locationData);
       
@@ -200,18 +204,33 @@ class ApiService {
         return {
           success: true,
           attendanceId,
-          startTime
+          startTime,
+          hasAimToday: Boolean(response.data.hasAimToday),
+          aimReminder: Boolean(response.data.aimReminder),
+          aimReminderMessage: response.data.aimReminderMessage || null
         };
       }
 
       return {
         success: false,
+        code: response.data?.code,
         error: response.data?.error || response.data?.message || 'Failed to start day'
       };
     } catch (error) {
+      const errData = error.response?.data || {};
+      if (errData.code === 'PREVIOUS_DAY_PROGRESS_REASON_REQUIRED') {
+        return {
+          success: false,
+          code: 'PREVIOUS_DAY_PROGRESS_REASON_REQUIRED',
+          error: errData.error || "Why was the previous day's progress not updated?",
+          previousDateLabel: errData.previousDateLabel || null,
+          minLength: errData.minLength || 10
+        };
+      }
       return {
         success: false,
-        error: error.response?.data?.error || error.response?.data?.message || error.message || 'Failed to start day'
+        code: errData.code,
+        error: errData.error || errData.message || error.message || 'Failed to start day'
       };
     }
   }
@@ -276,6 +295,8 @@ class ApiService {
         return {
           success: true,
           message: response.data?.message || 'Work day ended successfully!',
+          progressReminder: Boolean(response.data?.progressReminder || response.data?.data?.progressReminder),
+          reminderMessage: response.data?.reminderMessage || response.data?.data?.reminderMessage || null,
           data: response.data?.data || null
         };
       }
