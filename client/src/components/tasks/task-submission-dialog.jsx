@@ -224,6 +224,14 @@ export function TaskSubmissionDialog({ open, onOpenChange, onSubmit, existingSub
                     <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">
                       {existingSubmission ? "Update your submission details below." : "Provide your submission details. Product context must be approved."}
                     </p>
+                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                      <span className="font-mono text-xs text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-2 py-0.5 rounded font-medium">
+                        Task ID: {task?.task_id || task?._id || "N/A"}
+                      </span>
+                      <span className="font-semibold text-xs text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/40 border border-sky-300 dark:border-sky-800 px-2 py-0.5 rounded">
+                        📦 Product: {targetProductId}
+                      </span>
+                    </div>
                   </div>
                   <div className="ml-4 flex-shrink-0">
                     <SimpleModeToggle />

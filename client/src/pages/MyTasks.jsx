@@ -528,11 +528,12 @@ function MyTasks() {
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
                               <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                                {task.task_id && (
-                                  <Badge variant="outline" className="font-mono text-xs border-primary/30 text-primary bg-primary/5">
-                                    {task.task_id}
-                                  </Badge>
-                                )}
+                                <Badge variant="outline" className="font-mono text-xs border-primary/30 text-primary bg-primary/5">
+                                  {task.task_id || `ID: ${task._id.slice(-6).toUpperCase()}`}
+                                </Badge>
+                                <Badge variant="outline" className="font-semibold text-xs border-sky-500/30 text-sky-600 dark:text-sky-400 bg-sky-500/10">
+                                  📦 {task.product || "BHIV"}
+                                </Badge>
                                 {task.sourceType && (
                                   <Badge variant="secondary" className="text-[11px] font-normal gap-1">
                                     <MessageSquare className="h-3 w-3 text-primary" />

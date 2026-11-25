@@ -541,7 +541,7 @@ router.get('/:id', auth, async (req, res) => {
 // Create new task — assignee must be active and belong to the same branch as the task
 router.post("/", auth, upload.single("document"), async (req, res) => {
   try {
-    const { title, description, department, assignee, priority, status, dependencies, dueDate, user, links } = req.body;
+    const { title, description, department, assignee, priority, status, dependencies, dueDate, user, links, product, task_id } = req.body;
     console.log("Received links", links);
 
     // Validate required fields
@@ -596,9 +596,12 @@ router.post("/", auth, upload.single("document"), async (req, res) => {
       {
         tenantId: selectedBranch,
         capabilityHandler: async () => {
+          const generatedTaskId = task_id || `T-TSK-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
           const task = new Task({
             title,
             description,
+            task_id: generatedTaskId,
+            product: (product || "BHIV").toString().trim().toUpperCase(),
             department: new mongoose.Types.ObjectId(department),
             assignee: new mongoose.Types.ObjectId(assignee),
             priority: priority || "Medium",

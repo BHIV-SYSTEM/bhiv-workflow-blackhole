@@ -458,6 +458,14 @@ export function TasksList({ filters, newTask }) {
                         <TableCell className="py-4">
                           <div>
                             <div className="font-semibold text-foreground">{task.title}</div>
+                            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                              <Badge variant="outline" className="font-mono text-[10px] text-primary border-primary/20 bg-primary/5 font-bold">
+                                {task.task_id || `ID: ${task._id.slice(-6).toUpperCase()}`}
+                              </Badge>
+                              <Badge variant="outline" className="text-[10px] text-sky-600 dark:text-sky-400 border-sky-500/20 bg-sky-500/5 font-semibold">
+                                📦 {task.product || "BHIV"}
+                              </Badge>
+                            </div>
                             {task.description && (
                               <div className="text-sm text-muted-foreground truncate max-w-xs mt-1">{task.description}</div>
                             )}

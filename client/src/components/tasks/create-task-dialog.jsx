@@ -31,6 +31,15 @@ import { formatDate } from "@/lib/dateFormat";
 import { getUserTasks } from "@/lib/user-api";
 import { isValidOrgEmail } from "@/lib/orgEmail";
 
+const STANDARD_TASK_PRODUCTS = [
+  { id: "BHIV", name: "BHIV Enterprise Operating System" },
+  { id: "NIYANTRAN", name: "Niyantran Task Workflow Engine" },
+  { id: "PARIKSHAK", name: "Parikshak Engineering Review Runtime" },
+  { id: "TRINETRA", name: "TRINETRA Monitoring & Activity Engine" },
+  { id: "TANTRA", name: "Tantra Orchestration Bridge" },
+  { id: "VAJRA", name: "Vajra Trust & Provenance Core" },
+];
+
 export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, onTaskCreated }) {
   const { user } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
@@ -55,6 +64,7 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
     description: "",
     department: "",
     assignee: "",
+    product: "BHIV",
     priority: "Medium",
     status: "Pending",
     dependencies: [],
@@ -67,6 +77,7 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
         description: "",
         department: "",
         assignee: defaultAssignee || "",
+        product: "BHIV",
         priority: "Medium",
         status: "Pending",
         dependencies: [],
@@ -353,6 +364,7 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
         if (formData.assignee) ingestFormData.append("assignee", formData.assignee);
         if (formData.department) ingestFormData.append("department", formData.department);
         if (formData.description) ingestFormData.append("content", formData.description);
+        ingestFormData.append("product", formData.product || "BHIV");
 
         console.log("Ingesting task document via SETU Gateway API:", documentFile.name);
 
@@ -385,6 +397,7 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
       formDataToSend.append("description", formData.description.trim() || "No description provided");
       formDataToSend.append("department", formData.department);
       formDataToSend.append("assignee", formData.assignee);
+      formDataToSend.append("product", formData.product || "BHIV");
       formDataToSend.append("priority", formData.priority);
       formDataToSend.append("status", formData.status);
       formDataToSend.append("dependencies", JSON.stringify(formData.dependencies));
@@ -604,6 +617,36 @@ export function CreateTaskDialog({ open, onOpenChange, defaultAssignee = null, o
                     onChange={(e) => handleChange("links", e.target.value)}
                     className="h-12 px-4 bg-background/70 border border-border/70 hover:border-border focus:border-accent focus-visible:ring-4 focus-visible:ring-accent/20 rounded-xl transition-all duration-200 text-base placeholder:text-muted-foreground text-foreground"
                   />
+                </div>
+
+                {/* Product Context Grounding */}
+                <div className="grid gap-2.5">
+                  <Label htmlFor="task-product" className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                    <div className="h-1.5 w-1.5 rounded-full bg-primary shadow-lg shadow-primary/50"></div>
+                    Product Context <span className="text-destructive ml-0.5">*</span>
+                  </Label>
+                  <Select
+                    value={formData.product || "BHIV"}
+                    onValueChange={(val) => setFormData((prev) => ({ ...prev, product: val }))}
+                  >
+                    <SelectTrigger id="task-product" className="h-12 px-4 bg-background/70 border border-border/70 hover:border-border focus:border-primary focus:ring-4 focus:ring-primary/20 rounded-xl transition-all duration-200 text-base font-medium text-foreground">
+                      <SelectValue placeholder="Select target product..." />
+                    </SelectTrigger>
+                    <SelectContent className="bg-popover/95 backdrop-blur-xl border border-border/70 rounded-2xl shadow-2xl max-h-64 overflow-y-auto">
+                      {STANDARD_TASK_PRODUCTS.map((prod) => (
+                        <SelectItem
+                          key={prod.id}
+                          value={prod.id}
+                          className="my-1 mx-2 px-3 py-2.5 rounded-lg hover:bg-primary/15 cursor-pointer transition-all duration-200 font-medium text-foreground"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold font-mono text-primary">{prod.id}</span>
+                            <span className="text-muted-foreground">— {prod.name}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 {/* Department and Assignee Row */}

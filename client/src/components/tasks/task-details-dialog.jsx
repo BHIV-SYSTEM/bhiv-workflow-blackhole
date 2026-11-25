@@ -53,9 +53,14 @@ export function TaskDetailsDialog({ task, open, onOpenChange, onEditTask }) {
               <DialogTitle className="text-xl font-bold tracking-tight text-foreground leading-snug break-words">
                 {task.title}
               </DialogTitle>
-              <DialogDescription className="text-xs text-muted-foreground font-mono">
-                ID: {task._id || task.id}
-              </DialogDescription>
+              <div className="flex items-center gap-2 flex-wrap pt-0.5">
+                <span className="text-xs text-muted-foreground font-mono bg-muted/60 px-2 py-0.5 rounded">
+                  Task ID: {task.task_id || task._id || task.id}
+                </span>
+                <Badge variant="outline" className="border-sky-500/30 text-sky-600 dark:text-sky-400 bg-sky-500/10 font-semibold text-xs">
+                  📦 Product: {task.product || "BHIV"}
+                </Badge>
+              </div>
             </div>
 
             {onEditTask && (

@@ -939,11 +939,12 @@ function TaskDetails() {
           <h1 className="text-xl sm:text-2xl font-heading font-bold tracking-tight truncate">{displayTitle}</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {task.task_id && (
-            <Badge variant="outline" className="font-mono text-xs border-primary/30 text-primary bg-primary/5">
-              {task.task_id}
-            </Badge>
-          )}
+          <Badge variant="outline" className="font-mono text-xs border-primary/30 text-primary bg-primary/5">
+            {task.task_id || `ID: ${task._id}`}
+          </Badge>
+          <Badge variant="outline" className="font-semibold text-xs border-sky-500/30 text-sky-600 dark:text-sky-400 bg-sky-500/10">
+            📦 Product: {task.product || "BHIV"}
+          </Badge>
           <Badge className={getStatusColor(task.status)}>{getTaskStatusLabel(task.status)}</Badge>
           <Badge className={getPriorityColor(task.priority)}>{task.priority}</Badge>
           {task.department && (
@@ -1538,6 +1539,18 @@ function TaskDetails() {
               <CardTitle>Task Metadata</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="flex items-center gap-2">
+                <FileCode className="h-4 w-4 text-primary" />
+                <span className="text-sm font-mono font-medium">
+                  Task ID: {task.task_id || task._id}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Layers className="h-4 w-4 text-sky-500" />
+                <span className="text-sm font-semibold text-sky-600 dark:text-sky-400">
+                  Product: {task.product || "BHIV"}
+                </span>
+              </div>
               <div className="flex items-center gap-2">
                 <BarChart3 className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm">
