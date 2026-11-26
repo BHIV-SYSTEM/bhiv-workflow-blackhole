@@ -137,12 +137,6 @@ router.post("/exchange", async (req, res) => {
     });
   }
 
-  const fallbackFormatted = (existingUser.formattedEmployeeId && existingUser.formattedEmployeeId !== "N/A") ? existingUser.formattedEmployeeId : null;
-  const resolvedCanonical = (existingUser.canonicalEmployeeId && existingUser.canonicalEmployeeId !== "N/A" ? existingUser.canonicalEmployeeId : null) || fallbackFormatted;
-  const resolvedEmpId = (existingUser.employeeId && existingUser.employeeId !== "N/A" ? existingUser.employeeId : null) || resolvedCanonical;
-  const resolvedTenant = existingUser.tenantId || "ten-bhiv-core";
-  const resolvedOrg = existingUser.organization || "BHIV";
-
   // User already has an account on Niyantran: Open their EXACT existing account, role & tasks!
   const payload = {
     id: String(existingUser._id),
@@ -152,10 +146,6 @@ router.post("/exchange", async (req, res) => {
     role: existingUser.role, // Exact role from existing account (User, Manager, Admin, etc.)
     department: existingUser.department,
     branch: existingUser.branch || "blackhole_mumbai",
-    employeeId: resolvedEmpId,
-    canonicalEmployeeId: resolvedCanonical,
-    tenantId: resolvedTenant,
-    organization: resolvedOrg,
     sso: true,
     is_guest: false,
     blackhole_user_id: identity.user_id,
@@ -169,10 +159,6 @@ router.post("/exchange", async (req, res) => {
       role: payload.role,
       department: payload.department,
       branch: payload.branch,
-      employeeId: payload.employeeId,
-      canonicalEmployeeId: payload.canonicalEmployeeId,
-      tenantId: payload.tenantId,
-      organization: payload.organization,
       sso: true,
       is_guest: payload.is_guest,
     },

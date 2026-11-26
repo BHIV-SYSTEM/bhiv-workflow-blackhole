@@ -23,7 +23,6 @@ const jwt = require("jsonwebtoken");
 
 const JWT_SECRET = process.env.JWT_SECRET || "blackhole-e2e-super-secret-key-2026";
 process.env.JWT_SECRET = JWT_SECRET;
-process.env.PARIKSHAK_URL = process.env.PARIKSHAK_URL || "http://127.0.0.1:59999";
 
 const ProductContext = require("../models/ProductContext");
 const User = require("../models/User");
@@ -106,9 +105,6 @@ describe("Feature: Knowledge Admin Context Deletion & Soft-Withdrawal", () => {
     await ProductContext.deleteMany({
       employeeId: { $in: ["BHIV-EMP-101", "SIPS-EMP-101"] }
     });
-    if (mongoose.connection.readyState !== 0) {
-      await mongoose.disconnect();
-    }
   });
 
   describe("1. Employee Ownership & Deletion Authorization", () => {
@@ -203,44 +199,22 @@ describe("Feature: Knowledge Admin Context Deletion & Soft-Withdrawal", () => {
       expect(res.body.context.previousStatus).toBe("REJECTED");
     });
 
-    test("Owner CAN delete/withdraw their own APPROVED or ACTIVE context without Governor approval", async () => {
+    test("Regular employee CANNOT delete an APPROVED context (403 Forbidden)", async () => {
       const res = await request(app)
         .delete(`/api/knowledge/contexts/${approvedCtxId}`)
         .set("Authorization", `Bearer ${employeeToken}`)
-        .send({ reason: "Owner withdrawing previously approved context" });
-
-      expect(res.status).toBe(200);
-      expect(res.body.status).toBe("SUCCESS");
-      expect(res.body.context.status).toBe("DELETED");
-      expect(res.body.context.isDeleted).toBe(true);
-      expect(res.body.context.previousStatus).toBe("APPROVED");
-
-      const dbDoc = await ProductContext.findOne({ contextId: approvedCtxId });
-      expect(dbDoc.status).toBe("DELETED");
-      expect(dbDoc.isDeleted).toBe(true);
-    });
-
-    test("Same-tenant non-owner non-admin CANNOT delete another employee's context (403 Forbidden)", async () => {
-      const peerToken = generateToken({
-        _id: new mongoose.Types.ObjectId().toString(),
-        name: "Peer User",
-        email: "peer@bhiv.com",
-        role: "User",
-        tenantId: "ten-bhiv-core",
-        canonicalEmployeeId: "BHIV-EMP-999",
-        employeeId: "BHIV999"
-      });
-
-      const res = await request(app)
-        .delete(`/api/knowledge/contexts/${approvedCtxId}`)
-        .set("Authorization", `Bearer ${peerToken}`)
-        .send({ reason: "Unauthorized peer deletion attempt" });
+        .send({ reason: "Attempting unauthorized deletion" });
 
       expect(res.status).toBe(403);
-      expect(res.body.error).toMatch(/Unauthorized/i);
+      expect(res.body.error).toMatch(/Governor approval before removal/i);
+
+      // Verify still approved in DB
+      const dbDoc = await ProductContext.findOne({ contextId: approvedCtxId });
+      expect(dbDoc.status).toBe("APPROVED");
+      expect(dbDoc.isDeleted).toBe(false);
     });
 
-    test("Authorized Governor/Admin/Manager CAN delete/withdraw any context", async () => {
+    test("Authorized Governor CAN delete/withdraw an APPROVED context", async () => {
       const res = await request(app)
         .delete(`/api/knowledge/contexts/${approvedCtxId}`)
         .set("Authorization", `Bearer ${governorToken}`)
@@ -361,55 +335,40 @@ describe("Feature: Knowledge Admin Context Deletion & Soft-Withdrawal", () => {
       await ProductContext.deleteMany({ employeeId: "BHIV-EMP-101" });
     });
 
-    test("Withdrawn context is immediately excluded from GET /contexts and GET /my-contexts", async () => {
-      // 1. Initially appears in GET /contexts and GET /my-contexts
-      let listRes = await request(app)
-        .get("/api/knowledge/contexts?employeeId=BHIV-EMP-101")
+    test("Withdrawn context is immediately removed from Governor pending-approval queue", async () => {
+      // 1. Initially appears in pending queue
+      let qRes = await request(app)
+        .get("/api/knowledge/contexts/pending-approval")
         .set("Authorization", `Bearer ${governorToken}`);
-      expect(listRes.status).toBe(200);
-      expect(listRes.body.items.some(c => c.contextId === pendingCtxId)).toBe(true);
-
-      let myRes = await request(app)
-        .get("/api/knowledge/my-contexts")
-        .set("Authorization", `Bearer ${employeeToken}`);
-      expect(myRes.status).toBe(200);
-      expect(myRes.body.contexts.some(c => c.contextId === pendingCtxId)).toBe(true);
+      expect(qRes.status).toBe(200);
+      let found = qRes.body.items.some(c => c.contextId === pendingCtxId);
+      expect(found).toBe(true);
 
       // 2. Withdraw context
       await request(app)
         .delete(`/api/knowledge/contexts/${pendingCtxId}`)
         .set("Authorization", `Bearer ${employeeToken}`)
-        .send({ reason: "Retracting context" });
+        .send({ reason: "Retracting from queue" });
 
-      // 3. No longer appears in GET /contexts or GET /my-contexts
-      listRes = await request(app)
-        .get("/api/knowledge/contexts?employeeId=BHIV-EMP-101")
+      // 3. No longer appears in pending queue
+      qRes = await request(app)
+        .get("/api/knowledge/contexts/pending-approval")
         .set("Authorization", `Bearer ${governorToken}`);
-      expect(listRes.status).toBe(200);
-      expect(listRes.body.items.some(c => c.contextId === pendingCtxId)).toBe(false);
-
-      myRes = await request(app)
-        .get("/api/knowledge/my-contexts")
-        .set("Authorization", `Bearer ${employeeToken}`);
-      expect(myRes.status).toBe(200);
-      expect(myRes.body.contexts.some(c => c.contextId === pendingCtxId)).toBe(false);
+      expect(qRes.status).toBe(200);
+      found = qRes.body.items.some(c => c.contextId === pendingCtxId);
+      expect(found).toBe(false);
     });
 
-    test("Pre-submission validation treats non-deleted context as active and deleted context as MISSING with non-blocking warning", async () => {
-      // 1. Before deletion: non-deleted legacy PENDING_APPROVAL context is treated as ACTIVE and non-blocking
+    test("Pre-submission validation blocks deleted contexts and prompts ADD_CONTEXT", async () => {
+      // 1. Before deletion: status is PENDING_APPROVAL
       let valResult = await validateContextInternal({
         productId: "BHIV-GATE",
         employeeId: "BHIV-EMP-101",
         tenantId: "ten-bhiv-core"
       });
-      expect(valResult.data.status).toBe("ACTIVE");
-      expect(valResult.data.rawStatus).toBe("PENDING_APPROVAL");
-      expect(valResult.data.hasContext).toBe(true);
-      expect(valResult.data.active).toBe(true);
-      expect(valResult.data.contextWarning).toBe(false);
-      expect(valResult.data.canSubmit).toBe(true);
-      expect(valResult.data.allowed).toBe(true);
-      expect(valResult.data.action).toBe("SUBMIT");
+      expect(valResult.data.status).toBe("PENDING_APPROVAL");
+      expect(valResult.data.canSubmit).toBe(false);
+      expect(valResult.data.action).toBe("AWAIT_APPROVAL");
 
       // 2. Delete context
       await request(app)
@@ -417,18 +376,15 @@ describe("Feature: Knowledge Admin Context Deletion & Soft-Withdrawal", () => {
         .set("Authorization", `Bearer ${employeeToken}`)
         .send({ reason: "Withdrawn" });
 
-      // 3. After deletion: status is MISSING (Case A) with warning, yet still non-blocking (canSubmit: true, allowed: true)
+      // 3. After deletion: status is MISSING (Case A) with ADD_CONTEXT action
       valResult = await validateContextInternal({
         productId: "BHIV-GATE",
         employeeId: "BHIV-EMP-101",
         tenantId: "ten-bhiv-core"
       });
       expect(valResult.data.status).toBe("MISSING");
-      expect(valResult.data.hasContext).toBe(false);
-      expect(valResult.data.active).toBe(false);
-      expect(valResult.data.contextWarning).toBe(true);
-      expect(valResult.data.canSubmit).toBe(true);
-      expect(valResult.data.allowed).toBe(true);
+      expect(valResult.data.canSubmit).toBe(false);
+      expect(valResult.data.allowed).toBe(false);
       expect(valResult.data.action).toBe("ADD_CONTEXT");
     });
   });
@@ -473,7 +429,7 @@ describe("Feature: Knowledge Admin Context Deletion & Soft-Withdrawal", () => {
         });
 
       expect(freshRes.status).toBe(200);
-      expect(freshRes.body.status).toBe("ACTIVE");
+      expect(freshRes.body.status).toBe("PENDING_APPROVAL");
       expect(freshRes.body.isDeleted).toBe(false);
       expect(freshRes.body.version).toBe("v1.1");
       expect(freshRes.body.content).toContain("Fresh rewritten v2.0 content");
@@ -485,7 +441,7 @@ describe("Feature: Knowledge Admin Context Deletion & Soft-Withdrawal", () => {
       });
       expect(dbDoc.isDeleted).toBe(false);
       expect(dbDoc.deletedAt).toBeNull();
-      expect(dbDoc.status).toBe("ACTIVE");
+      expect(dbDoc.status).toBe("PENDING_APPROVAL");
       expect(dbDoc.versionHistory.length).toBeGreaterThanOrEqual(2);
     });
   });
@@ -529,23 +485,20 @@ describe("Feature: Knowledge Admin Context Deletion & Soft-Withdrawal", () => {
       expect(second.body.error).toMatch(/already deleted or withdrawn/i);
     });
 
-    test("PUT on a soft-deleted context reactivates it as ACTIVE with version history preserved", async () => {
+    test("Governor cannot approve an already deleted context (409 Conflict)", async () => {
       // Delete context
       await request(app)
         .delete(`/api/knowledge/contexts/${ctxId}`)
         .set("Authorization", `Bearer ${employeeToken}`)
-        .send({ reason: "Deleted before update" });
+        .send({ reason: "Deleted before approval" });
 
-      const putRes = await request(app)
-        .put(`/api/knowledge/contexts/${ctxId}`)
-        .set("Authorization", `Bearer ${employeeToken}`)
-        .send({ content: "Reactivated content via PUT" });
+      // Governor tries to approve it concurrently
+      const approveRes = await request(app)
+        .post(`/api/knowledge/contexts/${ctxId}/approve`)
+        .set("Authorization", `Bearer ${governorToken}`);
 
-      expect(putRes.status).toBe(200);
-      expect(putRes.body.status).toBe("ACTIVE");
-      expect(putRes.body.isDeleted).toBe(false);
-      expect(putRes.body.deletedAt).toBeNull();
-      expect(putRes.body.version).toBe("v1.1");
+      expect(approveRes.status).toBe(409);
+      expect(approveRes.body.error).toMatch(/Cannot approve a deleted or withdrawn context/i);
     });
   });
 });

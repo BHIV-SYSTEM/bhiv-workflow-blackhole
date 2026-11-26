@@ -13,59 +13,25 @@ const axios = require('axios');
 const path = require('path');
 const fs = require('fs');
 
-const mongoose = require('mongoose');
 const auth = require('../middleware/auth');
 const ProductContext = require('../models/ProductContext');
 const User = require('../models/User');
 const Department = require('../models/Department');
-const { withdrawKnowledgeContext } = require('../services/parikshakService');
 
-const getParikshakBaseUrl = () =>
-    (process.env.PARIKSHAK_URL || 'https://parikshak.blackholeinfiverse.com')
-        .replace(/\/parikshak\/review\/?$/, '')
-        .replace(/\/$/, '');
-
-const PARIKSHAK_URL = getParikshakBaseUrl();
+const PARIKSHAK_URL = (process.env.PARIKSHAK_URL || 'https://parikshak.blackholeinfiverse.com').replace(/\/$/, '');
 const PARIKSHAK_TOKEN = process.env.PARIKSHAK_TOKEN || '';
-const PARIKSHAK_API_KEY = process.env.PARIKSHAK_API_KEY || process.env.NIYANTRAN_API_KEY || '';
 
 const getAxiosConfig = () => {
     const config = {
         headers: { 'Content-Type': 'application/json' },
-        timeout: 4500,
+        timeout: 15000,
         validateStatus: (status) => status < 600
     };
-    if (PARIKSHAK_API_KEY) {
-        config.headers['x-api-key'] = PARIKSHAK_API_KEY;
-    }
     if (PARIKSHAK_TOKEN) {
         config.headers['Authorization'] = `Bearer ${PARIKSHAK_TOKEN}`;
     }
     return config;
 };
-
-async function syncContextToParikshak(ctx, source = 'Niyantran_Direct_Sync') {
-    if (!ctx) return null;
-    try {
-        const baseUrl = getParikshakBaseUrl();
-        const payload = {
-            product_id: ctx.productId,
-            employee_id: ctx.employeeId,
-            individual_id: ctx.employeeId,
-            context_id: ctx.contextId,
-            version: ctx.version || 'v1.0',
-            content: ctx.content,
-            status: ctx.status || 'ACTIVE',
-            dataset_type: 'individual_context',
-            source
-        };
-        const resp = await axios.post(`${baseUrl}/api/v1/knowledge/ingest`, payload, getAxiosConfig());
-        return resp.data;
-    } catch (apiErr) {
-        console.warn(`[PARIKSHAK_INGEST] Non-blocking sync warning (${source}):`, apiErr.message);
-        return null;
-    }
-}
 
 const AUTHORIZED_GOVERNOR_EMAILS = [
     'akash@blackhole.ai',
@@ -129,155 +95,6 @@ function isGovernorCaller(user) {
 }
 
 /**
- * Helper aligned with KnowledgeAdmin.jsx (`Governor`, `Admin`, `Manager`).
- * Grants privileged directory & per-employee context CRUD access.
- */
-function isAdminCaller(user) {
-    if (isGovernorCaller(user)) return true;
-    if (!user) return false;
-    const role = (user.role || '').trim().toLowerCase();
-    return role === 'admin' || role === 'manager' || role === 'governor';
-}
-
-/**
- * Resolves the authenticated caller's canonical identity with DB User fallback
- * so older JWTs lacking employeeId/canonicalEmployeeId/tenantId never collide on a shared literal.
- */
-async function resolveCallerIdentity(reqUser) {
-    const rawUserId = reqUser?._id || reqUser?.id || null;
-    const userId = rawUserId ? String(rawUserId).trim() : null;
-    let canonicalEmployeeId = (reqUser?.canonicalEmployeeId && reqUser.canonicalEmployeeId !== 'N/A')
-        ? String(reqUser.canonicalEmployeeId).trim()
-        : '';
-    let employeeId = (reqUser?.employeeId && reqUser.employeeId !== 'N/A')
-        ? String(reqUser.employeeId).trim()
-        : '';
-    let tenantId = reqUser?.tenantId ? String(reqUser.tenantId).trim() : '';
-    let name = reqUser?.name ? String(reqUser.name).trim() : '';
-    let email = reqUser?.email ? String(reqUser.email).trim().toLowerCase() : '';
-
-    if (userId && (!canonicalEmployeeId || !employeeId || !tenantId || !name || !email)) {
-        try {
-            if (mongoose.Types.ObjectId.isValid(userId)) {
-                const dbUser = await User.findById(userId)
-                    .select('canonicalEmployeeId employeeId tenantId name email')
-                    .lean();
-                if (dbUser) {
-                    if (!canonicalEmployeeId && dbUser.canonicalEmployeeId && dbUser.canonicalEmployeeId !== 'N/A') {
-                        canonicalEmployeeId = String(dbUser.canonicalEmployeeId).trim();
-                    }
-                    if (!employeeId && dbUser.employeeId && dbUser.employeeId !== 'N/A') {
-                        employeeId = String(dbUser.employeeId).trim();
-                    }
-                    if (!tenantId && dbUser.tenantId) {
-                        tenantId = String(dbUser.tenantId).trim();
-                    }
-                    if (!name && dbUser.name) {
-                        name = String(dbUser.name).trim();
-                    }
-                    if (!email && dbUser.email) {
-                        email = String(dbUser.email).trim().toLowerCase();
-                    }
-                }
-            }
-        } catch (err) {
-            console.warn('[KNOWLEDGE_IDENTITY] User.findById fallback error:', err.message);
-        }
-    }
-
-    const effectiveEmployeeId = (canonicalEmployeeId || employeeId || (userId ? `USR-${userId}` : 'USR-ANON')).trim();
-    const effectiveTenantId = tenantId || 'ten-bhiv-core';
-
-    return {
-        userId,
-        canonicalEmployeeId: canonicalEmployeeId || null,
-        employeeId: employeeId || null,
-        effectiveEmployeeId,
-        tenantId: effectiveTenantId,
-        name: name || effectiveEmployeeId,
-        email
-    };
-}
-
-/**
- * Resolves a target employee for admin per-employee context CRUD.
- * Ensures `user` ObjectId & `employeeId` belong to the target employee (never the admin).
- */
-async function resolveTargetEmployeeForAdmin({ targetUserId, userId, employeeId, tenantId }, caller) {
-    const requestedUserId = (targetUserId || userId || '').toString().trim();
-    const requestedEmpId = (employeeId || '').toString().trim();
-    const requestedTenant = (tenantId || '').toString().trim();
-
-    let targetUser = null;
-    if (requestedUserId) {
-        if (!mongoose.Types.ObjectId.isValid(requestedUserId)) {
-            return { error: 'Target employee not found', status: 404 };
-        }
-        targetUser = await User.findById(requestedUserId)
-            .select('_id name email canonicalEmployeeId employeeId tenantId')
-            .lean();
-        if (!targetUser) {
-            return { error: 'Target employee not found', status: 404 };
-        }
-    } else if (requestedEmpId) {
-        const escapedEmp = requestedEmpId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const empQuery = {
-            $or: [
-                { canonicalEmployeeId: new RegExp(`^${escapedEmp}$`, 'i') },
-                { employeeId: new RegExp(`^${escapedEmp}$`, 'i') }
-            ]
-        };
-        if (requestedTenant) {
-            targetUser = await User.findOne({ ...empQuery, tenantId: requestedTenant })
-                .select('_id name email canonicalEmployeeId employeeId tenantId')
-                .lean();
-        }
-        if (!targetUser) {
-            targetUser = await User.findOne(empQuery)
-                .select('_id name email canonicalEmployeeId employeeId tenantId')
-                .lean();
-        }
-    }
-
-    if (targetUser) {
-        const targetCanonical = (targetUser.canonicalEmployeeId && targetUser.canonicalEmployeeId !== 'N/A')
-            ? String(targetUser.canonicalEmployeeId).trim()
-            : '';
-        const targetPlain = (targetUser.employeeId && targetUser.employeeId !== 'N/A')
-            ? String(targetUser.employeeId).trim()
-            : '';
-        const resolvedEmp = targetCanonical || targetPlain || requestedEmpId || `USR-${String(targetUser._id)}`;
-        return {
-            userObjectId: targetUser._id,
-            employeeId: resolvedEmp,
-            tenantId: requestedTenant || targetUser.tenantId || caller.tenantId || 'ten-bhiv-core',
-            name: targetUser.name || resolvedEmp,
-            email: targetUser.email || '',
-            targetUser
-        };
-    }
-
-    return {
-        userObjectId: caller.userId,
-        employeeId: requestedEmpId || caller.effectiveEmployeeId,
-        tenantId: requestedTenant || caller.tenantId || 'ten-bhiv-core',
-        name: caller.name,
-        email: caller.email,
-        targetUser: null
-    };
-}
-
-function getCallerEmployeeIdCandidates(caller) {
-    return [
-        caller?.canonicalEmployeeId,
-        caller?.employeeId,
-        caller?.effectiveEmployeeId
-    ]
-        .filter(Boolean)
-        .map((v) => String(v).toUpperCase().trim());
-}
-
-/**
  * Increment a semantic version string.
  * Examples: 'v1.0' -> 'v1.1', '1.0' -> '1.1', 'v2' -> 'v2.1', 'vNEXT-Build-10' -> 'vNEXT-Build-11'
  */
@@ -325,13 +142,12 @@ router.get('/contexts', auth, async (req, res) => {
             status,
             search,
             page = 1,
-            limit = 1000
+            limit = 10
         } = req.query;
 
         const filter = {};
         if (req.query.includeDeleted !== 'true') {
             filter.isDeleted = { $ne: true };
-            filter.status = { $ne: 'DELETED' };
         }
 
         // Product filter (case-insensitive)
@@ -348,27 +164,23 @@ router.get('/contexts', auth, async (req, res) => {
 
         // Status filter
         if (status && status !== 'ALL') {
-            const normalizedStatus = status.trim().toUpperCase();
-            if (req.query.includeDeleted === 'true' || normalizedStatus !== 'DELETED') {
-                filter.status = normalizedStatus;
-            }
+            filter.status = status.trim().toUpperCase();
         }
 
         // Multi-tenant boundary check
-        const isPriv = isAdminCaller(req.user);
-        const caller = await resolveCallerIdentity(req.user);
-        const callerTenant = caller.tenantId;
+        const isGov = isGovernorCaller(req.user);
+        const callerTenant = req.user?.tenantId || 'ten-bhiv-core';
 
         if (tenantId || tenant_id) {
             const requestedTenant = (tenantId || tenant_id).trim();
-            if (!isPriv && requestedTenant !== callerTenant) {
+            if (!isGov && requestedTenant !== callerTenant) {
                 return res.status(403).json({
                     error: "Cross-tenant context query forbidden",
                     detail: "Cross-tenant context query forbidden"
                 });
             }
             filter.tenantId = requestedTenant;
-        } else if (!isPriv) {
+        } else if (!isGov) {
             filter.tenantId = callerTenant;
         }
 
@@ -384,20 +196,15 @@ router.get('/contexts', auth, async (req, res) => {
             ];
         }
 
-        const rawLimit = String(limit ?? '').trim().toLowerCase();
-        const isUnbounded = rawLimit === 'all' || rawLimit === '0';
         const pageNum = Math.max(1, parseInt(page, 10) || 1);
-        const limitNum = isUnbounded ? 0 : Math.max(1, parseInt(limit, 10) || 1000);
-        const skip = isUnbounded ? 0 : (pageNum - 1) * limitNum;
-
-        let queryBuilder = ProductContext.find(filter)
-            .sort({ updatedAt: -1, submittedAt: -1 });
-        if (!isUnbounded) {
-            queryBuilder = queryBuilder.skip(skip).limit(limitNum);
-        }
+        const limitNum = Math.max(1, parseInt(limit, 10) || 10);
+        const skip = (pageNum - 1) * limitNum;
 
         const [items, total] = await Promise.all([
-            queryBuilder
+            ProductContext.find(filter)
+                .sort({ updatedAt: -1, submittedAt: -1 })
+                .skip(skip)
+                .limit(limitNum)
                 .populate('user', 'name email role department employeeId canonicalEmployeeId')
                 .lean(),
             ProductContext.countDocuments(filter)
@@ -407,11 +214,43 @@ router.get('/contexts', auth, async (req, res) => {
             items,
             total,
             page: pageNum,
-            limit: isUnbounded ? total : limitNum,
-            totalPages: isUnbounded ? 1 : (Math.ceil(total / limitNum) || 1)
+            limit: limitNum,
+            totalPages: Math.ceil(total / limitNum) || 1
         });
     } catch (err) {
         console.error("Error in GET /contexts:", err);
+        return res.status(500).json({ error: err.message, detail: err.message });
+    }
+});
+
+/**
+ * GET /contexts/pending-approval
+ * Returns contexts awaiting Governor approval. Excludes deleted contexts.
+ */
+router.get('/contexts/pending-approval', auth, async (req, res) => {
+    try {
+        const callerTenant = req.user?.tenantId || 'ten-bhiv-core';
+        const isGov = isGovernorCaller(req.user);
+        const filter = {
+            status: 'PENDING_APPROVAL',
+            isDeleted: { $ne: true }
+        };
+        if (!isGov) {
+            filter.tenantId = callerTenant;
+        }
+
+        const items = await ProductContext.find(filter)
+            .sort({ updatedAt: -1, submittedAt: -1 })
+            .populate('user', 'name email role department employeeId canonicalEmployeeId')
+            .lean();
+
+        return res.json({
+            status: "SUCCESS",
+            count: items.length,
+            items
+        });
+    } catch (err) {
+        console.error("Error in GET /contexts/pending-approval:", err);
         return res.status(500).json({ error: err.message, detail: err.message });
     }
 });
@@ -433,9 +272,8 @@ router.get('/contexts/:id', auth, async (req, res) => {
         }
 
         // Cross-tenant boundary check
-        const isPriv = isAdminCaller(req.user);
-        const caller = await resolveCallerIdentity(req.user);
-        if (!isPriv && ctx.tenantId !== caller.tenantId) {
+        const isGov = isGovernorCaller(req.user);
+        if (!isGov && ctx.tenantId !== (req.user?.tenantId || 'ten-bhiv-core')) {
             return res.status(403).json({ error: "Cross-tenant context access forbidden", detail: "Cross-tenant context access forbidden" });
         }
 
@@ -448,7 +286,7 @@ router.get('/contexts/:id', auth, async (req, res) => {
 
 /**
  * POST /contexts
- * Creates a new product context or updates an existing one (immediately ACTIVE without approval).
+ * Creates a new product context or updates an existing one (resets to PENDING_APPROVAL).
  */
 router.post('/contexts', auth, async (req, res) => {
     try {
@@ -459,9 +297,6 @@ router.post('/contexts', auth, async (req, res) => {
             content,
             summary,
             employeeId,
-            employee_id,
-            targetUserId,
-            userId,
             tenantId
         } = req.body;
 
@@ -473,35 +308,31 @@ router.post('/contexts', auth, async (req, res) => {
             });
         }
 
-        const caller = await resolveCallerIdentity(req.user);
-        const isPriv = isAdminCaller(req.user);
+        const callerCanonicalEmp = req.user?.canonicalEmployeeId || req.user?.employeeId || 'EMP-BHIV-USR';
+        const isGov = isGovernorCaller(req.user);
+        const targetEmployeeId = (isGov && employeeId) ? employeeId.trim() : callerCanonicalEmp;
+        const targetTenantId = (isGov && tenantId) ? tenantId.trim() : (req.user?.tenantId || 'ten-bhiv-core');
+        const effectiveProductName = (productName || effectiveProductId).trim();
+        const effectiveSummary = (summary || (content.length > 300 ? content.substring(0, 300) + '...' : content)).trim();
 
-        let targetEmployeeId = caller.effectiveEmployeeId;
-        let targetUserObjectId = caller.userId;
-        let targetTenantId = caller.tenantId;
+        // 1. Prevent duplicate identical submission if already approved
+        const existingApproved = await ProductContext.findOne({
+            employeeId: targetEmployeeId,
+            productId: effectiveProductId,
+            tenantId: targetTenantId,
+            status: 'APPROVED',
+            isDeleted: { $ne: true },
+            content: content.trim()
+        });
 
-        const requestedEmp = employeeId || employee_id;
-        const requestedUid = targetUserId || userId;
-        if (isPriv && (requestedUid || requestedEmp || tenantId)) {
-            const targetResolved = await resolveTargetEmployeeForAdmin(
-                { targetUserId, userId, employeeId: requestedEmp, tenantId },
-                caller
-            );
-            if (targetResolved.error) {
-                return res.status(targetResolved.status || 404).json({
-                    error: targetResolved.error,
-                    detail: targetResolved.error
-                });
-            }
-            targetEmployeeId = targetResolved.employeeId;
-            targetUserObjectId = targetResolved.userObjectId;
-            targetTenantId = targetResolved.tenantId;
+        if (existingApproved) {
+            return res.status(409).json({
+                error: "Identical approved context already exists for this product",
+                detail: "Identical approved context already exists for this product"
+            });
         }
 
-        const effectiveProductName = (productName || effectiveProductId).trim();
-        const effectiveSummary = (summary || (content.trim().length > 300 ? content.trim().substring(0, 300) + '...' : content.trim())).trim();
-
-        // Check if a context record already exists for this (employeeId, productId, tenantId)
+        // 2. Check if a context record already exists for this (employeeId, productId, tenantId)
         let existingDoc = await ProductContext.findOne({
             employeeId: targetEmployeeId,
             productId: effectiveProductId,
@@ -527,10 +358,7 @@ router.post('/contexts', auth, async (req, res) => {
             existingDoc.version = newVersion;
             existingDoc.content = content.trim();
             existingDoc.summary = effectiveSummary;
-            existingDoc.status = 'ACTIVE';
-            if (targetUserObjectId) {
-                existingDoc.user = targetUserObjectId;
-            }
+            existingDoc.status = 'PENDING_APPROVAL'; // Reset to pending approval per requirement
             existingDoc.isDeleted = false;
             existingDoc.deletedAt = null;
             existingDoc.deletedBy = null;
@@ -545,7 +373,6 @@ router.post('/contexts', auth, async (req, res) => {
             existingDoc.updatedAt = now;
 
             await existingDoc.save();
-            await syncContextToParikshak(existingDoc, 'Niyantran_Direct_Update');
 
             if (req.io) {
                 req.io.emit('knowledge:context:updated', {
@@ -553,22 +380,22 @@ router.post('/contexts', auth, async (req, res) => {
                     employeeId: targetEmployeeId,
                     productId: effectiveProductId,
                     version: newVersion,
-                    status: 'ACTIVE'
+                    status: 'PENDING_APPROVAL'
                 });
             }
 
             return res.status(200).json(existingDoc);
         } else {
-            // Create brand new product context (immediately ACTIVE)
+            // Create brand new product context
             const newDoc = new ProductContext({
                 contextId: `CTX-${crypto.randomBytes(4).toString('hex').toUpperCase()}`,
                 tenantId: targetTenantId,
                 employeeId: targetEmployeeId,
-                user: targetUserObjectId,
+                user: req.user?._id || req.user?.id,
                 productId: effectiveProductId,
                 productName: effectiveProductName,
                 version: 'v1.0',
-                status: 'ACTIVE',
+                status: 'PENDING_APPROVAL',
                 content: content.trim(),
                 summary: effectiveSummary,
                 rejectionReason: null,
@@ -587,7 +414,6 @@ router.post('/contexts', auth, async (req, res) => {
             });
 
             await newDoc.save();
-            await syncContextToParikshak(newDoc, 'Niyantran_Direct_Create');
 
             if (req.io) {
                 req.io.emit('knowledge:context:created', {
@@ -595,7 +421,7 @@ router.post('/contexts', auth, async (req, res) => {
                     employeeId: targetEmployeeId,
                     productId: effectiveProductId,
                     version: 'v1.0',
-                    status: 'ACTIVE'
+                    status: 'PENDING_APPROVAL'
                 });
             }
 
@@ -609,7 +435,7 @@ router.post('/contexts', auth, async (req, res) => {
 
 /**
  * PUT /contexts/:id
- * Updates an existing context by contextId or _id, advancing version and setting status to ACTIVE.
+ * Updates an existing context by contextId or _id, advancing version and resetting status to PENDING_APPROVAL.
  */
 router.put('/contexts/:id', auth, async (req, res) => {
     try {
@@ -625,27 +451,19 @@ router.put('/contexts/:id', auth, async (req, res) => {
             return res.status(404).json({ error: "Context not found", detail: "Context not found" });
         }
 
-        const caller = await resolveCallerIdentity(req.user);
-        const isPriv = isAdminCaller(req.user);
-        if (!isPriv && ctx.tenantId !== caller.tenantId) {
+        const isGov = isGovernorCaller(req.user);
+        if (!isGov && ctx.tenantId !== (req.user?.tenantId || 'ten-bhiv-core')) {
             return res.status(403).json({ error: "Cross-tenant modification forbidden", detail: "Cross-tenant modification forbidden" });
         }
-
-        const callerEmpIds = getCallerEmployeeIdCandidates(caller);
+        const callerCanonicalEmp = (req.user?.canonicalEmployeeId || req.user?.employeeId || '').toUpperCase().trim();
+        const callerPlainEmp = (req.user?.employeeId || '').toUpperCase().trim();
         const ctxEmp = (ctx.employeeId || '').toUpperCase().trim();
-        const ctxUserId = (ctx.user?._id || ctx.user || '').toString();
-        const isOwner = Boolean(
-            (ctxEmp && callerEmpIds.includes(ctxEmp)) ||
-            (caller.userId && ctxUserId && ctxUserId === caller.userId)
-        );
-        if (!isPriv && !isOwner) {
+        const isOwner = (ctxEmp === callerCanonicalEmp) || (callerPlainEmp && ctxEmp === callerPlainEmp);
+        if (!isGov && !isOwner) {
             return res.status(403).json({ error: "Unauthorized to modify this context", detail: "Unauthorized to modify this context" });
         }
 
         const newContent = content !== undefined ? content.trim() : ctx.content;
-        if (!newContent) {
-            return res.status(400).json({ error: "content cannot be empty", detail: "content cannot be empty" });
-        }
         const newSummary = summary !== undefined ? summary.trim() : ctx.summary;
         const now = new Date();
 
@@ -664,7 +482,7 @@ router.put('/contexts/:id', auth, async (req, res) => {
         ctx.content = newContent;
         ctx.summary = newSummary;
         if (productName) ctx.productName = productName.trim();
-        ctx.status = 'ACTIVE';
+        ctx.status = 'PENDING_APPROVAL';
         ctx.isDeleted = false;
         ctx.deletedAt = null;
         ctx.deletedBy = null;
@@ -678,14 +496,13 @@ router.put('/contexts/:id', auth, async (req, res) => {
         ctx.updatedAt = now;
 
         await ctx.save();
-        await syncContextToParikshak(ctx, 'Niyantran_Direct_Update');
 
         if (req.io) {
             req.io.emit('knowledge:context:updated', {
                 contextId: ctx.contextId,
                 productId: ctx.productId,
                 version: newVersion,
-                status: 'ACTIVE'
+                status: 'PENDING_APPROVAL'
             });
         }
 
@@ -695,6 +512,178 @@ router.put('/contexts/:id', auth, async (req, res) => {
         return res.status(500).json({ error: err.message, detail: err.message });
     }
 });
+
+/**
+ * Context Approval Handler
+ * Restricted to Governor or Admin.
+ */
+async function handleContextApproval(req, res) {
+    try {
+        const contextIdentifier = req.params.id || req.params.contextId;
+        if (!isGovernorCaller(req.user)) {
+            return res.status(403).json({
+                error: "Governor role required for context approval",
+                detail: "Governor role required for context approval"
+            });
+        }
+
+        let ctx = await ProductContext.findOne({ contextId: contextIdentifier });
+        if (!ctx && contextIdentifier.match(/^[0-9a-fA-F]{24}$/)) {
+            ctx = await ProductContext.findById(contextIdentifier);
+        }
+
+        if (!ctx) {
+            return res.status(404).json({ error: "Context not found", detail: "Context not found" });
+        }
+
+        if (ctx.isDeleted || ctx.status === 'DELETED') {
+            return res.status(409).json({
+                error: "Cannot approve a deleted or withdrawn context",
+                detail: "Cannot approve a deleted or withdrawn context"
+            });
+        }
+
+        const approverName = req.user?.name || 'Akash';
+        const now = new Date();
+
+        ctx.status = 'APPROVED';
+        ctx.approvedBy = approverName;
+        ctx.approvedAt = now;
+        ctx.rejectionReason = null;
+        ctx.outdatedReason = null;
+        ctx.updatedAt = now;
+
+        // Ensure current version in versionHistory reflects approval
+        const currentHistIdx = ctx.versionHistory.findIndex(h => h.version === ctx.version);
+        if (currentHistIdx >= 0) {
+            ctx.versionHistory[currentHistIdx].approvedAt = now;
+            ctx.versionHistory[currentHistIdx].approvedBy = approverName;
+        } else {
+            ctx.versionHistory.push({
+                version: ctx.version,
+                content: ctx.content,
+                summary: ctx.summary,
+                approvedAt: now,
+                approvedBy: approverName,
+                timestamp: now
+            });
+        }
+
+        await ctx.save();
+
+        // Forward to Parikshak / RAG Registry if available
+        try {
+            const parikshakPayload = {
+                product_id: ctx.productId,
+                employee_id: ctx.employeeId,
+                version: ctx.version,
+                content: ctx.content,
+                status: 'APPROVED',
+                approved_by: approverName,
+                dataset_type: 'individual_context',
+                source: 'Niyantran_Governor_Approval'
+            };
+            await axios.post(`${PARIKSHAK_URL}/api/v1/knowledge/ingest`, parikshakPayload, getAxiosConfig());
+        } catch (apiErr) {
+            console.warn("[GOVERNOR_APPROVAL] Parikshak notification notice:", apiErr.message);
+        }
+
+        if (req.io) {
+            req.io.emit('knowledge:context:approved', {
+                contextId: ctx.contextId,
+                productId: ctx.productId,
+                employeeId: ctx.employeeId,
+                approvedBy: approverName,
+                approvedAt: now
+            });
+            req.io.emit('knowledge:sync', {
+                candidateName: ctx.employeeId,
+                employeeId: ctx.employeeId,
+                product_id: ctx.productId,
+                status: 'APPROVED',
+                timestamp: now.toISOString()
+            });
+        }
+
+        return res.json({
+            status: "SUCCESS",
+            message: `Product context for ${ctx.productId} approved by Governor ${approverName}.`,
+            context: ctx
+        });
+    } catch (err) {
+        console.error("Error in approve context:", err);
+        return res.status(500).json({ error: err.message, detail: err.message });
+    }
+}
+
+/**
+ * Context Rejection Handler
+ * Restricted to Governor or Admin.
+ */
+async function handleContextRejection(req, res) {
+    try {
+        const contextIdentifier = req.params.id || req.params.contextId;
+        if (!isGovernorCaller(req.user)) {
+            return res.status(403).json({
+                error: "Governor role required for context rejection",
+                detail: "Governor role required for context rejection"
+            });
+        }
+
+        let ctx = await ProductContext.findOne({ contextId: contextIdentifier });
+        if (!ctx && contextIdentifier.match(/^[0-9a-fA-F]{24}$/)) {
+            ctx = await ProductContext.findById(contextIdentifier);
+        }
+
+        if (!ctx) {
+            return res.status(404).json({ error: "Context not found", detail: "Context not found" });
+        }
+
+        if (ctx.isDeleted || ctx.status === 'DELETED') {
+            return res.status(409).json({
+                error: "Cannot reject a deleted or withdrawn context",
+                detail: "Cannot reject a deleted or withdrawn context"
+            });
+        }
+
+        const rejectionReason = (req.body.rejectionReason || req.body.reason || 'Rejected by Governor review').trim();
+        const now = new Date();
+
+        ctx.status = 'REJECTED';
+        ctx.rejectionReason = rejectionReason;
+        ctx.approvedBy = null;
+        ctx.approvedAt = null;
+        ctx.updatedAt = now;
+
+        await ctx.save();
+
+        if (req.io) {
+            req.io.emit('knowledge:context:rejected', {
+                contextId: ctx.contextId,
+                productId: ctx.productId,
+                employeeId: ctx.employeeId,
+                rejectionReason
+            });
+        }
+
+        return res.json({
+            status: "REJECTED",
+            message: `Context for ${ctx.productId} rejected.`,
+            context: ctx
+        });
+    } catch (err) {
+        console.error("Error in reject context:", err);
+        return res.status(500).json({ error: err.message, detail: err.message });
+    }
+}
+
+// Approval endpoints (supporting both canonical and alias paths)
+router.post('/contexts/:id/approve', auth, handleContextApproval);
+router.post('/approvals/:contextId/approve', auth, handleContextApproval);
+
+// Rejection endpoints (supporting both canonical and alias paths)
+router.post('/contexts/:id/reject', auth, handleContextRejection);
+router.post('/approvals/:contextId/reject', auth, handleContextRejection);
 
 /**
  * Context Deletion / Withdrawal Handler
@@ -719,10 +708,10 @@ async function handleContextDeletion(req, res) {
             return res.status(404).json({ error: "Context not found", detail: "Context not found" });
         }
 
-        const caller = await resolveCallerIdentity(req.user);
-        const isPriv = isAdminCaller(req.user);
+        const isGov = isGovernorCaller(req.user);
+        const callerTenant = req.user?.tenantId || 'ten-bhiv-core';
 
-        if (!isPriv && ctx.tenantId !== caller.tenantId) {
+        if (!isGov && ctx.tenantId !== callerTenant) {
             return res.status(403).json({
                 error: "Cross-tenant context deletion forbidden",
                 detail: "Cross-tenant context deletion forbidden"
@@ -738,18 +727,28 @@ async function handleContextDeletion(req, res) {
             });
         }
 
-        // Ownership resolution (works with JWT claims or DB User fallback)
-        const callerEmpIds = getCallerEmployeeIdCandidates(caller);
+        // Ownership resolution
+        const callerCanonicalEmp = (req.user?.canonicalEmployeeId || req.user?.employeeId || '').toUpperCase().trim();
+        const callerPlainEmp = (req.user?.employeeId || '').toUpperCase().trim();
+        const callerUserId = (req.user?._id || req.user?.id || '').toString();
         const ctxEmp = (ctx.employeeId || '').toUpperCase().trim();
         const ctxUserId = (ctx.user?._id || ctx.user || '').toString();
 
-        const isOwner = Boolean(
-            (ctxEmp && callerEmpIds.includes(ctxEmp)) ||
-            (caller.userId && ctxUserId && ctxUserId === caller.userId)
-        );
+        const isOwner = (callerCanonicalEmp && ctxEmp === callerCanonicalEmp) ||
+                        (callerPlainEmp && ctxEmp === callerPlainEmp) ||
+                        (callerUserId && ctxUserId === callerUserId);
 
-        // Owners can delete their own contexts regardless of status; admins can delete any context
-        if (!isPriv && !isOwner) {
+        // Role authorization check:
+        // Approved contexts strictly require Governor approval
+        if (ctx.status === 'APPROVED' && !isGov) {
+            return res.status(403).json({
+                error: "Approved contexts require authorized Governor approval before removal",
+                detail: "Approved contexts require authorized Governor approval before removal"
+            });
+        }
+
+        // Non-approved contexts (Draft, Pending, Rejected, Outdated) require Owner or Governor
+        if (!isGov && !isOwner) {
             return res.status(403).json({
                 error: "Unauthorized: You can only delete or withdraw your own product context",
                 detail: "Unauthorized: You can only delete or withdraw your own product context"
@@ -758,7 +757,7 @@ async function handleContextDeletion(req, res) {
 
         const previousStatus = ctx.status;
         const now = new Date();
-        const deletedByName = caller.name || caller.effectiveEmployeeId || 'User';
+        const deletedByName = req.user?.name || req.user?.canonicalEmployeeId || req.user?.employeeId || 'User';
         const deletionReason = (req.body?.reason || req.body?.deletionReason || req.query?.reason || 'Withdrawn by user').trim();
 
         // Archive current state into versionHistory before soft deletion
@@ -781,15 +780,16 @@ async function handleContextDeletion(req, res) {
 
         await ctx.save();
 
-        // Parikshak / RAG registry synchronization (non-blocking)
+        // Parikshak / RAG registry synchronization
         try {
-            await withdrawKnowledgeContext({
-                productId: ctx.productId,
-                individualId: ctx.employeeId,
-                contextId: ctx.contextId,
-                deletedBy: deletedByName,
-                deletionReason
-            });
+            const parikshakPayload = {
+                product_id: ctx.productId,
+                individual_id: ctx.employeeId,
+                context_id: ctx.contextId,
+                deleted_by: deletedByName,
+                deletion_reason: deletionReason
+            };
+            await axios.post(`${PARIKSHAK_URL}/api/v1/knowledge/withdraw`, parikshakPayload, getAxiosConfig());
         } catch (apiErr) {
             console.warn("[KNOWLEDGE_WITHDRAW] Parikshak notification notice:", apiErr.message);
         }
@@ -849,20 +849,16 @@ router.post('/contexts/:id/mark-outdated', auth, async (req, res) => {
             return res.status(404).json({ error: "Context not found", detail: "Context not found" });
         }
 
-        const caller = await resolveCallerIdentity(req.user);
-        const isPriv = isAdminCaller(req.user);
-        if (!isPriv && ctx.tenantId !== caller.tenantId) {
+        const isGov = isGovernorCaller(req.user);
+        const callerTenant = req.user?.tenantId || 'ten-bhiv-core';
+        if (!isGov && ctx.tenantId !== callerTenant) {
             return res.status(403).json({ error: "Cross-tenant context access forbidden", detail: "Cross-tenant context access forbidden" });
         }
-
-        const callerEmpIds = getCallerEmployeeIdCandidates(caller);
+        const callerCanonicalEmp = (req.user?.canonicalEmployeeId || req.user?.employeeId || '').toUpperCase().trim();
+        const callerPlainEmp = (req.user?.employeeId || '').toUpperCase().trim();
         const ctxEmp = (ctx.employeeId || '').toUpperCase().trim();
-        const ctxUserId = (ctx.user?._id || ctx.user || '').toString();
-        const isOwner = Boolean(
-            (ctxEmp && callerEmpIds.includes(ctxEmp)) ||
-            (caller.userId && ctxUserId && ctxUserId === caller.userId)
-        );
-        if (!isPriv && !isOwner) {
+        const isOwner = (ctxEmp === callerCanonicalEmp) || (callerPlainEmp && ctxEmp === callerPlainEmp);
+        if (!isGov && !isOwner) {
             return res.status(403).json({ error: "Unauthorized to mark this context outdated", detail: "Unauthorized to mark this context outdated" });
         }
 
@@ -885,29 +881,20 @@ router.post('/contexts/:id/mark-outdated', auth, async (req, res) => {
 /**
  * GET /compliance
  * Audits active users against MongoDB ProductContext collection.
- * Excludes deleted contexts, merges across canonicalEmployeeId, employeeId, and user._id within tenant.
+ * Eliminates first-name fuzzy match bug entirely; matches strictly on canonical IDs/emails.
+ * Returns multi-product context maps (`contextsByProduct`) and correct counts.
  */
 router.get('/compliance', auth, async (req, res) => {
     try {
-        const caller = await resolveCallerIdentity(req.user);
-        const isPriv = isAdminCaller(req.user);
-        const userQuery = isPriv
-            ? { stillExist: { $ne: 0 } }
-            : { stillExist: { $ne: 0 }, tenantId: caller.tenantId };
-
         let users = [];
         try {
-            users = await User.find(userQuery).populate('department').sort({ name: 1 }).lean();
+            users = await User.find({ stillExist: 1 }).populate('department').sort({ name: 1 }).lean();
         } catch (popErr) {
-            users = await User.find(userQuery).sort({ name: 1 }).lean();
+            users = await User.find({ stillExist: 1 }).sort({ name: 1 }).lean();
         }
+        const allContexts = await ProductContext.find({}).sort({ submittedAt: -1 }).lean();
 
-        const allContexts = await ProductContext.find({
-            isDeleted: { $ne: true },
-            status: { $ne: 'DELETED' }
-        }).sort({ updatedAt: -1, submittedAt: -1 }).lean();
-
-        // Index contexts by tenantId:employeeId and tenantId:userId for strict multi-tenant isolation
+        // Index contexts by tenantId:canonicalEmployeeId and tenantId:userId for strict multi-tenant isolation
         const contextsByEmpId = new Map();
         const contextsByUserId = new Map();
 
@@ -927,70 +914,49 @@ router.get('/compliance', auth, async (req, res) => {
         });
 
         const userAudit = users.map(u => {
-            const canonicalId = (u.canonicalEmployeeId && u.canonicalEmployeeId !== 'N/A' ? u.canonicalEmployeeId : '').toUpperCase().trim();
-            const plainEmpId = (u.employeeId && u.employeeId !== 'N/A' ? u.employeeId : '').toUpperCase().trim();
+            const canonicalId = (u.canonicalEmployeeId || '').toUpperCase().trim();
+            const plainEmpId = (u.employeeId || '').toUpperCase().trim();
+            const email = (u.email || '').toLowerCase().trim();
             const userIdStr = (u._id || '').toString();
             const uTenant = u.tenantId || 'ten-bhiv-core';
 
-            // Merge ALL matching contexts across canonicalEmployeeId, employeeId, and user._id within tenant (dedup by _id)
-            const mergedMap = new Map();
-            const addMatches = (list) => {
-                if (!Array.isArray(list)) return;
-                for (const c of list) {
-                    const key = String(c._id || c.contextId);
-                    if (!mergedMap.has(key)) {
-                        mergedMap.set(key, c);
-                    }
-                }
-            };
+            // Match ONLY by exact canonical ID, employeeId, or user ID within user's tenant (NO cross-tenant mixing, NO first-name fuzzy matching)
+            let matchedContexts = [];
+            const canLookupKey = canonicalId ? `${uTenant}:${canonicalId}` : null;
+            const empLookupKey = plainEmpId ? `${uTenant}:${plainEmpId}` : null;
+            const userLookupKey = userIdStr ? `${uTenant}:${userIdStr}` : null;
 
-            if (canonicalId) addMatches(contextsByEmpId.get(`${uTenant}:${canonicalId}`));
-            if (plainEmpId) addMatches(contextsByEmpId.get(`${uTenant}:${plainEmpId}`));
-            if (userIdStr) addMatches(contextsByUserId.get(`${uTenant}:${userIdStr}`));
+            if (canLookupKey && contextsByEmpId.has(canLookupKey)) {
+                matchedContexts = contextsByEmpId.get(canLookupKey);
+            } else if (empLookupKey && contextsByEmpId.has(empLookupKey)) {
+                matchedContexts = contextsByEmpId.get(empLookupKey);
+            } else if (userLookupKey && contextsByUserId.has(userLookupKey)) {
+                matchedContexts = contextsByUserId.get(userLookupKey);
+            }
 
-            const matchedContexts = Array.from(mergedMap.values()).sort((a, b) => {
-                const ta = new Date(a.updatedAt || a.submittedAt || 0).getTime();
-                const tb = new Date(b.updatedAt || b.submittedAt || 0).getTime();
-                return tb - ta;
-            });
-
-            // Partition by product (latest per product)
+            // Partition by product
             const contextsByProduct = {};
             matchedContexts.forEach(c => {
                 const pid = (c.productId || 'BHIV').toUpperCase();
-                const cTime = new Date(c.updatedAt || c.submittedAt || 0).getTime();
-                const existingTime = contextsByProduct[pid]
-                    ? new Date(contextsByProduct[pid].updatedAt || contextsByProduct[pid].submittedAt || 0).getTime()
-                    : -1;
-                if (!contextsByProduct[pid] || cTime > existingTime) {
+                // Store latest per product
+                if (!contextsByProduct[pid] || new Date(c.submittedAt) > new Date(contextsByProduct[pid].submittedAt)) {
                     contextsByProduct[pid] = c;
                 }
             });
 
-            // Find primary active context (prefer ACTIVE / APPROVED, else latest non-deleted)
-            const primaryContext =
-                matchedContexts.find(c => c.status === 'ACTIVE' || c.status === 'APPROVED') ||
-                matchedContexts[0] ||
-                null;
-
-            const resolvedEmpDisplay =
-                (u.canonicalEmployeeId && u.canonicalEmployeeId !== 'N/A' ? u.canonicalEmployeeId : null) ||
-                (u.employeeId && u.employeeId !== 'N/A' ? u.employeeId : null) ||
-                'N/A';
+            // Find primary active context (prefer APPROVED, else latest)
+            const approvedContext = matchedContexts.find(c => c.status === 'APPROVED');
+            const primaryContext = approvedContext || matchedContexts[0] || null;
 
             return {
-                _id: u._id,
                 id: u._id,
-                employeeId: resolvedEmpDisplay,
-                canonicalEmployeeId: resolvedEmpDisplay,
+                employeeId: u.canonicalEmployeeId || u.employeeId || 'N/A',
+                canonicalEmployeeId: u.canonicalEmployeeId || u.employeeId || 'N/A',
                 name: u.name,
                 email: u.email,
                 role: u.role,
                 department: u.department ? (typeof u.department === 'object' && u.department.name ? u.department.name : String(u.department)) : 'No Department',
                 workMode: u.workMode || 'WFO',
-                branch: u.branch || 'blackhole_mumbai',
-                tenantId: uTenant,
-                organization: u.organization || 'BHIV',
                 hasContext: matchedContexts.length > 0,
                 contextCount: Object.keys(contextsByProduct).length,
                 contextsByProduct,
@@ -1001,7 +967,7 @@ router.get('/compliance', auth, async (req, res) => {
                     content: primaryContext.content,
                     version: primaryContext.version || 'v1.0',
                     source: 'MongoDB ProductContext',
-                    ingestion_timestamp: primaryContext.updatedAt || primaryContext.submittedAt,
+                    ingestion_timestamp: primaryContext.submittedAt,
                     product_id: primaryContext.productId,
                     project_name: primaryContext.productName || primaryContext.productId,
                     status: primaryContext.status,
@@ -1049,30 +1015,22 @@ router.get('/compliance', auth, async (req, res) => {
  */
 router.get('/my-contexts', auth, async (req, res) => {
     try {
-        const caller = await resolveCallerIdentity(req.user);
-        const isPriv = isAdminCaller(req.user);
+        const canonicalEmp = req.user?.canonicalEmployeeId || req.user?.employeeId;
+        const plainEmp = req.user?.employeeId;
+        const userId = req.user?._id || req.user?.id;
 
-        const matchCriteria = [];
-        if (caller.userId && mongoose.Types.ObjectId.isValid(caller.userId)) {
-            matchCriteria.push({ user: caller.userId });
-        }
-        if (caller.canonicalEmployeeId) {
-            matchCriteria.push({ employeeId: caller.canonicalEmployeeId });
-        }
-        if (caller.employeeId && caller.employeeId !== caller.canonicalEmployeeId) {
-            matchCriteria.push({ employeeId: caller.employeeId });
-        }
-        if (caller.effectiveEmployeeId && caller.effectiveEmployeeId !== caller.canonicalEmployeeId && caller.effectiveEmployeeId !== caller.employeeId) {
-            matchCriteria.push({ employeeId: caller.effectiveEmployeeId });
-        }
+        const callerTenant = req.user?.tenantId || 'ten-bhiv-core';
+        const isGov = isGovernorCaller(req.user);
+        const matchCriteria = [{ user: userId }];
+        if (canonicalEmp) matchCriteria.push({ employeeId: canonicalEmp });
+        if (plainEmp && plainEmp !== canonicalEmp) matchCriteria.push({ employeeId: plainEmp });
 
-        const query = isPriv
-            ? { $or: matchCriteria.length > 0 ? matchCriteria : [{ user: caller.userId }] }
-            : { tenantId: caller.tenantId, $or: matchCriteria.length > 0 ? matchCriteria : [{ user: caller.userId }] };
+        const query = isGov
+            ? { $or: matchCriteria }
+            : { tenantId: callerTenant, $or: matchCriteria };
 
         if (req.query.includeDeleted !== 'true') {
             query.isDeleted = { $ne: true };
-            query.status = { $ne: 'DELETED' };
         }
 
         const contexts = await ProductContext.find(query).sort({ updatedAt: -1 }).lean();
@@ -1090,21 +1048,22 @@ router.get('/my-contexts', auth, async (req, res) => {
 
 /**
  * GET /stats
- * Returns high-level telemetry; treats all non-deleted contexts as active with zero approval gating.
+ * Returns high-level telemetry and status breakdown.
  */
 router.get('/stats', auth, async (req, res) => {
     try {
-        const caller = await resolveCallerIdentity(req.user);
-        const isPriv = isAdminCaller(req.user);
-        const baseFilter = isPriv ? {} : { tenantId: caller.tenantId };
-        const activeFilter = { ...baseFilter, isDeleted: { $ne: true }, status: { $ne: 'DELETED' } };
+        const callerTenant = req.user?.tenantId || 'ten-bhiv-core';
+        const isGov = isGovernorCaller(req.user);
+        const baseFilter = isGov ? {} : { tenantId: callerTenant };
+        const activeFilter = { ...baseFilter, isDeleted: { $ne: true } };
 
-        const [total, deletedCount, products] = await Promise.all([
+        const [total, approved, pending, rejected, outdated, deletedCount, products] = await Promise.all([
             ProductContext.countDocuments(activeFilter),
-            ProductContext.countDocuments({
-                ...baseFilter,
-                $or: [{ isDeleted: true }, { status: 'DELETED' }]
-            }),
+            ProductContext.countDocuments({ ...activeFilter, status: 'APPROVED' }),
+            ProductContext.countDocuments({ ...activeFilter, status: 'PENDING_APPROVAL' }),
+            ProductContext.countDocuments({ ...activeFilter, status: 'REJECTED' }),
+            ProductContext.countDocuments({ ...activeFilter, status: 'OUTDATED' }),
+            ProductContext.countDocuments({ ...baseFilter, isDeleted: true }),
             ProductContext.distinct('productId', activeFilter)
         ]);
 
@@ -1112,11 +1071,10 @@ router.get('/stats', auth, async (req, res) => {
             status: "SUCCESS",
             stats: {
                 totalContexts: total,
-                active: total,
-                approved: total,
-                pendingApproval: 0,
-                rejected: 0,
-                outdated: 0,
+                approved,
+                pendingApproval: pending,
+                rejected,
+                outdated,
                 deleted: deletedCount,
                 products
             }
@@ -1133,57 +1091,23 @@ router.get('/stats', auth, async (req, res) => {
  */
 router.post('/quick-ingest', auth, async (req, res) => {
     try {
-        const {
-            candidateName,
-            employeeId,
-            employee_id,
-            targetUserId,
-            userId,
-            email,
-            department,
-            contextText,
-            productId,
-            projectName
-        } = req.body;
+        const { candidateName, employeeId, email, department, contextText, productId, projectName } = req.body;
         if (!contextText || !contextText.trim()) {
             return res.status(400).json({ error: "contextText is required.", detail: "contextText is required." });
         }
 
-        const caller = await resolveCallerIdentity(req.user);
-        const isPriv = isAdminCaller(req.user);
-        const requestedEmp = employeeId || employee_id;
-        const requestedUid = targetUserId || userId;
-
-        let resolvedEmpId = caller.effectiveEmployeeId.toUpperCase();
-        let resolvedUserObjectId = caller.userId;
-        let resolvedTenant = caller.tenantId;
-        let resolvedName = (req.user?.name || caller.name || candidateName || 'Current Employee').trim();
-        let resolvedEmail = (req.user?.email || caller.email || email || '').toLowerCase().trim();
-
-        if (isPriv && (requestedUid || requestedEmp || req.body.tenantId)) {
-            const targetResolved = await resolveTargetEmployeeForAdmin(
-                { targetUserId, userId, employeeId: requestedEmp, tenantId: req.body.tenantId },
-                caller
-            );
-            if (targetResolved.error) {
-                return res.status(targetResolved.status || 404).json({
-                    error: targetResolved.error,
-                    detail: targetResolved.error
-                });
-            }
-            resolvedEmpId = targetResolved.employeeId.toUpperCase();
-            resolvedUserObjectId = targetResolved.userObjectId;
-            resolvedTenant = targetResolved.tenantId;
-            if (candidateName) resolvedName = candidateName.trim();
-            else if (targetResolved.name) resolvedName = targetResolved.name;
-            if (email) resolvedEmail = email.toLowerCase().trim();
-            else if (targetResolved.email) resolvedEmail = targetResolved.email;
-        }
-
+        const isGov = isGovernorCaller(req.user);
+        const callerCanonicalEmp = (req.user?.canonicalEmployeeId || req.user?.employeeId || 'EMP-BHIV-USR').toUpperCase().trim();
+        const resolvedEmpId = (isGov && employeeId) ? employeeId.toUpperCase().trim() : callerCanonicalEmp;
+        const resolvedName = (isGov && candidateName) ? candidateName.trim() : (req.user?.name || candidateName || 'Current Employee').trim();
+        const resolvedEmail = (isGov && email) ? email.toLowerCase().trim() : (req.user?.email || email || '').toLowerCase().trim();
         const resolvedProject = (productId || projectName || 'BHIV').trim().toUpperCase();
+        const resolvedTenant = (isGov && req.body.tenantId) ? req.body.tenantId.trim() : (req.user?.tenantId || 'ten-bhiv-core');
         const now = new Date();
-        const trimmedContent = contextText.trim();
-        const trimmedSummary = trimmedContent.length > 300 ? trimmedContent.substring(0, 300) + '...' : trimmedContent;
+
+        const initialStatus = isGov ? 'APPROVED' : 'PENDING_APPROVAL';
+        const approver = isGov ? (req.user?.name || 'Akash') : null;
+        const approvalDate = isGov ? now : null;
 
         let doc = await ProductContext.findOne({
             employeeId: resolvedEmpId,
@@ -1201,24 +1125,11 @@ router.post('/quick-ingest', auth, async (req, res) => {
                 timestamp: now
             });
             doc.version = incrementVersion(doc.version);
-            doc.content = trimmedContent;
-            doc.summary = trimmedSummary;
-            doc.status = 'ACTIVE';
-            if (resolvedUserObjectId) {
-                doc.user = resolvedUserObjectId;
-            }
-            if (projectName) {
-                doc.productName = projectName.trim();
-            }
-            doc.isDeleted = false;
-            doc.deletedAt = null;
-            doc.deletedBy = null;
-            doc.deletionReason = null;
-            doc.previousStatus = null;
-            doc.rejectionReason = null;
-            doc.outdatedReason = null;
-            doc.approvedBy = null;
-            doc.approvedAt = null;
+            doc.content = contextText.trim();
+            doc.summary = contextText.trim().length > 300 ? contextText.trim().substring(0, 300) + '...' : contextText.trim();
+            doc.status = initialStatus;
+            doc.approvedBy = approver;
+            doc.approvedAt = approvalDate;
             doc.submittedAt = now;
             doc.updatedAt = now;
             await doc.save();
@@ -1227,23 +1138,22 @@ router.post('/quick-ingest', auth, async (req, res) => {
                 contextId: `CTX-${crypto.randomBytes(4).toString('hex').toUpperCase()}`,
                 tenantId: resolvedTenant,
                 employeeId: resolvedEmpId,
-                user: resolvedUserObjectId,
+                user: req.user?._id || req.user?.id,
                 productId: resolvedProject,
-                productName: (projectName || resolvedProject).trim(),
+                productName: projectName || resolvedProject,
                 version: 'v1.0',
-                status: 'ACTIVE',
-                content: trimmedContent,
-                summary: trimmedSummary,
+                status: initialStatus,
+                content: contextText.trim(),
+                summary: contextText.trim().length > 300 ? contextText.trim().substring(0, 300) + '...' : contextText.trim(),
                 submittedAt: now,
-                approvedBy: null,
-                approvedAt: null,
+                approvedBy: approver,
+                approvedAt: approvalDate,
                 versionHistory: [
                     {
                         version: 'v1.0',
-                        content: trimmedContent,
-                        summary: trimmedSummary,
-                        approvedAt: null,
-                        approvedBy: null,
+                        content: contextText.trim(),
+                        approvedAt: approvalDate,
+                        approvedBy: approver,
                         timestamp: now
                     }
                 ]
@@ -1251,11 +1161,9 @@ router.post('/quick-ingest', auth, async (req, res) => {
             await doc.save();
         }
 
-        await syncContextToParikshak(doc, 'Niyantran_Quick_Ingest');
-
         const responsePayload = {
             status: "SUCCESS",
-            message: `Context for '${resolvedProject}' saved with status ACTIVE.`,
+            message: `Context for '${resolvedProject}' saved with status ${initialStatus}.`,
             candidate_name: resolvedName,
             employee_id: resolvedEmpId,
             email: resolvedEmail,
@@ -1284,51 +1192,45 @@ router.post('/quick-ingest', auth, async (req, res) => {
 
 /**
  * POST /ingest
- * Saves context to MongoDB ProductContext first as ACTIVE, then triggers non-blocking Parikshak ingest.
+ * Legacy ingest proxying to Parikshak or creating ProductContext doc.
  */
 router.post('/ingest', auth, async (req, res) => {
     try {
         const {
-            chatgptContent, content, productId, product_id, productName,
-            individualId, individual_id, employeeId, employee_id, targetUserId, userId,
-            source, provenance, version
+            chatgptContent, content, productId, product_id,
+            individualId, individual_id, source, provenance, version
         } = req.body;
 
         const rawContent = content || chatgptContent;
         const targetProduct = (product_id || productId || 'BHIV').toUpperCase();
 
+        const isGov = isGovernorCaller(req.user);
+        const callerCanonicalEmp = (req.user?.canonicalEmployeeId || req.user?.employeeId || 'EMP-BHIV-USR').trim();
+        const requestedEmpId = (individual_id || individualId || '').trim();
+        const targetEmpId = (isGov && requestedEmpId) ? requestedEmpId : callerCanonicalEmp;
+        const targetTenant = (isGov && req.body.tenantId) ? req.body.tenantId.trim() : (req.user?.tenantId || 'ten-bhiv-core');
+
         if (!rawContent || !rawContent.toString().trim()) {
             return res.status(400).json({ error: "content or chatgptContent is required.", detail: "content or chatgptContent is required." });
         }
 
-        const caller = await resolveCallerIdentity(req.user);
-        const isPriv = isAdminCaller(req.user);
-        const requestedEmpId = (individual_id || individualId || employeeId || employee_id || '').trim();
-        const requestedUid = targetUserId || userId;
-
-        let targetEmpId = caller.effectiveEmployeeId;
-        let targetUserObjectId = caller.userId;
-        let targetTenant = caller.tenantId;
-
-        if (isPriv && (requestedUid || requestedEmpId || req.body.tenantId)) {
-            const targetResolved = await resolveTargetEmployeeForAdmin(
-                { targetUserId, userId, employeeId: requestedEmpId, tenantId: req.body.tenantId },
-                caller
-            );
-            if (targetResolved.error) {
-                return res.status(targetResolved.status || 404).json({
-                    error: targetResolved.error,
-                    detail: targetResolved.error
-                });
+        // Forward to Parikshak if possible
+        try {
+            const resp = await axios.post(`${PARIKSHAK_URL}/api/v1/knowledge/ingest`, {
+                product_id: targetProduct,
+                individual_id: targetEmpId,
+                content: rawContent,
+                source: source || 'Niyantran-Ingest',
+                version: version || 'v1.0'
+            }, getAxiosConfig());
+            if (resp.status < 400) {
+                return res.status(resp.status).json(resp.data);
             }
-            targetEmpId = targetResolved.employeeId;
-            targetUserObjectId = targetResolved.userObjectId;
-            targetTenant = targetResolved.tenantId;
+        } catch (apiErr) {
+            // Parikshak offline; save locally
         }
 
-        const trimmedContent = rawContent.toString().trim();
-        const trimmedSummary = trimmedContent.substring(0, 300);
-        const now = new Date();
+        const status = isGov ? 'APPROVED' : 'PENDING_APPROVAL';
 
         const record = await ProductContext.findOneAndUpdate(
             {
@@ -1338,34 +1240,23 @@ router.post('/ingest', auth, async (req, res) => {
             },
             {
                 $set: {
-                    content: trimmedContent,
-                    summary: trimmedSummary,
-                    status: 'ACTIVE',
+                    content: rawContent.toString().trim(),
+                    summary: rawContent.toString().substring(0, 300),
+                    status,
                     version: version || 'v1.0',
-                    user: targetUserObjectId,
-                    productName: (productName || targetProduct).trim(),
-                    isDeleted: false,
-                    deletedAt: null,
-                    deletedBy: null,
-                    deletionReason: null,
-                    previousStatus: null,
-                    rejectionReason: null,
-                    outdatedReason: null,
-                    approvedBy: null,
-                    approvedAt: null,
-                    submittedAt: now,
-                    updatedAt: now
+                    approvedBy: isGov ? (req.user?.name || 'Akash') : null,
+                    approvedAt: isGov ? new Date() : null,
+                    updatedAt: new Date()
                 },
                 $setOnInsert: {
                     contextId: `CTX-${crypto.randomBytes(4).toString('hex').toUpperCase()}`,
+                    user: req.user?._id || req.user?.id,
+                    productName: targetProduct,
                     tenantId: targetTenant
                 }
             },
             { upsert: true, new: true, setDefaultsOnInsert: true }
         );
-
-        // Non-blocking Parikshak ingest AFTER MongoDB persistence
-        await syncContextToParikshak(record, source || 'Niyantran-Ingest');
 
         return res.json({
             status: "SUCCESS",
@@ -1386,7 +1277,7 @@ router.get('/datasets', auth, async (req, res) => {
     try {
         const { product_id, individual_id } = req.query;
         try {
-            const resp = await axios.get(`${getParikshakBaseUrl()}/api/v1/knowledge/datasets`, {
+            const resp = await axios.get(`${PARIKSHAK_URL}/api/v1/knowledge/datasets`, {
                 ...getAxiosConfig(),
                 params: { product_id, individual_id }
             });
@@ -1400,15 +1291,14 @@ router.get('/datasets', auth, async (req, res) => {
         const filter = {};
         if (req.query.includeDeleted !== 'true') {
             filter.isDeleted = { $ne: true };
-            filter.status = { $ne: 'DELETED' };
         }
         if (product_id) filter.productId = product_id.toUpperCase().trim();
         if (individual_id) filter.employeeId = individual_id.trim();
 
-        const isPriv = isAdminCaller(req.user);
-        const caller = await resolveCallerIdentity(req.user);
-        if (!isPriv) {
-            filter.tenantId = caller.tenantId;
+        const isGov = isGovernorCaller(req.user);
+        const callerTenant = req.user?.tenantId || 'ten-bhiv-core';
+        if (!isGov) {
+            filter.tenantId = callerTenant;
         }
 
         const docs = await ProductContext.find(filter).lean();
@@ -1599,13 +1489,11 @@ router.post('/preflight-check', auth, async (req, res) => {
 });
 
 // =========================================================================
-// FEATURE 15: NON-BLOCKING PRE-SUBMISSION CONTEXT VALIDATION FLOW
+// FEATURE 15: PRE-SUBMISSION CONTEXT VALIDATION FLOW (Cases A, B, C, D)
 // =========================================================================
 
 /**
  * Core validation logic for product context pre-submission check.
- * Non-blocking: always returns canSubmit: true, allowed: true.
- * Any non-deleted ProductContext (ACTIVE, APPROVED, PENDING_APPROVAL, REJECTED, DRAFT, OUTDATED) is treated as active.
  */
 async function validateContextInternal({ productId, employeeId, tenantId, user, userId }) {
     if (!productId || !productId.toString().trim()) {
@@ -1616,47 +1504,33 @@ async function validateContextInternal({ productId, employeeId, tenantId, user, 
     }
 
     const targetProductId = productId.toString().trim().toUpperCase();
-    const effectiveUserId = userId || user?._id || user?.id;
 
-    // Gather all candidate employee identifiers & tenant
-    const candidateEmpIds = new Set();
-    if (employeeId && String(employeeId).trim()) {
-        candidateEmpIds.add(String(employeeId).trim());
-        candidateEmpIds.add(String(employeeId).trim().toUpperCase());
-    }
-    if (user?.canonicalEmployeeId && user.canonicalEmployeeId !== 'N/A') {
-        candidateEmpIds.add(String(user.canonicalEmployeeId).trim());
-        candidateEmpIds.add(String(user.canonicalEmployeeId).trim().toUpperCase());
-    }
-    if (user?.employeeId && user.employeeId !== 'N/A') {
-        candidateEmpIds.add(String(user.employeeId).trim());
-        candidateEmpIds.add(String(user.employeeId).trim().toUpperCase());
-    }
+    // Submitter canonical employee ID resolution
+    let resolvedEmpId = (
+        employeeId ||
+        user?.canonicalEmployeeId ||
+        user?.employeeId ||
+        ''
+    ).toString().trim().toUpperCase();
 
+    // Multi-tenant resolution
     let resolvedTenant = (
         tenantId ||
         user?.tenantId ||
-        ''
+        'ten-bhiv-core'
     ).toString().trim();
 
-    if (effectiveUserId && (candidateEmpIds.size === 0 || !resolvedTenant)) {
+    // Fallback: If canonical ID or tenant is missing from JWT, resolve from User document
+    const effectiveUserId = userId || user?._id || user?.id;
+    if ((!resolvedEmpId || !user?.tenantId) && effectiveUserId) {
         try {
-            if (mongoose.Types.ObjectId.isValid(String(effectiveUserId))) {
-                const userDoc = await User.findById(effectiveUserId)
-                    .select('canonicalEmployeeId employeeId tenantId')
-                    .lean();
-                if (userDoc) {
-                    if (userDoc.canonicalEmployeeId && userDoc.canonicalEmployeeId !== 'N/A') {
-                        candidateEmpIds.add(String(userDoc.canonicalEmployeeId).trim());
-                        candidateEmpIds.add(String(userDoc.canonicalEmployeeId).trim().toUpperCase());
-                    }
-                    if (userDoc.employeeId && userDoc.employeeId !== 'N/A') {
-                        candidateEmpIds.add(String(userDoc.employeeId).trim());
-                        candidateEmpIds.add(String(userDoc.employeeId).trim().toUpperCase());
-                    }
-                    if (!resolvedTenant && userDoc.tenantId) {
-                        resolvedTenant = String(userDoc.tenantId).trim();
-                    }
+            const userDoc = await User.findById(effectiveUserId).select('canonicalEmployeeId employeeId tenantId').lean();
+            if (userDoc) {
+                if (!resolvedEmpId) {
+                    resolvedEmpId = (userDoc.canonicalEmployeeId || userDoc.employeeId || '').toString().trim().toUpperCase();
+                }
+                if (!user?.tenantId && userDoc.tenantId) {
+                    resolvedTenant = userDoc.tenantId.toString().trim();
                 }
             }
         } catch (uErr) {
@@ -1664,68 +1538,106 @@ async function validateContextInternal({ productId, employeeId, tenantId, user, 
         }
     }
 
-    if (!resolvedTenant) {
-        resolvedTenant = 'ten-bhiv-core';
-    }
-
-    // Build $or across candidate employeeIds and user ObjectId
-    const identityOr = [];
-    if (candidateEmpIds.size > 0) {
-        identityOr.push({ employeeId: { $in: Array.from(candidateEmpIds) } });
-    }
-    if (effectiveUserId && mongoose.Types.ObjectId.isValid(String(effectiveUserId))) {
-        identityOr.push({ user: effectiveUserId });
-    }
-
+    // Query ProductContext for the exact (employeeId, productId, tenantId)
     let ctx = null;
-    if (identityOr.length > 0) {
+    if (resolvedEmpId) {
         ctx = await ProductContext.findOne({
+            employeeId: resolvedEmpId,
             productId: targetProductId,
-            tenantId: resolvedTenant,
-            isDeleted: { $ne: true },
-            status: { $ne: 'DELETED' },
-            $or: identityOr
-        }).sort({ updatedAt: -1, submittedAt: -1 });
+            tenantId: resolvedTenant
+        });
     }
 
-    // Missing or soft-deleted context -> non-blocking warning
-    if (!ctx) {
+    // Secondary fallback by user ObjectId within tenant if not found by employeeId string
+    if (!ctx && effectiveUserId) {
+        ctx = await ProductContext.findOne({
+            user: effectiveUserId,
+            productId: targetProductId,
+            tenantId: resolvedTenant
+        });
+    }
+
+    // CASE A: No context exists or context is soft-deleted/withdrawn
+    if (!ctx || ctx.isDeleted === true || ctx.status === 'DELETED') {
         return {
             status: 200,
             data: {
-                productId: targetProductId,
-                productName: targetProductId,
                 status: "MISSING",
-                hasContext: false,
-                active: false,
-                canSubmit: true,
-                allowed: true,
-                contextWarning: true,
+                canSubmit: false,
+                allowed: false,
                 case: "CASE_A",
                 action: "ADD_CONTEXT",
-                message: "Parikshak context has not been added for this product. The task evaluation will fail unless context is added.",
+                message: "Product context is missing. Please add and obtain approval for the project context before submitting.",
                 context: null
             }
         };
     }
 
-    // Any non-deleted context (ACTIVE, APPROVED, PENDING_APPROVAL, REJECTED, DRAFT, OUTDATED) is active & usable
+    const ctxStatus = (ctx.status || '').toUpperCase();
+
+    // CASE B: Context exists but is awaiting approval or in draft
+    if (ctxStatus === "PENDING_APPROVAL" || ctxStatus === "DRAFT") {
+        return {
+            status: 200,
+            data: {
+                status: "PENDING_APPROVAL",
+                canSubmit: false,
+                allowed: false,
+                case: "CASE_B",
+                action: "AWAIT_APPROVAL",
+                message: "Product context is pending approval.",
+                context: ctx
+            }
+        };
+    }
+
+    // CASE D: Context is outdated or rejected
+    if (ctxStatus === "OUTDATED" || ctxStatus === "REJECTED") {
+        const reason = ctxStatus === "REJECTED"
+            ? (ctx.rejectionReason || ctx.outdatedReason || "Context rejected by Governor review")
+            : (ctx.outdatedReason || ctx.rejectionReason || "Context expired or deprecated");
+        return {
+            status: 200,
+            data: {
+                status: ctxStatus,
+                canSubmit: false,
+                allowed: false,
+                case: "CASE_D",
+                action: "UPDATE_CONTEXT",
+                reason: reason,
+                message: `Product context is outdated/rejected: ${reason}`,
+                context: ctx
+            }
+        };
+    }
+
+    // CASE C: Approved context exists
+    if (ctxStatus === "APPROVED") {
+        return {
+            status: 200,
+            data: {
+                status: "APPROVED",
+                canSubmit: true,
+                allowed: true,
+                case: "CASE_C",
+                action: "SUBMIT",
+                message: "Product context is approved. Approved context validated.",
+                version: ctx.version || 'v1.0',
+                context: ctx
+            }
+        };
+    }
+
+    // Fallback for any unexpected state
     return {
         status: 200,
         data: {
-            productId: targetProductId,
-            productName: ctx.productName || targetProductId,
-            status: "ACTIVE",
-            rawStatus: ctx.status,
-            hasContext: true,
-            active: true,
-            canSubmit: true,
-            allowed: true,
-            contextWarning: false,
-            case: "CASE_C",
-            action: "SUBMIT",
-            message: "Product context is active.",
-            version: ctx.version || 'v1.0',
+            status: ctxStatus,
+            canSubmit: false,
+            allowed: false,
+            case: "CASE_UNKNOWN",
+            action: "UPDATE_CONTEXT",
+            message: `Product context status '${ctxStatus}' does not permit task submission.`,
             context: ctx
         }
     };
@@ -1733,7 +1645,7 @@ async function validateContextInternal({ productId, employeeId, tenantId, user, 
 
 /**
  * GET & POST /api/knowledge/validate-context
- * Validates pre-submission product context status (non-blocking).
+ * Validates pre-submission product context status.
  */
 async function handleValidateContext(req, res) {
     try {
@@ -1752,8 +1664,7 @@ async function handleValidateContext(req, res) {
             productId: productId.toString(),
             employeeId: employeeId ? employeeId.toString() : undefined,
             tenantId: tenantId ? tenantId.toString() : undefined,
-            user: req.user,
-            userId: req.user?._id || req.user?.id
+            user: req.user
         });
 
         if (result.error) {
@@ -1772,8 +1683,6 @@ router.post('/validate-context', auth, handleValidateContext);
 
 module.exports = router;
 module.exports.isGovernorCaller = isGovernorCaller;
-module.exports.isAdminCaller = isAdminCaller;
-module.exports.resolveCallerIdentity = resolveCallerIdentity;
 module.exports.incrementVersion = incrementVersion;
 module.exports.validateContextInternal = validateContextInternal;
 module.exports.handleValidateContext = handleValidateContext;

@@ -79,8 +79,6 @@ router.post("/", upload.any(), async (req, res) => {
       creatorId: req.user ? req.user._id : null,
       assignee: req.body.assignee || null,
       department: req.body.department || null,
-      product: (req.body.product || req.body.productId || req.body.product_id || "BHIV").toString().trim().toUpperCase() || "BHIV",
-      task_id: (req.body.task_id || req.body.taskId || "").toString().trim() || null,
       content: req.body.content || req.body.taskText || req.body.description || null,
       taskText: req.body.taskText || req.body.content || req.body.description || null,
       description: req.body.description || req.body.content || req.body.taskText || null,

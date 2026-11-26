@@ -162,7 +162,7 @@ router.get("/overdue", auth, async (req, res) => {
         return taskObj
       }
 
-      const actualUser = await User.findById(task.assignee).select("name avatar email stillExist employeeId canonicalEmployeeId")
+      const actualUser = await User.findById(task.assignee).select("name avatar email stillExist employeeId")
       
       if (!actualUser) {
         taskObj.assignee = null
@@ -178,7 +178,6 @@ router.get("/overdue", auth, async (req, res) => {
         avatar: actualUser.avatar,
         email: actualUser.email,
         employeeId: actualUser.employeeId || formatEmployeeId(actualUser.email),
-        canonicalEmployeeId: actualUser.canonicalEmployeeId || null,
         stillExist: actualUser.stillExist,
         isActive,
         isBlackhole,
@@ -283,7 +282,7 @@ router.get("/", auth, async (req, res) => {
           from: "users",
           localField: "assignee",
           foreignField: "_id",
-          pipeline: [{ $project: { name: 1, avatar: 1, email: 1, stillExist: 1, employeeId: 1, canonicalEmployeeId: 1 } }],
+          pipeline: [{ $project: { name: 1, avatar: 1, email: 1, stillExist: 1 } }],
           as: "assigneeData"
         }
       },
@@ -319,7 +318,7 @@ router.get("/", auth, async (req, res) => {
                   from: "users",
                   localField: "user",
                   foreignField: "_id",
-                  pipeline: [{ $project: { name: 1, avatar: 1, email: 1, employeeId: 1, canonicalEmployeeId: 1 } }],
+                  pipeline: [{ $project: { name: 1, avatar: 1 } }],
                   as: "userArr"
                 }
               },
@@ -347,8 +346,6 @@ router.get("/", auth, async (req, res) => {
                     name: "$$u.name",
                     avatar: "$$u.avatar",
                     email: "$$u.email",
-                    employeeId: "$$u.employeeId",
-                    canonicalEmployeeId: "$$u.canonicalEmployeeId",
                     stillExist: "$$u.stillExist",
                     isActive: { $eq: ["$$u.stillExist", 1] },
                     isBlackhole: true
@@ -479,7 +476,7 @@ router.get('/:id', auth, async (req, res) => {
     const taskObj = task.toObject()
     
     if (task.assignee) {
-      const actualUser = await User.findById(task.assignee).select("name avatar email stillExist employeeId canonicalEmployeeId")
+      const actualUser = await User.findById(task.assignee).select("name avatar email stillExist employeeId")
       
       if (actualUser) {
         const isActive = actualUser.stillExist === 1
@@ -491,7 +488,6 @@ router.get('/:id', auth, async (req, res) => {
           avatar: actualUser.avatar,
           email: actualUser.email,
           employeeId: actualUser.employeeId || formatEmployeeId(actualUser.email),
-          canonicalEmployeeId: actualUser.canonicalEmployeeId || null,
           stillExist: actualUser.stillExist,
           isActive,
           isBlackhole,
@@ -665,8 +661,6 @@ router.post("/", auth, upload.single("document"), async (req, res) => {
       name: assigneeUser.name,
       avatar: assigneeUser.avatar,
       email: assigneeUser.email,
-      employeeId: assigneeUser.employeeId || formatEmployeeId(assigneeUser.email),
-      canonicalEmployeeId: assigneeUser.canonicalEmployeeId || null,
       stillExist: assigneeUser.stillExist,
       isActive: true,
       isBlackhole: isBh,
@@ -705,12 +699,7 @@ router.post("/register-intake", auth, async (req, res) => {
       scope,
       expectedOutcome,
       acceptanceCriteria,
-      attachments = [],
-      product,
-      productId,
-      product_id,
-      task_id,
-      taskId
+      attachments = []
     } = req.body;
 
     if (!originalInstruction || !originalInstruction.trim()) {
@@ -775,11 +764,10 @@ router.post("/register-intake", auth, async (req, res) => {
       });
     }
 
-    // Generate unique task_id: e.g. T-WHT-<TIMESTAMP_HEX> (or use explicit task_id if provided)
-    const requestedTaskId = (task_id || taskId || "").toString().trim();
+    // Generate unique task_id: e.g. T-WHT-<TIMESTAMP_HEX>
     const randSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
     const prefix = sourceType === "WHATSAPP" ? "T-WHT" : (sourceType === "LEAD_INSTRUCTION" ? "T-DIR" : "T-INT");
-    const generatedTaskId = requestedTaskId || `${prefix}-${Date.now().toString(36).toUpperCase()}-${randSuffix}`;
+    const generatedTaskId = `${prefix}-${Date.now().toString(36).toUpperCase()}-${randSuffix}`;
 
     const initialProgress = Math.max(0, Math.min(100, Number(req.body.progress) || 0));
     const requestedStatus = req.body.status || (sourceType.toUpperCase() === "WHATSAPP" ? "In Progress" : "Pending Validation");
@@ -792,7 +780,7 @@ router.post("/register-intake", auth, async (req, res) => {
       description: taskDescription,
       task_id: generatedTaskId,
       idempotencyKey: idempotencyKey,
-      product: (product || productId || product_id || "BHIV").toString().trim().toUpperCase() || "BHIV",
+      product: req.body.product || "BHIV",
       tenantId: candidateUser.tenantId || "ten-bhiv-core",
       sourceType: sourceType.toUpperCase(),
       originatingPerson: originatingPerson || "Project Lead",
@@ -1029,7 +1017,7 @@ router.put("/:id", auth, async (req, res) => {
     const taskObj = task.toObject()
     
     if (task.assignee) {
-      const actualUser = await User.findById(task.assignee).select("name avatar email stillExist employeeId canonicalEmployeeId")
+      const actualUser = await User.findById(task.assignee).select("name avatar email stillExist employeeId")
       
       if (actualUser) {
         const isActive = actualUser.stillExist === 1
@@ -1041,7 +1029,6 @@ router.put("/:id", auth, async (req, res) => {
           avatar: actualUser.avatar,
           email: actualUser.email,
           employeeId: actualUser.employeeId || formatEmployeeId(actualUser.email),
-          canonicalEmployeeId: actualUser.canonicalEmployeeId || null,
           stillExist: actualUser.stillExist,
           isActive,
           isBlackhole,
@@ -1113,7 +1100,7 @@ router.get("/:id/dependencies", auth, async (req, res) => {
       const depObj = dep.toObject()
       
       if (dep.assignee) {
-        const actualUser = await User.findById(dep.assignee).select("name avatar email stillExist employeeId canonicalEmployeeId")
+        const actualUser = await User.findById(dep.assignee).select("name avatar email stillExist employeeId")
         
         if (actualUser) {
           const isActive = actualUser.stillExist === 1
@@ -1125,7 +1112,6 @@ router.get("/:id/dependencies", auth, async (req, res) => {
             avatar: actualUser.avatar,
             email: actualUser.email,
             employeeId: actualUser.employeeId || formatEmployeeId(actualUser.email),
-            canonicalEmployeeId: actualUser.canonicalEmployeeId || null,
             stillExist: actualUser.stillExist,
             isActive,
             isBlackhole,

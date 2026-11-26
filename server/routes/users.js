@@ -602,14 +602,7 @@ router.get("/:id/tasks", auth, async (req, res) => {
     // ✅ FIX: Add limit and lean for performance
     const tasks = await Task.find(filter)
       .populate("department", "name color")
-      .populate([
-        { path: "dependencies", select: "title status" },
-        {
-          path: "assignee",
-          select: "name email employeeId canonicalEmployeeId department",
-          populate: { path: "department", select: "name" },
-        },
-      ])
+      .populate("dependencies", "title status")
       .sort({ createdAt: -1 }) // Most recent first
       .limit(100) // Limit to 100 most recent tasks
       .lean() // Use lean for better performance
@@ -675,7 +668,7 @@ router.get("/:id/submissions", auth, async (req, res) => {
     try {
       // ✅ FIX: Add limit and lean for performance
       submissions = await TaskSubmission.find({ user: req.params.id })
-        .populate("task", "title status task_id product")
+        .populate("task", "title status")
         .sort({ createdAt: -1 })
         .limit(50) // Limit to 50 most recent submissions
         .lean() // Use lean for better performance
