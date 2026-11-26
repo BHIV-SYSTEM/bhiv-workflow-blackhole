@@ -1,5 +1,11 @@
 node_modules/
-dist/
+# Build intermediates only — the final installer below IS tracked so CI can
+# ship it to production (it is gitignored-out of the Docker build context).
+# win-unpacked/ is 257 MB incl. a 168 MB exe that exceeds GitHub's 100 MB
+# per-file hard limit, so it must never be committed.
+dist/win-unpacked/
+dist/builder-debug.yml
+dist/builder-effective-config.yaml
 .env
 *.log
 .DS_Store
