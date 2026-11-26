@@ -435,7 +435,7 @@ function UserDashboard() {
                 </CardTitle>
                 <CardDescription>Tasks due soon</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="pt-5">
                 {userStats.upcomingDeadlines && userStats.upcomingDeadlines.length > 0 ? (
                   <div className="space-y-4">
                     {userStats.upcomingDeadlines.map((task) => {
