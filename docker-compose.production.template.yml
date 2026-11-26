@@ -61,8 +61,14 @@ services:
     container_name: niyantran_backend
     restart: unless-stopped
     # Public ports are OMITTED for security isolation
+    # The ~77 MB V1 agent installer is gitignored and outside the `server/`
+    # Docker build context, so it is bind-mounted from the VM (path survives CI
+    # deploys because ~/NIYANTRAN is wiped each run — /var/tmp is not).
+    volumes:
+      - ${AGENT_INSTALLER_HOST_DIR:-/var/tmp/NIYANTRAN/installers}:/installers:ro
     environment:
       MONGODB_URI: ${MONGODB_URI}
+      AGENT_INSTALLER_PATH: ${AGENT_INSTALLER_PATH:-/installers/Employee Activity Agent Setup 1.0.0.exe}
       # Bucket on VM — no local container needed
       BUCKET_BASE_URL: http://163.128.209.18:8012
       BUCKET_URL: http://163.128.209.18:8012

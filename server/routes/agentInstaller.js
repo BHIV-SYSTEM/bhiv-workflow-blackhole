@@ -4,17 +4,63 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 
-const DIST_DIR = path.resolve(__dirname, '../../employee-agent/dist');
-const EXE_INSTALLER_PATH = path.join(DIST_DIR, 'Employee Activity Agent Setup 1.0.0.exe');
+const INSTALLER_FILE_NAME = 'Employee Activity Agent Setup 1.0.0.exe';
+
+// Local-dev default: the electron-builder output inside the repo.
+// (employee-agent/dist is gitignored and NOT part of the Docker build context
+//  — server/Dockerfile builds with context `server/` — so production must point
+//  AGENT_INSTALLER_PATH at a bind-mounted copy of the exe. See
+//  docker-compose.production.template.yml → backend.volumes.)
+const DEFAULT_INSTALLER_PATH = path.resolve(__dirname, '../../employee-agent/dist', INSTALLER_FILE_NAME);
+
+/**
+ * Resolve the installer file location.
+ * Priority: AGENT_INSTALLER_PATH env (absolute, or relative to the server's
+ * working directory) → repo-relative default used by local development.
+ */
+function resolveInstallerPath() {
+  const fromEnv = (process.env.AGENT_INSTALLER_PATH || '').trim();
+  if (!fromEnv) return DEFAULT_INSTALLER_PATH;
+  return path.isAbsolute(fromEnv) ? fromEnv : path.resolve(process.cwd(), fromEnv);
+}
+
+// The exe is ~77 MB; hashing it on every /info poll would waste seconds of CPU
+// per request. Cache the metadata keyed by resolved path + size + mtime.
+const metaCache = new Map();
 
 function getInstallerMeta() {
-  if (fs.existsSync(EXE_INSTALLER_PATH)) {
-    const stats = fs.statSync(EXE_INSTALLER_PATH);
-    const fileBuffer = fs.readFileSync(EXE_INSTALLER_PATH);
-    const sha256 = crypto.createHash('sha256').update(fileBuffer).digest('hex').toUpperCase();
-    return { available: true, fileName: 'Employee Activity Agent Setup 1.0.0.exe', format: 'exe', fileSize: stats.size, sizeBytes: stats.size, sha256, version: '1.0.0', platform: 'win32-x64', lastModified: stats.mtime.toISOString(), supportsSilentInstall: true };
+  const installerPath = resolveInstallerPath();
+  try {
+    const stats = fs.statSync(installerPath);
+    if (!stats.isFile()) {
+      return { available: false, version: '1.0.0', platform: 'win32-x64', installerPath };
+    }
+    const cacheKey = `${stats.size}:${stats.mtimeMs}`;
+    const cached = metaCache.get(installerPath);
+    if (cached && cached.key === cacheKey) {
+      return { ...cached.meta, installerPath };
+    }
+    const sha256 = crypto.createHash('sha256')
+      .update(fs.readFileSync(installerPath))
+      .digest('hex')
+      .toUpperCase();
+    const meta = {
+      available: true,
+      fileName: INSTALLER_FILE_NAME,
+      format: 'exe',
+      fileSize: stats.size,
+      sizeBytes: stats.size,
+      sha256,
+      version: '1.0.0',
+      platform: 'win32-x64',
+      lastModified: stats.mtime.toISOString(),
+      supportsSilentInstall: true,
+    };
+    metaCache.set(installerPath, { key: cacheKey, meta });
+    return { ...meta, installerPath };
+  } catch {
+    return { available: false, version: '1.0.0', platform: 'win32-x64', installerPath };
   }
-  return { available: false, version: '1.0.0', platform: 'win32-x64' };
 }
 
 router.get('/info', (req, res) => {
@@ -23,13 +69,30 @@ router.get('/info', (req, res) => {
 });
 
 router.get('/download', (req, res) => {
-  if (!fs.existsSync(EXE_INSTALLER_PATH)) {
-    return res.status(404).json({ error: 'Agent installer package not found on server', code: 'INSTALLER_NOT_FOUND' });
+  const installerPath = resolveInstallerPath();
+  if (!fs.existsSync(installerPath)) {
+    // Ops-visible diagnostics: the 404 body tells us exactly which path was
+    // checked and whether AGENT_INSTALLER_PATH was set in the container.
+    console.warn(`[agent-installer] Installer NOT FOUND at "${installerPath}" (AGENT_INSTALLER_PATH=${process.env.AGENT_INSTALLER_PATH || 'unset'})`);
+    return res.status(404).json({
+      error: 'Agent installer package not found on server',
+      code: 'INSTALLER_NOT_FOUND',
+      installerPath,
+    });
   }
-  const filename = 'Employee Activity Agent Setup 1.0.0.exe';
+  const filename = INSTALLER_FILE_NAME;
   res.setHeader('Content-Type', 'application/vnd.microsoft.portable-executable');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-  return res.sendFile(EXE_INSTALLER_PATH);
+  return res.sendFile(installerPath, (err) => {
+    if (err && !res.headersSent) {
+      console.error(`[agent-installer] Failed to stream "${installerPath}": ${err.message}`);
+      res.status(404).json({
+        error: 'Agent installer package not found on server',
+        code: 'INSTALLER_NOT_FOUND',
+        installerPath,
+      });
+    }
+  });
 });
 
 module.exports = router;

@@ -159,6 +159,28 @@ jobs:
             if [ -f /var/tmp/NIYANTRAN/RELEASE_HISTORY.md ]; then
               cp /var/tmp/NIYANTRAN/RELEASE_HISTORY.md docs/RELEASE_HISTORY.md
             fi
+
+            # V1 agent installer: the ~77 MB exe is gitignored and outside the
+            # Docker build context, so it lives in a bind-mounted host dir that
+            # survives this script's wipe of ~/NIYANTRAN (path is in /var/tmp).
+            # Create it as the SSH user BEFORE compose runs (Docker would
+            # otherwise create it root-owned, blocking future scp uploads).
+            mkdir -p /var/tmp/NIYANTRAN/installers
+            # Optional automation: set the AGENT_INSTALLER_URL repo secret to a
+            # direct download link (GitHub Release asset / bucket object) and
+            # every deploy re-fetches the installer. Never fails the deploy.
+            if [ -n "${{ secrets.AGENT_INSTALLER_URL }}" ]; then
+              if curl -fsSL --retry 3 --connect-timeout 15 \
+                  -o /var/tmp/NIYANTRAN/installers/.installer.part \
+                  "${{ secrets.AGENT_INSTALLER_URL }}"; then
+                mv -f /var/tmp/NIYANTRAN/installers/.installer.part \
+                  "/var/tmp/NIYANTRAN/installers/Employee Activity Agent Setup 1.0.0.exe" \
+                  || echo "WARN: downloaded installer but could not place it"
+              else
+                echo "WARN: AGENT_INSTALLER_URL download failed — keeping any existing installer"
+                rm -f /var/tmp/NIYANTRAN/installers/.installer.part
+              fi
+            fi
             
             # Generate target compose file from template by substituting the image tag
             sed "s|IMG_TAG|${{ needs.build.outputs.sha_short }}|g" docker-compose.production.template.yml > docker-compose.production.yml
