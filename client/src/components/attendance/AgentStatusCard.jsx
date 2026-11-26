@@ -25,6 +25,7 @@ export default function AgentStatusCard() {
     version,
     isChecking,
     lastSeen,
+    lastChecked,
     checkAgent,
     openAgent,
   } = useAgentConnection()
@@ -34,10 +35,10 @@ export default function AgentStatusCard() {
     try {
       const result = await downloadAgentInstaller('exe')
       toast({
-        title: 'Agent downloaded',
-        description: `Saved ${result.fileName} to your Downloads folder. Install it, then open the agent and sign in.`,
+        title: 'Download started',
+        description: `Downloading ${result.fileName} — check your browser downloads, install it, then open the agent and sign in.`,
       })
-      checkAgent()
+      checkAgent({ silent: true })
     } catch (err) {
       toast({
         title: 'Download failed',
@@ -103,7 +104,7 @@ export default function AgentStatusCard() {
               </div>
 
               <div className="flex flex-wrap items-center gap-2.5">
-                {!isAgentConnected && !isChecking && (
+                {!isAgentConnected && !(isChecking && !lastChecked) && (
                   <Button
                     onClick={handleDownload}
                     disabled={isDownloading}
@@ -135,7 +136,7 @@ export default function AgentStatusCard() {
       </CardHeader>
 
       <CardContent className="pt-4">
-        {!isAgentConnected && !isChecking && (
+        {!isAgentConnected && !(isChecking && !lastChecked) && (
           <p className="text-sm text-muted-foreground">
             {isAgentRunning
               ? 'The agent is running but signed out. Open it and sign in with your account.'

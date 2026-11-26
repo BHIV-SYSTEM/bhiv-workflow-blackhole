@@ -57,8 +57,11 @@ export function useAgentConnection() {
   });
   const isMounted = useRef(true);
 
-  const checkAgent = useCallback(async () => {
-    if (isMounted.current) setState((prev) => ({ ...prev, isChecking: true }));
+  const checkAgent = useCallback(async (opts) => {
+    const silent = Boolean(opts && opts.silent === true);
+    if (!silent && isMounted.current) {
+      setState((prev) => ({ ...prev, isChecking: true }));
+    }
 
     const local = await readLocalAgent();
 
@@ -92,9 +95,9 @@ export function useAgentConnection() {
     isMounted.current = true;
     checkAgent();
 
-    const intervalId = setInterval(checkAgent, POLL_INTERVAL_MS);
+    const intervalId = setInterval(() => checkAgent({ silent: true }), POLL_INTERVAL_MS);
     const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible') checkAgent();
+      if (document.visibilityState === 'visible') checkAgent({ silent: true });
     };
 
     document.addEventListener('visibilitychange', onVisibilityChange);
