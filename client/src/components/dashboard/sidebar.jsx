@@ -77,10 +77,6 @@ export function DashboardSidebar({ onNavigate, isMobile = false } = {}) {
   // Unified navigation structure with sections
   const getNavigationSections = () => {
     let role = user?.role;
-    if (!role && import.meta.env.DEV) {
-      if (location.pathname.startsWith('/monitoring-v2/admin')) role = 'Admin';
-      else if (location.pathname.startsWith('/monitoring-v2/employee')) role = 'User';
-    }
 
     if (role === "User") {
       return [
@@ -89,7 +85,7 @@ export function DashboardSidebar({ onNavigate, isMobile = false } = {}) {
           routes: [
             { title: "Dashboard", href: "/userdashboard", icon: LayoutDashboardIcon },
             { title: "My Tasks", href: "/my-tasks", icon: CheckSquare },
-            { title: "Work Session", href: "/monitoring-v2/employee", icon: ShieldCheck },
+            { title: "Work Session", href: "/work-session", icon: ShieldCheck },
             { title: "Set Aims", href: "/aims", icon: Target },
             { title: "Progress", href: "/progress", icon: BarChart },
             { title: "Knowledge Admin", href: "/knowledge-admin", icon: BookOpen },
@@ -211,7 +207,38 @@ export function DashboardSidebar({ onNavigate, isMobile = false } = {}) {
       ];
     }
 
-    // Default for other roles (Manager, Employee, etc.)
+    if (role === "Manager") {
+      return [
+        {
+          title: "Main",
+          routes: [
+            { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+            { title: "AI Optimization", href: "/optimization", icon: Sparkles },
+          ]
+        },
+        {
+          title: "Work",
+          routes: [
+            { title: "Tasks", href: "/tasks", icon: CheckSquare },
+            { title: "Dependencies", href: "/dependencies", icon: Network },
+            { title: "Departments", href: "/departments", icon: Users },
+            { title: "All Aims", href: "/all-aims", icon: Target },
+            { title: "Completed Tasks", href: "/completedtask", icon: CheckCircle },
+            { title: "Test Tasks", href: "/tested-tasks", icon: FileText },
+            { title: "Knowledge Admin", href: "/knowledge-admin", icon: BookOpen },
+          ]
+        },
+        {
+          title: "Employee Management",
+          routes: [
+            { title: "Employee Monitoring", href: "/monitoring", icon: Monitor },
+            { title: "Leaderboard", href: "/leaderboard", icon: Sparkles },
+          ]
+        }
+      ];
+    }
+
+    // Default for other roles
     return [
       {
         title: "Main",

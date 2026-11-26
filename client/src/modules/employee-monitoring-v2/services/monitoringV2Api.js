@@ -55,8 +55,9 @@ export const monitoringV2Api = {
   initiateHandoff: (sessionId, payload) => api.post(`/sessions/${sessionId}/handoff`, payload),
 
   // Installer & Distribution
-  getInstallerInfo: () => api.get('/installer/info'),
-  getInstallerDownloadUrl: () => '/api/monitoring-v2/installer/download',
+  getInstallerInfo: () => fetch('/api/agent/installer/info').then((res) => res.json()),
+  // Use the single V1 employee-agent installer endpoint.
+  getInstallerDownloadUrl: () => '/api/agent/installer/download',
 
   // Telemetry & Reporting
   getAggregatedActivity: (params) => api.get('/telemetry/aggregated', { params }),

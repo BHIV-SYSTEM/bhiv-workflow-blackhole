@@ -182,10 +182,10 @@ export const useAttendance = (options = {}) => {
     try {
       const response = await api.attendance.startDay(user.id, locationData);
       
-      if (response.data.success) {
+      if (response.success) {
         toast({
           title: "Day Started",
-          description: response.data.message,
+          description: response.message,
           variant: "default"
         });
         
@@ -193,7 +193,7 @@ export const useAttendance = (options = {}) => {
         await fetchTodayAttendance();
         return true;
       } else {
-        throw new Error(response.data.error || 'Failed to start day');
+        throw new Error(response.error || 'Failed to start day');
       }
     } catch (err) {
       const errorMessage = err.response?.data?.error || err.message || 'Failed to start day';
@@ -224,10 +224,10 @@ export const useAttendance = (options = {}) => {
     try {
       const response = await api.post(`/attendance/end-day/${user.id}`, locationData);
       
-      if (response.data.success) {
+      if (response.success) {
         toast({
           title: "Day Ended",
-          description: `Day ended successfully. Hours worked: ${response.data.hoursWorked}`,
+          description: `Day ended successfully. Hours worked: ${response.hoursWorked}`,
           variant: "default"
         });
         
@@ -235,7 +235,7 @@ export const useAttendance = (options = {}) => {
         await fetchTodayAttendance();
         return true;
       } else {
-        throw new Error(response.data.error || 'Failed to end day');
+        throw new Error(response.error || 'Failed to end day');
       }
     } catch (err) {
       const errorMessage = err.response?.data?.error || err.message || 'Failed to end day';
@@ -258,10 +258,10 @@ export const useAttendance = (options = {}) => {
       const dateStr = date.toISOString().split('T')[0];
       const response = await api.attendance.verify(userId, dateStr);
       
-      if (response.data.success) {
-        return response.data.data;
+      if (response.success) {
+        return response.data;
       } else {
-        throw new Error(response.data.error || 'Failed to verify attendance');
+        throw new Error(response.error || 'Failed to verify attendance');
       }
     } catch (err) {
       console.error('Verify attendance error:', err);
@@ -278,11 +278,11 @@ export const useAttendance = (options = {}) => {
       const dateStr = today.toISOString().split('T')[0];
       const response = await api.attendance.verify(user.id, dateStr);
 
-      if (response.data.success) {
-        setTodayAttendance(response.data.data);
-        return response.data.data;
+      if (response.success) {
+        setTodayAttendance(response.data);
+        return response.data;
       } else {
-        throw new Error(response.data.error || 'Failed to fetch today\'s attendance');
+        throw new Error(response.error || 'Failed to fetch today\'s attendance');
       }
     } catch (err) {
       console.error('Fetch today attendance error:', err);

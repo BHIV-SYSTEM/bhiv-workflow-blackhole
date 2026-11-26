@@ -287,7 +287,7 @@ const RealTimeTracker = () => {
       let address = 'Unknown Location';
       try {
         const geocodeResponse = await fetch(
-          `https://api.opencagedata.com/geocode/v1/json?q=${currentLocation.latitude}+${currentLocation.longitude}&key=${process.env.REACT_APP_OPENCAGE_API_KEY}`
+          `https://api.opencagedata.com/geocode/v1/json?q=${currentLocation.latitude}+${currentLocation.longitude}&key=${import.meta.env.VITE_OPENCAGE_API_KEY || ''}`
         );
         const geocodeData = await geocodeResponse.json();
         if (geocodeData.results && geocodeData.results[0]) {

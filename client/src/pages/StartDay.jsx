@@ -379,17 +379,8 @@ const StartDay = () => {
         console.warn('Could not get location for end day:', locError);
       }
       
-      // Trigger desktop agent session end and buffer drain before finalizing workday (Milestone 3 - F13)
-      try {
-        await fetch('http://127.0.0.1:48120/session/end', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reason: 'Workday Ended' })
-        });
-      } catch (agentErr) {
-        // Desktop agent loopback server may be offline, ignore safely
-      }
-
+      // The V1 employee agent detects the ended workday through the attendance
+      // status poll. No V2 agent loopback call is made here.
       // Call attendance end day API
       let response = null;
       try {

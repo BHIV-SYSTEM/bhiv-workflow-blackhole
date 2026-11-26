@@ -26,6 +26,7 @@ import {
   Radio,
   Zap,
   Shield,
+  Building,
   AlertCircle
 } from 'lucide-react';
 import { formatEmployeeId } from '../../lib/employeeId';

@@ -1,24 +1,41 @@
 import { Navigate, useLocation } from "react-router-dom"
 import { useAuth } from "../context/auth-context"
 
-export const ProtectedRoute = ({ children }) => {
+export const ProtectedRoute = ({ children, allowedRoles }) => {
   const { user, loading } = useAuth()
   const location = useLocation()
 
   if (loading) {
-    return <div>Loading...</div> // Replace with a proper loading component if needed
+    return <div>Loading...</div>
   }
 
   if (!user) {
-    if (import.meta.env.DEV && location.pathname.startsWith('/monitoring-v2')) {
-      return children;
-    }
     return <Navigate to="/login" state={{ from: location }} replace />
   }
 
+  if (Array.isArray(allowedRoles) && allowedRoles.length > 0 && !allowedRoles.includes(user.role)) {
+    return <Navigate to={user.role === "User" ? "/userdashboard" : "/dashboard"} replace />
+  }
+
   if (user.role === "User") {
-    // Allow access to /userdashboard, /knowledge-admin, and /tasks/* (including /tasks/:id)
-     if (location.pathname !== "/userdashboard" && location.pathname !== "/knowledge-admin" && location.pathname !== "/my-tasks" && !location.pathname.startsWith("/tasks/") && location.pathname !== "/progress" && location.pathname !== "/aims" && location.pathname !== "/todaysaim" && location.pathname !== "/leaderboard"&& location.pathname !== "/leave-request"&&!location.pathname.startsWith("/settings") && location.pathname !== "/monitoring-v2/employee" ) {
+    const allowedPaths = [
+      "/userdashboard",
+      "/knowledge-admin",
+      "/my-tasks",
+      "/progress",
+      "/aims",
+      "/todaysaim",
+      "/leaderboard",
+      "/leave-request",
+      "/work-session",
+    ]
+
+    const isAllowed =
+      allowedPaths.includes(location.pathname) ||
+      location.pathname.startsWith("/tasks/") ||
+      location.pathname.startsWith("/settings")
+
+    if (!isAllowed) {
       return <Navigate to="/userdashboard" replace />
     }
   }

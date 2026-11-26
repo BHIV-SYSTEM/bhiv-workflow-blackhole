@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const path = require('path');
 const auth = require('../middleware/auth');
+const adminAuth = require('../middleware/adminAuth');
 const User = require('../models/User');
 const Department = require('../models/Department');
 const EmployeeActivity = require('../models/EmployeeActivity');
@@ -85,6 +86,17 @@ const getFallbackTelemetry = (emp, date = new Date()) => {
 const generateFallbackActivityLogs = () => {
   return [];
 };
+
+// Monitoring exposes employee telemetry. Require authentication for every
+// route in this router so an anonymous caller can never read activity data.
+router.use(auth);
+
+// Team-wide views are for Admin/Manager only. Employees must not be able to
+// query peer activity, status, reports or summaries through the API.
+router.use('/team-summary', adminAuth);
+router.use('/status/all', adminAuth);
+router.use('/reports/team/summary', adminAuth);
+router.use('/daily-summary', adminAuth);
 
 // Start monitoring session for an employee
 router.post('/start/:employeeId', async (req, res) => {

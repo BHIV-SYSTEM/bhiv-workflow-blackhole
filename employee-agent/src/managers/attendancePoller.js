@@ -25,7 +25,12 @@ class AttendanceStatusPoller extends EventEmitter {
       dayEndedToday: false,
       attendanceId: null,
       startTime: null,
-      endTime: null
+      endTime: null,
+      // A workday handed over to Mobile is still open, but the desktop agent
+      // must not collect activity or screenshots while it is not the owner.
+      activeDevice: null,
+      ownsWorkday: true,
+      trackingActive: false
     };
     this.POLL_INTERVAL_MS = 5 * 1000; // 5 seconds - fast detection when employee starts day from web dashboard
   }
@@ -79,7 +84,10 @@ class AttendanceStatusPoller extends EventEmitter {
       const prevAttendanceId = this.currentStatus.attendanceId;
       const prevStartTime = this.currentStatus.startTime;
       const prevDayEndedToday = this.currentStatus.dayEndedToday;
+      const prevOwnsWorkday = this.currentStatus.ownsWorkday !== false;
       const nowStarted = status.dayStarted;
+      const activeDevice = status.activeDevice || null;
+      const ownsWorkday = !activeDevice || activeDevice.deviceType !== 'Mobile';
 
       // Update current status
       this.currentStatus = {
@@ -90,19 +98,29 @@ class AttendanceStatusPoller extends EventEmitter {
         endTime: status.endTime || null,
         workLocation: status.workLocation,
         userName: status.userName,
-        userEmail: status.userEmail
+        userEmail: status.userEmail,
+        activeDevice,
+        ownsWorkday,
+        trackingActive: Boolean(nowStarted && ownsWorkday)
+      };
+
+      const statusPayload = {
+        attendanceId: status.attendanceId,
+        startTime: status.startTime,
+        workLocation: status.workLocation,
+        userName: status.userName,
+        userEmail: status.userEmail,
+        activeDevice
       };
 
       // Day just started (transition from false → true)
       if (!previouslyStarted && nowStarted) {
-        console.log('🟢 Day started detected! Starting activity tracking...');
-        this.emit('day-started', {
-          attendanceId: status.attendanceId,
-          startTime: status.startTime,
-          workLocation: status.workLocation,
-          userName: status.userName,
-          userEmail: status.userEmail
-        });
+        if (ownsWorkday) {
+          console.log('🟢 Day started detected! Starting activity tracking...');
+          this.emit('day-started', statusPayload);
+        } else {
+          console.log('⏸️ Workday is on Mobile — desktop monitoring paused.');
+        }
       } else if (
         previouslyStarted &&
         nowStarted &&
@@ -110,13 +128,18 @@ class AttendanceStatusPoller extends EventEmitter {
           String(prevStartTime || '') !== String(status.startTime || ''))
       ) {
         console.log('🔄 New workday session detected while polling — resetting counters...');
-        this.emit('day-restarted', {
-          attendanceId: status.attendanceId,
-          startTime: status.startTime,
-          workLocation: status.workLocation,
-          userName: status.userName,
-          userEmail: status.userEmail
-        });
+        if (ownsWorkday) this.emit('day-restarted', statusPayload);
+      }
+
+      // Device handover: pause/resume collectors without ending the workday.
+      if (previouslyStarted && nowStarted && prevOwnsWorkday !== ownsWorkday) {
+        if (ownsWorkday) {
+          console.log('▶️ Workday moved back to Laptop / PC — resuming desktop monitoring.');
+          this.emit('day-resumed', statusPayload);
+        } else {
+          console.log('⏸️ Workday moved to Mobile — pausing desktop monitoring.');
+          this.emit('day-suspended', statusPayload);
+        }
       }
 
       // Day just ended (transition from true → false)
@@ -137,8 +160,10 @@ class AttendanceStatusPoller extends EventEmitter {
       }
 
       // Status unchanged
-      if (nowStarted) {
+      if (nowStarted && ownsWorkday) {
         console.log('✓ Day active (polling...)');
+      } else if (nowStarted) {
+        console.log('⏸ Day active on Mobile — desktop monitoring paused');
       } else {
         console.log('○ Day not started (polling...)');
       }

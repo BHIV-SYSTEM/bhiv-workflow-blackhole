@@ -18,8 +18,9 @@ import {
   Star,
   ShieldCheck
 } from 'lucide-react';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Button } from '../ui/button';
+import { Textarea } from '../ui/textarea';
 import { Card, CardContent } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Progress } from '../ui/progress';
@@ -37,6 +38,7 @@ const OFFICE_ADDRESS = 'Blackhole Infiverse LLP, Road Number 3, near Hathi Circl
 const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess, onStartDay, user: propUser }) => {
   const { user: authUser } = useAuth();
   const user = propUser || authUser;
+  const isMobileDevice = /Mobile|Android|iPhone|iPad/i.test(typeof navigator !== 'undefined' ? navigator.userAgent : '');
   const [step, setStep] = useState('location'); // location, validation, confirmation
   const [loading, setLoading] = useState(false);
   const [location, setLocation] = useState(null);
@@ -48,12 +50,16 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess, onStartDay, user: 
   const [distanceFromOffice, setDistanceFromOffice] = useState(null);
   const [batteryLevel, setBatteryLevel] = useState(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [reasonPrompt, setReasonPrompt] = useState({ open: false, previousDateLabel: '', minLength: 10 });
+  const [previousDayReason, setPreviousDayReason] = useState('');
+  const [agentStatus, setAgentStatus] = useState(null); // {installed, online} for desktop gating
 
   useEffect(() => {
     if (isOpen) {
       initializeDialog();
       getDeviceInfo();
       getBatteryInfo();
+      fetchAgentStatus();
     }
   }, [isOpen]);
 
@@ -79,6 +85,8 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess, onStartDay, user: 
     setMonitoringConsent(true);
     setIsInOfficeRange(false);
     setDistanceFromOffice(null);
+    setReasonPrompt({ open: false, previousDateLabel: '', minLength: 10 });
+    setPreviousDayReason('');
   };
 
   const getDeviceInfo = () => {
@@ -96,6 +104,31 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess, onStartDay, user: 
       timestamp: new Date().toISOString()
     };
     setDeviceInfo(info);
+  };
+
+  const fetchAgentStatus = async () => {
+    // Prefer local agent presence (V1 agent runs a status server on 127.0.0.1:48121)
+    try {
+      const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), 1500);
+      const res = await fetch('http://127.0.0.1:48121/status', { signal: controller.signal });
+      clearTimeout(t);
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (data && data.status === 'ok' && data.loggedIn === true) {
+          setAgentStatus({ installed: true, online: true, local: true });
+          return;
+        }
+      }
+    } catch (_) {
+      // local agent not running; fall through to server check
+    }
+    try {
+      const res = await api.agent.status();
+      setAgentStatus(res || { installed: false, online: false });
+    } catch (_) {
+      setAgentStatus({ installed: false, online: false });
+    }
   };
 
   const getBatteryInfo = async () => {
@@ -432,7 +465,7 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess, onStartDay, user: 
     }
   };
 
-  const handleStartDay = async () => {
+  const handleStartDay = async (reasonOverride = null) => {
     if (!location) {
       toast.error('Please get your location first');
       return;
@@ -444,10 +477,36 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess, onStartDay, user: 
       return;
     }
 
+    const isMobileDevice = /Mobile|Android|iPhone|iPad/i.test(navigator.userAgent);
+    if (!isMobileDevice) {
+      // Desktop requires the V1 desktop agent to be installed & running.
+      // Always fetch fresh status (do not trust stale state).
+      let status = null;
+      try { status = await api.agent.status(); setAgentStatus(status); } catch (_) { status = { installed: false, online: false }; }
+      const localOk = await (async () => {
+        try {
+          const controller = new AbortController();
+          const t = setTimeout(() => controller.abort(), 1500);
+          const res = await fetch('http://127.0.0.1:48121/status', { signal: controller.signal });
+          clearTimeout(t);
+          if (res.ok) {
+            const data = await res.json().catch(() => ({}));
+            // Agent can keep its status server up after logout; require an
+            // explicit signed-in state before allowing a laptop start.
+            return !!(data && data.status === 'ok' && data.loggedIn === true);
+          }
+        } catch (_) {}
+        return false;
+      })();
+      if (!(localOk || (status && status.online))) {
+        toast.error('Desktop agent is required to start your day. Open the Niyantran desktop agent and sign in, then retry.', { duration: 6000 });
+        return;
+      }
+    }
     try {
       setLoading(true);
-      
-      const isMobileDevice = /Mobile|Android|iPhone|iPad/i.test(navigator.userAgent);
+
+      const reasonToSend = typeof reasonOverride === 'string' ? reasonOverride : previousDayReason;
       const startDayData = {
         latitude: location.latitude,
         longitude: location.longitude,
@@ -462,9 +521,12 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess, onStartDay, user: 
           deviceType: isMobileDevice ? 'Mobile' : 'Desktop'
         }
       };
+      if (reasonToSend && reasonToSend.trim()) {
+        startDayData.previousDayProgressReason = reasonToSend.trim();
+      }
 
       const response = await api.attendance.startDay(user.id, startDayData);
-      
+
       if (response.success) {
         toast.success(response.message, {
           duration: 4000,
@@ -474,7 +536,10 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess, onStartDay, user: 
             border: '1px solid #bbf7d0',
           },
         });
-        
+
+        setReasonPrompt({ open: false, previousDateLabel: '', minLength: 10 });
+        setPreviousDayReason('');
+
         const callback = onSuccess || onStartDay;
         if (callback) callback(response);
         onClose();
@@ -483,12 +548,21 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess, onStartDay, user: 
           window.location.reload();
         }, 4000); // same as toast duration
       }
-      
+
     } catch (error) {
       console.error('Start day error:', error);
-      const errorData = error.response?.data;
-      
-      if (errorData?.code === 'LOCATION_TOO_FAR') {
+      const errorData = error.response?.data || error.data || null;
+
+      if (errorData?.code === 'PREVIOUS_DAY_PROGRESS_REASON_REQUIRED') {
+        setReasonPrompt({
+          open: true,
+          previousDateLabel: errorData.previousDateLabel || 'previous working day',
+          minLength: errorData.minLength || 10
+        });
+        toast.error(errorData.error || "Why was the previous day's progress not updated?", {
+          duration: 6000,
+        });
+      } else if (errorData?.code === 'LOCATION_TOO_FAR') {
         toast.error('You are too far from office. Please go to office or select "Work From Home"', {
           duration: 6000,
         });
@@ -496,12 +570,18 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess, onStartDay, user: 
         toast.error('Your day has already been started');
         onClose();
       } else {
-        toast.error(errorData?.error || 'Failed to start day');
+        toast.error(errorData?.error || error.message || 'Failed to start day');
       }
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const onVis = () => { if (document.visibilityState === 'visible' && isOpen) fetchAgentStatus(); }
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [isOpen]);
 
   const getLocationStatusColor = () => {
     if (!location) return 'bg-gray-500';
@@ -518,6 +598,7 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess, onStartDay, user: 
   };
 
   return (
+    <>
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="w-[95vw] sm:max-w-md max-h-[90vh] overflow-y-auto bg-gray-800/95 backdrop-blur-xl border border-white/10 shadow-2xl rounded-2xl">
         <DialogHeader className="relative pb-2">
@@ -888,6 +969,24 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess, onStartDay, user: 
                   </div>
                 </div>
 
+                {/* Desktop agent requirement notice */}
+                {!isMobileDevice && agentStatus && !agentStatus.online && (
+                  <div className="bg-amber-900/30 border border-amber-500/30 rounded-xl p-3 text-sm text-amber-200 flex items-start gap-2">
+                    <AlertTriangle className="w-5 h-5 text-amber-400 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="font-semibold">Desktop agent required</p>
+                    <p className="text-xs text-amber-300/80 mt-1">Open the Niyantran desktop agent and sign in with your account, then retry. (Download it from your dashboard if not installed.)</p>
+                    <button
+                      type="button"
+                      onClick={() => { window.location.href = 'niyantran://open'; }}
+                      className="mt-2 text-xs underline text-amber-200 hover:text-amber-100"
+                    >
+                      Open Agent
+                    </button>
+                  </div>
+                  </div>
+                )}
+
                 {/* Action Buttons */}
                 <div className="flex space-x-3 pt-4">
                   <Button
@@ -900,7 +999,7 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess, onStartDay, user: 
                   
                   <Button
                     onClick={handleStartDay}
-                    disabled={loading || (!isInOfficeRange && !workFromHome)}
+                    disabled={loading || (!isInOfficeRange && !workFromHome) || (!isMobileDevice && !(agentStatus && agentStatus.online))}
                     className="flex-1 h-11 bg-green-500/90 hover:bg-green-600/90 text-white shadow-lg font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed border border-green-400/50"
                   >
                     {loading ? (
@@ -922,6 +1021,58 @@ const EnhancedStartDayDialog = ({ isOpen, onClose, onSuccess, onStartDay, user: 
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* Strict Warning Prompt: Missing Previous Day Progress */}
+    <Dialog
+      open={reasonPrompt.open}
+      onOpenChange={(open) => {
+        if (!open) setReasonPrompt((prev) => ({ ...prev, open: false }));
+      }}
+    >
+      <DialogContent className="w-[95vw] max-w-md border border-red-500/40 bg-gray-800/95 backdrop-blur-xl text-white shadow-2xl rounded-2xl p-6">
+        <DialogHeader>
+          <DialogTitle className="text-lg font-bold text-red-400 flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5" />
+            Previous Day Progress Not Updated
+          </DialogTitle>
+          <DialogDescription className="text-sm text-gray-300 pt-1">
+            Why was the previous day&apos;s progress ({reasonPrompt.previousDateLabel}) not updated? Please enter a valid reason before starting your day.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2 py-2">
+          <Textarea
+            value={previousDayReason}
+            onChange={(e) => setPreviousDayReason(e.target.value)}
+            placeholder="Explain why yesterday's progress update was missed..."
+            rows={3}
+            maxLength={500}
+            className="bg-gray-700/60 border-gray-600 text-white placeholder:text-gray-400"
+          />
+          <p className="text-xs text-gray-400">
+            {previousDayReason.trim().length} / {reasonPrompt.minLength || 10} characters minimum
+          </p>
+        </div>
+        <DialogFooter className="gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setReasonPrompt((prev) => ({ ...prev, open: false }))}
+            className="border-gray-500/40 bg-gray-600/50 text-white hover:bg-gray-600/70"
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            disabled={loading || previousDayReason.trim().length < (reasonPrompt.minLength || 10)}
+            onClick={() => handleStartDay(previousDayReason)}
+            className="bg-green-500/90 hover:bg-green-600/90 text-white"
+          >
+            {loading ? 'Starting Day...' : 'Submit Reason & Start Day'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 };
 

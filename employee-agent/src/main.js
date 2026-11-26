@@ -1,6 +1,7 @@
 const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const http = require('http');
 const Store = require('electron-store');
 const ActivityTracker = require('./managers/activityTracker');
 const AttendanceStatusPoller = require('./managers/attendancePoller');
@@ -60,6 +61,7 @@ let tray = null;
 let mainWindow = null;
 let activityTracker = null;
 let attendancePoller = null;
+let agentHeartbeatTimer = null;
 let apiService = null;
 let screenshotEngine = null;
 let assignedTasks = [];
@@ -277,8 +279,10 @@ ipcMain.handle('login', async (event, credentials) => {
       store.set('user', result.user);
       store.set('savedCredentials', credentials);
       apiService.setAuthToken(result.token);
+      store.set('apiBaseUrl', apiService.getBaseUrl());
       
       startAttendancePoller();
+      startAgentHeartbeat();
       
       const currentStatus = await apiService.checkAttendanceStatus();
       if (currentStatus.dayStarted && !appState.isDayStarted) {
@@ -307,6 +311,7 @@ ipcMain.handle('logout', async () => {
   if (attendancePoller) {
     attendancePoller.stop();
   }
+  stopAgentHeartbeat();
   
   if (appState.isDayStarted) {
     await Promise.resolve(endTracking());
@@ -521,6 +526,16 @@ app.whenReady().then(async () => {
 
   // 2. Initialize services
   apiService = new ApiService();
+
+  // Reuse the backend that accepted the last successful login. Without this
+  // the agent could restore a token issued by one database against a
+  // different deployment and show no employee record/tasks.
+  const savedBaseUrl = store.get('apiBaseUrl');
+  if (savedBaseUrl) {
+    apiService.setBaseUrl(savedBaseUrl);
+    console.log('✓ Reusing saved backend:', savedBaseUrl);
+  }
+
   activityTracker = new ActivityTracker(apiService);
 
   // TRINETRA periodic capture engine (starts/stops with the workday)
@@ -532,6 +547,7 @@ app.whenReady().then(async () => {
   // is what makes the agent appear on launch instead of silently starting.
   createWindow();
   createTray();
+  startLocalStatusServer();
 
   // 4. Mark consent as automatically given
   store.set('consentGiven', true);
@@ -550,7 +566,25 @@ app.whenReady().then(async () => {
 
   if (savedToken) {
     apiService.setAuthToken(savedToken);
-    const status = await apiService.checkAttendanceStatus();
+
+    // Confirm the token belongs to an account that exists on THIS backend
+    // before restoring. A shared JWT_SECRET can make a token issued by
+    // another deployment verify while the employee record does not exist
+    // there, which showed up as an agent with no tasks/records.
+    const session = await apiService.verifySession();
+    let status;
+
+    if (session.valid) {
+      store.set('apiBaseUrl', apiService.getBaseUrl());
+      status = await apiService.checkAttendanceStatus();
+    } else if (session.network) {
+      // Backend unreachable right now (typical at boot). Keep the previous
+      // behaviour: restore the session and let the poller reconcile.
+      status = await apiService.checkAttendanceStatus();
+    } else {
+      console.log(`⚠️ Saved token rejected by ${apiService.getBaseUrl()}: ${session.error}. Re-login required...`);
+      status = { error: true, errorMessage: `401 ${session.error}` };
+    }
 
     if (status.error && isAuthFailure(status)) {
       // Rejected token: fall through to the saved-credentials re-login below.
@@ -571,6 +605,7 @@ app.whenReady().then(async () => {
       };
       sessionRestored = true;
       startAttendancePoller();
+      startAgentHeartbeat();
       updateTrayMenu();
       sendToRenderer('show-dashboard', { user: appState.user });
     } else {
@@ -584,10 +619,12 @@ app.whenReady().then(async () => {
         email: status.userEmail || tokenUser?.email || savedUser?.email || savedCredentials?.email || ''
       };
       sessionRestored = true;
+      store.set('apiBaseUrl', apiService.getBaseUrl());
       console.log(`✓ Automatically restored session for: ${appState.user.name} (${appState.user.email})`);
 
-      startAttendancePoller();
-      if (attendancePoller) {
+        startAttendancePoller();
+        startAgentHeartbeat();
+        if (attendancePoller) {
         // Seed the poller with the fresh status so its first poll does not
         // re-emit a day-started transition for a day that is already active.
         attendancePoller.currentStatus = {
@@ -626,10 +663,12 @@ app.whenReady().then(async () => {
         store.set('user', result.user);
         store.set('savedCredentials', savedCredentials);
         apiService.setAuthToken(result.token);
+        store.set('apiBaseUrl', apiService.getBaseUrl());
         sessionRestored = true;
         console.log('✓ Automatic login successful!');
 
         startAttendancePoller();
+        startAgentHeartbeat();
 
         const status = await apiService.checkAttendanceStatus();
         if (status.dayStarted) {
@@ -664,6 +703,51 @@ app.on('before-quit', () => {
   }
 });
 
+function startAgentHeartbeat() {
+  if (agentHeartbeatTimer) return;
+  const send = async () => {
+    if (!appState.isLoggedIn) return;
+    try { await apiService.sendHeartbeat(); } catch (e) { /* ignore */ }
+  };
+  send();
+  agentHeartbeatTimer = setInterval(send, 30000);
+}
+
+function stopAgentHeartbeat() {
+  if (agentHeartbeatTimer) {
+    clearInterval(agentHeartbeatTimer);
+    agentHeartbeatTimer = null;
+  }
+}
+
+function startLocalStatusServer() {
+  try {
+    const server = http.createServer((req, res) => {
+      if (req.url === '/status' || req.url === '/status/') {
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.end(JSON.stringify({
+          status: 'ok',
+          loggedIn: !!appState.isLoggedIn,
+          version: '1.0.0',
+          // Which backend/database this agent is signed into, so the web app
+          // can surface a mismatch instead of silently showing no records.
+          backend: apiService ? apiService.getBaseUrl() : null
+        }));
+      } else {
+        res.statusCode = 404;
+        res.end();
+      }
+    });
+    server.listen(48121, '127.0.0.1', () => {
+      console.log('Local agent status server listening on 127.0.0.1:48121');
+    });
+    server.on('error', (e) => console.warn('Local status server error:', e && e.message));
+  } catch (e) {
+    console.warn('Failed to start local status server:', e && e.message);
+  }
+}
+
 function startAttendancePoller() {
   if (!attendancePoller) {
     attendancePoller = new AttendanceStatusPoller(apiService);
@@ -694,9 +778,37 @@ function startAttendancePoller() {
     attendancePoller.on('day-started', (data) => handleStartOrRestart(data, true));
     attendancePoller.on('day-restarted', (data) => handleStartOrRestart(data, true));
 
+    // The workday was handed to the phone: keep the day open, pause collectors.
+    attendancePoller.on('day-suspended', async (data = {}) => {
+      console.log('⏸️ Workday now owned by Mobile. Pausing desktop monitoring...');
+      await endTracking();
+      appState.isDayPaused = true;
+      updateTrayMenu();
+      sendToRenderer('day-status-changed', {
+        dayStarted: true,
+        dayPaused: true,
+        startTime: appState.startTime,
+        activeDevice: data.activeDevice || null
+      });
+    });
+
+    // Handed back to the laptop/PC: resume collectors without resetting counters.
+    attendancePoller.on('day-resumed', (data = {}) => {
+      console.log('▶️ Workday now owned by Laptop / PC. Resuming desktop monitoring...');
+      appState.isDayPaused = false;
+      handleStartOrRestart(data, false);
+      sendToRenderer('day-status-changed', {
+        dayStarted: true,
+        dayPaused: false,
+        startTime: appState.startTime,
+        activeDevice: data.activeDevice || null
+      });
+    });
+
     attendancePoller.on('day-ended', async (data = {}) => {
       console.log('🔴 Workday ended! Stopping tracking...');
       appState.isDayStarted = false;
+      appState.isDayPaused = false;
       appState.dayEndedToday = Boolean(data.dayEndedToday ?? true);
       appState.startTime = data.startTime || appState.startTime;
       appState.endTime = data.endTime || new Date().toISOString();

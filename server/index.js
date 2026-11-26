@@ -182,6 +182,7 @@ const enhancedAttendanceRoutes = require('./routes/enhancedAttendance'); // Enha
 const attendanceStatusRoutes = require('./routes/attendanceStatus'); // Attendance status routes for polling  
 const agentActivityRoutes = require('./routes/agentActivity'); // Agent activity routes
 const agentInstallerRoutes = require('./routes/agentInstaller'); // V1 electron agent installer
+const deviceSessionRoutes = require('./routes/deviceSession'); // Desktop/Mobile workday handover (V1 agent)
 const leaveRoutes = require('./routes/leave'); // New leave routes
 const enhancedSalaryRoutes = require('./routes/enhancedSalary'); // Enhanced salary with live attendance
 const consentRoutes = require('./routes/consent'); // Consent routes
@@ -614,12 +615,12 @@ app.use('/api/aims', aimRoutes);
 app.use('/api/user-notifications', userNotificationRoutes);
 app.use("/api/push", pushRoutes) // Added push routes use
 app.use("/api/monitoring", require("./routes/monitoring")); // Employee monitoring routes
-app.use("/api/monitoring-v2", require("./modules/employee-monitoring-v2/routes")); // Employee monitoring V2 routes (isolated, feature-flagged)
 app.use("/api/attendance", attendanceRoutes); // Attendance management routes
 app.use("/api/enhanced-attendance", enhancedAttendanceRoutes); // Enhanced attendance routes
 app.use("/api/attendance", attendanceStatusRoutes); // Electron agent polling endpoint (/api/attendance/status)
 app.use("/api/agent", agentActivityRoutes); // Desktop agent activity ingestion
 app.use("/api/agent/installer", agentInstallerRoutes); // V1 electron agent installer download
+app.use("/api/device-session", deviceSessionRoutes); // Workday device switch (V1 agent only)
 app.use("/api/trinetra", trinetraRouter); // TRINETRA AI layer (additive: telemetry, scoring, verification, alerts)
 app.use("/api/attendance-dashboard", require("./routes/attendanceDashboard")); // Live attendance dashboard routes
 app.use("/api/leave", leaveRoutes); // Leave management routes

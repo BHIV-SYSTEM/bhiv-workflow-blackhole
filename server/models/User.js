@@ -112,8 +112,17 @@ const UserSchema = new mongoose.Schema({
     default: 'blackhole_mumbai',
     index: true,
   },
-  // Parikshak — tracks user's current position in the task graph
-  currentParikshakTaskId: {
+  // Desktop Agent (V1) — installation + heartbeat tracking
+  agentInstalled: {
+    type: Boolean,
+    default: false,
+    index: true,
+  },
+  agentLastSeen: {
+    type: Date,
+    default: null,
+  },
+  agentVersion: {
     type: String,
     default: null,
   },

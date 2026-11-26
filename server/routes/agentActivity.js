@@ -2,6 +2,46 @@ const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
 const EmployeeActivity = require('../models/EmployeeActivity');
+const {
+  summarizeActivitiesWithSession,
+  evaluateSample,
+  normalizeIntervalSeconds,
+} = require('../utils/telemetryMetrics');
+
+/**
+ * Human-readable host for a URL (e.g. "github.com"). Falls back to the raw
+ * string when the URL cannot be parsed, and never throws.
+ */
+function safeHost(rawUrl) {
+  try {
+    const u = new URL(rawUrl);
+    return (u.hostname || rawUrl).replace(/^www\./, '');
+  } catch {
+    return String(rawUrl).replace(/^https?:\/\//, '').split('/')[0] || String(rawUrl);
+  }
+}
+
+/**
+ * Strip the trailing " - Google Chrome" / " - Visual Studio Code" suffix from
+ * a window title so the review shows the page/site name, not the app name
+ * twice. Returns '' when nothing readable is left.
+ */
+function cleanPageTitle(title, appName) {
+  let t = String(title || '').trim();
+  if (!t) return '';
+  const suffixes = [
+    appName,
+    'Google Chrome', 'Microsoft Edge', 'Chromium', 'Firefox', 'Opera',
+    'Visual Studio Code', 'VS Code', 'Slack', 'Microsoft Teams', 'Notepad',
+  ].filter(Boolean);
+  for (const s of suffixes) {
+    if (t.length > s.length && t.toLowerCase().endsWith(` - ${s.toLowerCase()}`)) {
+      t = t.slice(0, -(s.length + 3)).trim();
+      break;
+    }
+  }
+  return t;
+}
 
 /**
  * Shared gate for every agent telemetry ingest: monitoring must not be
@@ -340,13 +380,17 @@ router.post('/keystroke/ingest', auth, async (req, res) => {
 
 /**
  * GET /api/agent/activity/summary/:userId
- * Get activity summary for a user (fetches from MongoDB)
+ *
+ * Day-in-review for one employee. The caller may only read their own summary
+ * (admins may read any) — this is what powers the employee's Work Session
+ * self-review: keystrokes, mouse movement, productivity, and a timeline of
+ * the websites/applications they moved through, with times.
  */
 router.get('/activity/summary/:userId', auth, async (req, res) => {
   try {
     const { userId } = req.params;
 
-    // Verify authorization
+    // Verify authorization — employees see ONLY their own data.
     if (req.user.id !== userId && req.user.role !== 'Admin') {
       return res.status(403).json({ error: 'Not authorized' });
     }
@@ -357,24 +401,127 @@ router.get('/activity/summary/:userId', auth, async (req, res) => {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    // Fetch activity data from MongoDB
+    // Oldest-first: the review is a timeline of the day.
     const activities = await EmployeeActivity.find({
       employee: userId,
       timestamp: { $gte: today, $lt: tomorrow }
-    }).sort({ timestamp: -1 }).lean();
+    }).sort({ timestamp: 1 }).lean();
 
-    const { summarizeActivitiesWithSession } = require('../utils/telemetryMetrics');
     const unified = summarizeActivitiesWithSession(activities);
 
-    // Calculate summary
+    // Raw mouse movement volume (the 0-100 score saturates; the event count
+    // shows how much the employee actually moved/clicked).
+    let totalMouseEvents = 0;
+    for (const act of activities) {
+      totalMouseEvents += Number(act.mouse_event_count) || 0;
+    }
+
+    // Website/application timeline: merge consecutive samples on the same
+    // target into one visit {label, url, startedAt, endedAt, seconds}.
+    // Raw URLs are prohibited by the platform privacy boundary, so the
+    // page/site name is derived from the browser window title (e.g.
+    // "Infiverse - AI Workflow Management - Google Chrome" → the page name).
+    const VISIT_GAP_MS = 5 * 60 * 1000; // a 5+ min gap ends the current visit
+    const visits = [];
+    let current = null;
+    for (const act of activities) {
+      const app = act.active_application || {};
+      const url = typeof app.url === 'string' ? app.url.trim() : '';
+      const name = typeof app.name === 'string' && app.name.trim() ? app.name.trim() : null;
+      const title = typeof app.title === 'string' ? app.title.trim() : '';
+      const page = cleanPageTitle(title, name);
+      const label = url ? safeHost(url) : (page || name);
+      if (!label || label === 'Unknown' || label === 'null') continue;
+
+      const ts = new Date(act.timestamp).getTime();
+      if (!Number.isFinite(ts)) continue;
+      const sampleSec = normalizeIntervalSeconds(act);
+      const key = url || page || name;
+
+      if (current && current.key === key && ts - current.lastMs <= VISIT_GAP_MS) {
+        current.lastMs = ts;
+        current.seconds += sampleSec;
+        current.samples += 1;
+      } else {
+        current = { key, label, url: url || null, app: name, startedMs: ts, lastMs: ts, seconds: sampleSec, samples: 1 };
+        visits.push(current);
+      }
+    }
+
+    const websiteVisits = visits
+      .slice(-60) // payload cap: the last 60 visits cover a full workday
+      .reverse()  // most recent first
+      .map((v) => ({
+        label: v.label,
+        url: v.url,
+        application: v.app,
+        startedAt: new Date(v.startedMs).toISOString(),
+        endedAt: new Date(v.lastMs + v.seconds * 1000).toISOString(),
+        seconds: Math.max(v.seconds, Math.round((v.lastMs - v.startedMs) / 1000) + v.seconds),
+        samples: v.samples,
+      }));
+
+    // Hour-by-hour rollup so the employee can see when they were productive.
+    const hourly = [];
+    const hourBuckets = new Map();
+    for (const act of activities) {
+      const d = new Date(act.timestamp);
+      const hourKey = d.getHours();
+      let bucket = hourBuckets.get(hourKey);
+      if (!bucket) {
+        bucket = {
+          hour: hourKey,
+          label: `${String(hourKey).padStart(2, '0')}:00`,
+          keystrokes: 0,
+          mouseEvents: 0,
+          activeSeconds: 0,
+          idleSeconds: 0,
+          scoreSum: 0,
+          scoreSamples: 0,
+          samples: 0,
+        };
+        hourBuckets.set(hourKey, bucket);
+      }
+      const ev = evaluateSample(act);
+      bucket.keystrokes += ev.keys;
+      bucket.mouseEvents += ev.mouseEvents;
+      bucket.activeSeconds += ev.activeSec;
+      bucket.idleSeconds += ev.idleSec;
+      bucket.scoreSum += ev.qualityScore;
+      bucket.scoreSamples += 1;
+      bucket.samples += 1;
+    }
+    for (const bucket of [...hourBuckets.values()].sort((a, b) => a.hour - b.hour)) {
+      hourly.push({
+        hour: bucket.hour,
+        label: bucket.label,
+        keystrokes: bucket.keystrokes,
+        mouseEvents: bucket.mouseEvents,
+        activeSeconds: bucket.activeSeconds,
+        idleSeconds: bucket.idleSeconds,
+        avgProductivity: bucket.scoreSamples > 0
+          ? Math.min(100, Math.round(bucket.scoreSum / bucket.scoreSamples))
+          : 0,
+      });
+    }
+
+    // Day-in-review summary (legacy fields kept for existing consumers).
     const summary = {
       totalLogs: unified.logCount,
       totalKeystrokes: unified.totalKeystrokes,
       totalMouseActivity: unified.avgMouseActivity,
+      totalMouseEvents,
       totalIdleSeconds: unified.totalIdleSeconds,
+      activeSeconds: unified.activeSeconds,
+      activeHours: unified.activeHours,
+      idleTime: unified.idleTime,
       avgProductivityScore: unified.avgProductivityScore,
       productivityEfficiency: unified.productivityEfficiency,
-      recentLogs: activities.slice(0, 10) // Most recent 10 entries
+      hasActivity: unified.hasActivity,
+      appDetails: unified.appDetails,
+      websiteVisits,
+      hourly,
+      recentLogs: activities.slice(-15).reverse() // Most recent 15 entries
     };
 
     res.json({ success: true, summary });
@@ -439,6 +586,43 @@ router.get('/verify', auth, async (req, res) => {
   } catch (error) {
     console.error('Agent verify error:', error);
     res.status(500).json({ valid: false, message: 'Verification failed' });
+  }
+});
+
+// Heartbeat from the V1 desktop agent — marks the agent as installed/online for this user.
+router.post('/heartbeat', auth, async (req, res) => {
+  try {
+    const User = require('../models/User');
+    const version = (req.body && req.body.version) ? String(req.body.version) : null;
+    const update = { agentInstalled: true, agentLastSeen: new Date() };
+    if (version) update.agentVersion = version;
+    await User.findByIdAndUpdate(req.user.id, { $set: update });
+    return res.json({ success: true, online: true, installed: true });
+  } catch (error) {
+    console.error('Agent heartbeat error:', error);
+    return res.status(500).json({ success: false, error: 'Heartbeat failed' });
+  }
+});
+
+// Status of the V1 desktop agent for the authenticated user (used by the web app
+// to gate Start Day on desktop and to show/hide the Download Agent button).
+router.get('/status', auth, async (req, res) => {
+  try {
+    const User = require('../models/User');
+    const user = await User.findById(req.user.id).select('agentInstalled agentLastSeen agentVersion').lean();
+    const installed = !!(user && user.agentInstalled);
+    const lastSeen = user && user.agentLastSeen ? new Date(user.agentLastSeen) : null;
+    const online = installed && lastSeen && (Date.now() - lastSeen.getTime() < 2 * 60 * 1000);
+    return res.json({
+      success: true,
+      installed,
+      online: !!online,
+      lastSeen: lastSeen ? lastSeen.toISOString() : null,
+      version: user ? user.agentVersion : null
+    });
+  } catch (error) {
+    console.error('Agent status error:', error);
+    return res.status(500).json({ success: false, error: 'Status check failed' });
   }
 });
 

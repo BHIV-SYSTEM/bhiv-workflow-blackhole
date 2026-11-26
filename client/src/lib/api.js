@@ -34,6 +34,16 @@ export { API_URL };
 //-----------------------------------------------------
 // Helper function for API requests
 //-----------------------------------------------------
+// Build an Error that carries the HTTP status and parsed body so callers can
+// read `error.status`, `error.data` (or the axios-compatible `error.response.data`).
+function makeApiError(message, status, data) {
+  const err = new Error(message);
+  err.status = status;
+  err.data = data;
+  err.response = { data, status };
+  return err;
+}
+
 async function fetchAPI(endpoint, options = {}) {
   const token = localStorage.getItem("WorkflowToken");
   const selectedBranch = localStorage.getItem("selectedBranch");
@@ -78,12 +88,12 @@ async function fetchAPI(endpoint, options = {}) {
     if (response.status === 401) {
       localStorage.removeItem("WorkflowToken");
       localStorage.removeItem("WorkflowUser");
-      throw new Error("Unauthorized: Please log in again");
+      throw makeApiError("Unauthorized: Please log in again", 401, { error: "Unauthorized: Please log in again", code: "UNAUTHORIZED" });
     }
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || `API error: ${response.statusText}`);
+      throw makeApiError(errorData.error || `API error: ${response.statusText}`, response.status, errorData);
     }
 
     return response.json();
@@ -569,6 +579,10 @@ const attendance = {
   getTodayAttendance: (userId) => 
     fetchAPI(`/attendance/today/${userId}`),
 
+  // Verify attendance for a specific date
+  verify: (userId, date) =>
+    fetchAPI(`/attendance/verify/${userId}${date ? `?date=${encodeURIComponent(date)}` : ''}`),
+
   // Get user attendance records
   getUserAttendance: (userId, filters = {}) => {
     const queryParams = new URLSearchParams();
@@ -780,6 +794,25 @@ const trinetra = {
 };
 
 //-----------------------------------------------------
+// Agent (V1 desktop agent) API
+//-----------------------------------------------------
+const agent = {
+  status: () => fetchAPI("/agent/status"),
+};
+
+//-----------------------------------------------------
+// Device handover API (workday ownership, V1 agent only)
+//-----------------------------------------------------
+const deviceSession = {
+  get: (userId) => fetchAPI(`/device-session/${userId}`),
+  switchDevice: (userId, targetDeviceType, deviceInfo = {}) =>
+    fetchAPI(`/device-session/${userId}/switch`, {
+      method: 'POST',
+      body: JSON.stringify({ targetDeviceType, deviceInfo }),
+    }),
+};
+
+//-----------------------------------------------------
 // Combine All API Modules
 //-----------------------------------------------------
 export const api = {
@@ -801,6 +834,8 @@ export const api = {
   projects,
   tester,
   trinetra,
+  agent,
+  deviceSession,
 };
 
 export default api;

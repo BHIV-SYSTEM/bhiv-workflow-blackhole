@@ -24,18 +24,21 @@ export async function downloadAgentInstaller(format = 'exe') {
     throw new Error(`Failed to download agent installer: ${errorDetail}`);
   }
 
+  // Only the V1 employee-agent installer is served by this endpoint.
+  const fileName = defaultFileName;
+
   const blob = await response.blob();
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.style.display = 'none';
   a.href = url;
-  a.download = defaultFileName;
+  a.download = fileName;
   document.body.appendChild(a);
   a.click();
   a.remove();
   setTimeout(() => window.URL.revokeObjectURL(url), 60000);
 
-  return { fileName: defaultFileName, size: blob.size, url };
+  return { fileName, size: blob.size, url };
 }
 
 export function openInstaller(url) {

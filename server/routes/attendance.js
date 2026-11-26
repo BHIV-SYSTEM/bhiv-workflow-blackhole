@@ -12,6 +12,7 @@ const UserTag = require('../models/UserTag');
 const auth = require('../middleware/auth');
 const adminAuth = require('../middleware/adminAuth');
 const DailyAttendance = require('../models/DailyAttendance');
+const DeviceSession = require('../models/DeviceSession');
 const { reverseGeocode } = require('../utils/reverseGeocode');
 const {
   findDailyProgressStatus,
@@ -203,6 +204,28 @@ router.post('/start-day/:userId', auth, async (req, res) => {
     const clientDeviceType = (deviceInfo?.deviceType || '').toLowerCase();
     const isDesktop = clientDeviceType === 'desktop' || (!/mobile|android|iphone|ipad/i.test(req.headers['user-agent'] || ''));
     const onOfficeNetwork = isOfficeIp(clientIp);
+
+    // A laptop/PC workday requires a signed-in V1 desktop agent with a fresh
+    // heartbeat. Phone workdays can start without an agent.
+    if (isDesktop) {
+      let agentOnline = false;
+      try {
+        const agentUser = await User.findById(userId).select('agentInstalled agentLastSeen').lean();
+        const lastSeenMs = agentUser?.agentLastSeen ? new Date(agentUser.agentLastSeen).getTime() : NaN;
+        agentOnline = Boolean(
+          agentUser?.agentInstalled && Number.isFinite(lastSeenMs) && Date.now() - lastSeenMs < 2 * 60 * 1000
+        );
+      } catch (agentErr) {
+        console.warn(`⚠️ Non-fatal: Could not verify V1 agent for user ${userId}:`, agentErr.message);
+      }
+
+      if (!agentOnline) {
+        return res.status(400).json({
+          error: 'Desktop agent is required to start your workday on a laptop/PC. Open the Niyantran desktop agent, sign in, then retry. You can start your day on a phone without the agent.',
+          code: 'AGENT_REQUIRED'
+        });
+      }
+    }
 
     // If Desktop on Office Network, physical GPS is not required
     if (isDesktop && onOfficeNetwork && !workFromHome) {
@@ -426,50 +449,71 @@ router.post('/start-day/:userId', auth, async (req, res) => {
     
     await dailyRecord.save();
 
-    // Decoupled Monitoring V2 Session Initiation (Milestone 3 - F10, F11)
-    let monitoringSession = null;
+    // Seed the V1 device handover state for this workday. Starting on a phone
+    // does not require an agent; starting on a laptop/PC requires the V1 agent
+    // (enforced by the web dialog), so the agent is the initial owner there.
+    try {
+      const startDeviceType = isDesktop ? 'Desktop' : 'Mobile';
+      const startedAt = new Date();
+      await DeviceSession.findOneAndUpdate(
+        { user: userId, date: today },
+        {
+          $set: {
+            user: userId,
+            date: today,
+            attendanceId: String(attendanceRecord._id),
+            startDayTime: startTime,
+            activeDevice: {
+              deviceType: startDeviceType,
+              deviceId: explicitDeviceId || deviceInfo?.deviceId || null,
+              label: startDeviceType === 'Desktop' ? 'Laptop / PC' : 'Mobile Phone',
+              agentVersion: null,
+              switchedAt: startedAt
+            }
+          },
+          $setOnInsert: { history: [] }
+        },
+        { new: true, upsert: true, setDefaultsOnInsert: true }
+      );
+    } catch (deviceSessionError) {
+      console.warn('Could not seed device session:', deviceSessionError.message);
+    }
+
+    // V1 desktop-agent presence only. No V2 monitoring session is created.
+    const monitoringSession = null;
     let monitoringStatus = 'Disconnected / Not Monitored';
 
     attendanceRecord.monitoringConsent = Boolean(monitoringConsent);
     dailyRecord.monitoringConsent = Boolean(monitoringConsent);
+    attendanceRecord.activeSessionId = null;
+    dailyRecord.activeSessionId = null;
 
-    if (monitoringConsent) {
-      try {
-        const RegisteredDevice = require('../modules/employee-monitoring-v2/models/RegisteredDevice');
-        const sessionService = require('../modules/employee-monitoring-v2/services/sessionService');
-
-        const deviceId = explicitDeviceId || deviceInfo?.deviceId || (
-          await RegisteredDevice.findOne({ employee: userId, status: 'ACTIVE' }).sort({ updatedAt: -1 })
-        )?.device_id;
-
-        if (deviceId) {
-          const v2Session = await sessionService.startSession({
-            employeeId: userId,
-            mode: 'LAPTOP_PC',
-            deviceId,
-            taskId: 'WORKDAY-START',
-            ip: clientIp,
-            userAgent: req.headers['user-agent']
-          });
-
-          monitoringSession = {
-            sessionId: v2Session.sessionId,
-            leaseExpiresAt: v2Session.leaseExpiresAt,
-            state: v2Session.state
-          };
-          monitoringStatus = 'Active';
-          attendanceRecord.activeSessionId = v2Session.sessionId;
-          dailyRecord.activeSessionId = v2Session.sessionId;
-        }
-      } catch (monErr) {
-        console.warn(`⚠️ Non-fatal: Failed to start monitoring session for user ${userId}:`, monErr.message);
-      }
+    try {
+      const agentUser = await User.findById(userId).select('agentInstalled agentLastSeen').lean();
+      const lastSeenMs = agentUser?.agentLastSeen ? new Date(agentUser.agentLastSeen).getTime() : NaN;
+      const agentOnline = Boolean(
+        agentUser?.agentInstalled && Number.isFinite(lastSeenMs) && Date.now() - lastSeenMs < 2 * 60 * 1000
+      );
+      // The Attendance/DailyAttendance enum only allows 'Active' or
+      // 'Disconnected / Not Monitored'. A fresh V1 agent heartbeat means
+      // telemetry is flowing, so the workday counts as actively monitored.
+      // Writing any other label here fails schema validation and aborts
+      // Start Day with a 500 (e.g. "not a valid enum value").
+      if (agentOnline) monitoringStatus = 'Active';
+    } catch (agentErr) {
+      console.warn(`⚠️ Non-fatal: Could not read V1 agent status for user ${userId}:`, agentErr.message);
     }
 
+    // The day is already persisted above — a status-label write failure must
+    // never block Start Day, so these saves are non-fatal.
     attendanceRecord.monitoringStatus = monitoringStatus;
     dailyRecord.monitoringStatus = monitoringStatus;
-    await attendanceRecord.save();
-    await dailyRecord.save();
+    try {
+      await attendanceRecord.save();
+      await dailyRecord.save();
+    } catch (statusErr) {
+      console.warn('⚠️ Non-fatal: Could not persist monitoring status:', statusErr.message);
+    }
 
     // Keep WorkSession in sync so pause/resume and live timer always use a clean session for today
     try {
@@ -785,12 +829,14 @@ router.post('/end-day/:userId', auth, async (req, res) => {
       await dailyRecord.save();
     }
 
-    // 1. Conclude and Revoke V2 Monitoring Sessions (Milestone 3 - F13)
+    // Close the device handover state so the agent stops tracking this workday.
     try {
-      const sessionService = require('../modules/employee-monitoring-v2/services/sessionService');
-      await sessionService.endActiveSessionsForEmployee(userId, req.user?.role || 'Employee', 'WORKDAY_END');
-    } catch (v2Err) {
-      console.warn(`⚠️ Non-fatal: Failed to revoke V2 monitoring sessions for user ${userId}:`, v2Err.message);
+      await DeviceSession.findOneAndUpdate(
+        { user: userId, attendanceId: String(attendanceRecord._id) },
+        { $set: { activeDevice: { deviceType: null, deviceId: null, label: null, agentVersion: null, switchedAt: null } } }
+      );
+    } catch (deviceSessionError) {
+      console.warn('Could not close device session:', deviceSessionError.message);
     }
 
     attendanceRecord.monitoringStatus = 'Disconnected / Not Monitored';
@@ -803,28 +849,17 @@ router.post('/end-day/:userId', auth, async (req, res) => {
       await dailyRecord.save();
     }
 
-    // 2. Compile Daily Activity Report (Milestone 3 - F13)
-    let dailyReport = null;
-    try {
-      const dailyReportService = require('../modules/employee-monitoring-v2/services/dailyReportService');
-      dailyReport = await dailyReportService.generateDailyReport(userId, sessionDate, {
-        attendanceHours: attendanceRecord.hoursWorked,
-        breakTimeMinutes,
-        attendanceId: attendanceRecord._id
-      });
-    } catch (repErr) {
-      console.warn(`⚠️ Non-fatal: Daily report generation failed for user ${userId}:`, repErr.message);
-      dailyReport = {
-        reportId: require('crypto').randomUUID(),
-        date: sessionDate.toISOString().split('T')[0],
-        totalAttendanceHours: attendanceRecord.hoursWorked,
-        monitoredHours: 0,
-        activeInputHours: 0,
-        hardwareIdleHours: 0,
-        breakHours: +(breakTimeMinutes / 60).toFixed(2),
-        categories: []
-      };
-    }
+    // V1 activity data is ingested by the employee agent itself; no V2 report service.
+    const dailyReport = {
+      reportId: require('crypto').randomUUID(),
+      date: sessionDate.toISOString().split('T')[0],
+      totalAttendanceHours: attendanceRecord.hoursWorked,
+      monitoredHours: 0,
+      activeInputHours: 0,
+      hardwareIdleHours: 0,
+      breakHours: +(breakTimeMinutes / 60).toFixed(2),
+      categories: []
+    };
 
     // 3. Emit Socket events
     if (req.io) {
@@ -836,17 +871,6 @@ router.post('/end-day/:userId', auth, async (req, res) => {
         progressReminder: !hasProgressContent,
         aimCompleted: todayAim ? (todayAim.completionStatus !== 'Pending') : false
       });
-      req.io.emit('monitoring:session-ended', {
-        userId,
-        endedAt: endTime,
-        reason: 'WORKDAY_END'
-      });
-      if (dailyReport) {
-        req.io.emit('monitoring:daily-report-generated', {
-          userId,
-          report: dailyReport
-        });
-      }
     }
 
     // KARMA: runtime milestone — day ended (zero automated behavioral penalties)

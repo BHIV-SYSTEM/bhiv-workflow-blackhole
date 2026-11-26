@@ -3,9 +3,27 @@ const fs = require('fs');
 const path = require('path');
 const { resolveLocation, isNearOffice } = require('../utils/geolocation');
 
+function normalizeBaseUrl(url) {
+  if (!url || typeof url !== 'string') return null;
+  let normalized = url.trim().replace(/\/+$/, '');
+  if (!normalized) return null;
+  // All API calls already include the /api prefix.
+  normalized = normalized.replace(/\/api$/, '');
+  if (normalized.startsWith('http://niyantran.')) {
+    normalized = normalized.replace('http://', 'https://');
+  }
+  return normalized;
+}
+
 class ApiService {
   constructor() {
-    this.baseURL = this.loadApiBaseUrl();
+    const configuredUrl = this.loadApiBaseUrl();
+    // The packaged agent may not ship a .env. Try the explicitly configured
+    // server first, then the environment-appropriate default, then the other
+    // known backend. Whichever accepts the credentials becomes the agent's
+    // permanent backend for the rest of the session.
+    this.loginCandidates = this.buildLoginCandidates(configuredUrl);
+    this.baseURL = this.loginCandidates[0] || 'http://127.0.0.1:5000';
     this.authToken = null;
     this.client = axios.create({
       baseURL: this.baseURL,
@@ -55,18 +73,10 @@ class ApiService {
       if (fs.existsSync(envPath)) {
         const envContent = fs.readFileSync(envPath, 'utf-8');
         const match = envContent.match(/AGENT_API_BASE_URL=(.+)/);
-        if (match && match[1]) {
-          let url = match[1].trim();
-          // Remove trailing slashes
-          url = url.replace(/\/+$/, '');
-          // Remove trailing /api (since all API endpoints already start with /api)
-          url = url.replace(/\/api$/, '');
-          // Prefer HTTPS for secure domains
-          if (url.startsWith('http://niyantran.')) {
-            url = url.replace('http://', 'https://');
-          }
-          console.log('✓ Loaded backend URL from .env:', url);
-          return url;
+        const fromFile = normalizeBaseUrl(match && match[1]);
+        if (fromFile) {
+          console.log('✓ Loaded backend URL from .env:', fromFile);
+          return fromFile;
         }
       } else {
         console.log('⚠ .env file not found at:', envPath);
@@ -75,10 +85,97 @@ class ApiService {
       console.error('Error loading .env file:', error);
     }
 
-    // Fallback to default or environment variable (Niyantran server listens on 5000)
-    const fallbackUrl = process.env.AGENT_API_BASE_URL || 'http://127.0.0.1:5000';
-    console.log('Using fallback backend URL:', fallbackUrl);
-    return fallbackUrl;
+    const fromEnv = normalizeBaseUrl(process.env.AGENT_API_BASE_URL);
+    if (fromEnv) {
+      console.log('✓ Loaded backend URL from environment:', fromEnv);
+      return fromEnv;
+    }
+
+    console.log('⚠ No explicit backend URL configured; login will probe known servers.');
+    return null;
+  }
+
+  buildLoginCandidates(configuredUrl) {
+    const candidates = [];
+    const add = (url) => {
+      const normalized = normalizeBaseUrl(url);
+      if (normalized && !candidates.includes(normalized)) candidates.push(normalized);
+    };
+
+    add(configuredUrl);
+
+    // A packaged install normally talks to production; a dev/source run talks
+    // to the local backend first. The other server is still probed as a
+    // fallback so a missing .env or a locally running server never strands
+    // the operator on the wrong database.
+    if (this.isPackagedApp()) {
+      add('https://niyantran.blackholeinfiverse.com');
+      add('http://127.0.0.1:5000');
+    } else {
+      add('http://127.0.0.1:5000');
+      add('https://niyantran.blackholeinfiverse.com');
+    }
+
+    return candidates;
+  }
+
+  isPackagedApp() {
+    try {
+      const electron = require('electron');
+      return Boolean(electron && electron.app && electron.app.isPackaged);
+    } catch {
+      return false;
+    }
+  }
+
+  setBaseUrl(url) {
+    const normalized = normalizeBaseUrl(url);
+    if (normalized && normalized !== this.baseURL) {
+      this.baseURL = normalized;
+      this.client.defaults.baseURL = normalized;
+      console.log('✓ Using backend URL:', normalized);
+    }
+    if (normalized) {
+      // The working backend always becomes the first login candidate, so a
+      // later restart keeps talking to the same database the token came from.
+      this.loginCandidates = [
+        normalized,
+        ...this.loginCandidates.filter((candidate) => candidate !== normalized),
+      ];
+    }
+  }
+
+  getBaseUrl() {
+    return this.baseURL;
+  }
+
+  /**
+   * Ask the current backend whether it actually knows this token's account.
+   *
+   * JWTs can be accepted by more than one deployment when JWT_SECRET is
+   * shared, which previously let the agent restore a session against a
+   * database that has no record of the employee. `/api/auth/me` returns 404
+   * when the account does not exist on that backend.
+   */
+  async verifySession() {
+    try {
+      const response = await this.client.get('/api/auth/me');
+      const user = response.data || null;
+      if (user && (user._id || user.id)) {
+        return { valid: true, user };
+      }
+      return { valid: false, status: response.status, error: 'Session verification failed' };
+    } catch (error) {
+      if (!error.response) {
+        // No HTTP response at all — unreachable backend, not an auth verdict.
+        return { valid: false, network: true, error: error.message };
+      }
+      return {
+        valid: false,
+        status: error.response.status,
+        error: error.response.data?.error || error.message,
+      };
+    }
   }
 
   setAuthToken(token) {
@@ -91,43 +188,54 @@ class ApiService {
    * @returns {Promise<Object>} - { success, token, user, error }
    */
   async login(credentials) {
-    try {
-      console.log('🔐 Attempting login with:', { 
-        email: credentials.email, 
-        passwordLength: credentials.password?.length,
-        url: `${this.baseURL}/api/auth/login`
-      });
-      
-      const response = await this.client.post('/api/auth/login', credentials);
-      
-      console.log('✅ Login response:', { 
-        hasToken: !!response.data?.token,
-        hasUser: !!response.data?.user 
-      });
-      
-      if (response.data && response.data.token) {
-        return {
-          success: true,
-          token: response.data.token,
-          user: response.data.user || { email: credentials.email }
-        };
-      }
+    const attempts = [];
 
-      return {
-        success: false,
-        error: 'Invalid response from server'
-      };
-    } catch (error) {
-      console.error('❌ Login error:', {
-        status: error.response?.status,
-        message: error.response?.data?.error || error.message
-      });
-      
-      return {
-        success: false,
-        error: error.response?.data?.error || error.message || 'Login failed'
-      };
+    for (const baseUrl of this.loginCandidates) {
+      try {
+        console.log('🔐 Attempting login at:', baseUrl, 'for:', credentials.email);
+
+        const response = await this.client.post(
+          `${baseUrl}/api/auth/login`,
+          credentials,
+          { timeout: 10000 }
+        );
+
+        if (response.data && response.data.token) {
+          // Use the same backend for every other agent API call. This is the
+          // key fix for "Invalid credentials" caused by the packaged app
+          // defaulting to a different database than the web app.
+          this.setBaseUrl(baseUrl);
+          console.log('✅ Login successful at:', baseUrl);
+          return {
+            success: true,
+            token: response.data.token,
+            user: response.data.user || { email: credentials.email }
+          };
+        }
+
+        attempts.push({ baseUrl, status: response.status, error: 'Invalid response from server' });
+      } catch (error) {
+        const status = error.response?.status;
+        const message = error.response?.data?.error || error.message || 'Login failed';
+        attempts.push({ baseUrl, status, error: message });
+        console.warn(`⚠ Login attempt failed at ${baseUrl}:`, message);
+      }
     }
+
+    // Never stop at the first rejection: one backend can hold a deactivated
+    // copy of an email while the backend the operator actually uses has the
+    // account active. Prefer a definitive 4xx answer over a network failure
+    // and always name the backend that produced it.
+    const definitive = attempts.find((attempt) => attempt.status >= 400 && attempt.status < 500);
+    const primary = definitive || attempts[attempts.length - 1];
+
+    return {
+      success: false,
+      error: primary
+        ? `${primary.error} (backend: ${primary.baseUrl})`
+        : 'Login failed',
+      attempts
+    };
   }
 
   /**
@@ -137,6 +245,10 @@ class ApiService {
    */
   async startDay(options = {}) {
     try {
+      // Refresh server-side presence immediately. The backend requires a
+      // fresh V1 heartbeat before it accepts a laptop/PC start request.
+      await this.sendHeartbeat();
+
       // Get user ID from stored token
       const userId = this.getUserIdFromToken();
       if (!userId) {
@@ -569,6 +681,21 @@ class ApiService {
         valid: false,
         error: error.response?.data?.message || error.message
       };
+    }
+  }
+
+  /**
+   * Send a heartbeat to the server so the web app knows this desktop agent is
+   * installed and online for the logged-in user.
+   * @returns {Promise<Object>}
+   */
+  async sendHeartbeat() {
+    try {
+      const version = (typeof process !== 'undefined' && process.env && process.env.npm_package_version) ? process.env.npm_package_version : '1.0.0';
+      const response = await this.client.post('/api/agent/heartbeat', { version });
+      return response.data || { success: true };
+    } catch (error) {
+      return { success: false, error: error.response?.data?.error || error.message };
     }
   }
 

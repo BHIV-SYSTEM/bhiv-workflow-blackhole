@@ -19,7 +19,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Bot,
-  ArrowRight,
   Target,
   TrendingUp,
   Activity,
@@ -28,10 +27,9 @@ import {
   Sparkles,
   ListTodo,
   Send,
-  Monitor,
-  Download,
 } from "lucide-react"
-import { downloadAgentInstaller } from "@/services/agentInstallerDownload"
+import AgentStatusCard from "../components/attendance/AgentStatusCard"
+import DeviceSwitchCard from "../components/attendance/DeviceSwitchCard"
 import { useNavigate } from "react-router-dom"
 import { useToast } from "../hooks/use-toast"
 import { useAuth } from "../context/auth-context"
@@ -82,26 +80,6 @@ function UserDashboard() {
   const [hasNewReviews, setHasNewReviews] = useState(false)
   const [recentReviews, setRecentReviews] = useState([])
   const [currentPage, setCurrentPage] = useState(0)
-  const [isDownloadingAgent, setIsDownloadingAgent] = useState(false)
-
-  const handleDownloadAgent = async () => {
-    setIsDownloadingAgent(true)
-    try {
-      const result = await downloadAgentInstaller('exe')
-      toast({
-        title: "Agent Downloaded",
-        description: `Saved ${result.fileName} to your Downloads folder.`,
-      })
-    } catch (err) {
-      toast({
-        title: "Download Failed",
-        description: err.message || "Failed to download installer",
-        variant: "destructive"
-      })
-    } finally {
-      setIsDownloadingAgent(false)
-    }
-  }
 
   const TASKS_PER_PAGE = 5
 
@@ -356,49 +334,7 @@ function UserDashboard() {
       markReviewsAsSeen={markReviewsAsSeen}
     >
       <div className="space-y-6 pb-8">
-        {/* Niyantran Desktop Agent Banner - Always Discoverable */}
-        <div className="relative overflow-hidden rounded-2xl border border-purple-500/30 bg-gradient-to-r from-purple-950/40 via-card to-purple-900/20 p-5 shadow-sm">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex items-start sm:items-center gap-3.5">
-              <div className="w-11 h-11 rounded-xl bg-purple-600/20 border border-purple-500/40 flex items-center justify-center text-purple-400 shrink-0 mt-0.5 sm:mt-0">
-                <Monitor className="w-6 h-6" />
-              </div>
-              <div className="space-y-0.5">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-base font-bold text-foreground">
-                    Niyantran Desktop Agent (Windows)
-                  </h3>
-                  <Badge className="bg-purple-600/30 text-purple-300 border-purple-500/40 text-[10px]">
-                    v1.0.0
-                  </Badge>
-                </div>
-                <p className="text-xs sm:text-sm text-muted-foreground">
-                  Track your work sessions, focus metrics, and application activity with our privacy-preserving desktop agent.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-              <Button
-                id="btn-dashboard-download-agent"
-                onClick={handleDownloadAgent}
-                disabled={isDownloadingAgent}
-                className="bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs px-4 rounded-xl shadow-md"
-              >
-                <Download className="w-4 h-4 mr-1.5" />
-                {isDownloadingAgent ? 'Downloading...' : 'Download Agent (.exe)'}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => { window.location.href = 'niyantran://open'; }}
-                className="border-purple-500/30 hover:bg-purple-500/10 text-purple-300 text-xs rounded-xl"
-              >
-                Open Agent Hub
-                <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
-              </Button>
-            </div>
-          </div>
-        </div>
+        <AgentStatusCard />
 
         {hasNewReviews && (
           <Alert className="bg-blue-500/10 border-blue-500/30">
@@ -486,7 +422,8 @@ function UserDashboard() {
           {/* Left Column - Work Hours Manager & Upcoming Deadlines */}
           <div className="space-y-6">
             <WorkHoursManager />
-            
+            <DeviceSwitchCard userId={user?.id || user?._id} />
+
             {/* Upcoming Deadlines */}
             <Card className="neo-card shadow-lg">
               <CardHeader className="border-b bg-gradient-to-r from-red-500/5 to-amber-500/5">

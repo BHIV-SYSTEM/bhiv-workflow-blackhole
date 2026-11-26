@@ -3,6 +3,7 @@ const router = express.Router();
 const auth = require('../middleware/auth');
 const Attendance = require('../models/Attendance');
 const WorkSession = require('../models/WorkSession');
+const DeviceSession = require('../models/DeviceSession');
 const {
   getIstDayBounds,
   checkPreviousDayMissingProgress,
@@ -58,9 +59,17 @@ router.get('/status', auth, async (req, res) => {
     }
 
     const User = require('../models/User');
-    const userDoc = await User.findById(userId).select('name email').lean();
+    const userDoc = await User.findById(userId).select('name email agentInstalled agentLastSeen').lean();
     const realName = userDoc?.name || req.user.name || null;
     const realEmail = userDoc?.email || req.user.email || null;
+    const agentLastSeenMs = userDoc?.agentLastSeen ? new Date(userDoc.agentLastSeen).getTime() : NaN;
+    const v1AgentOnline = Boolean(
+      userDoc?.agentInstalled && Number.isFinite(agentLastSeenMs) && Date.now() - agentLastSeenMs < 2 * 60 * 1000
+    );
+    // Must stay within the Attendance enum ['Active', 'Disconnected / Not
+    // Monitored'] — the Start Day UI renders 'Active' as the green monitored
+    // state and anything else as disconnected.
+    const v1MonitoringStatus = v1AgentOnline ? 'Active' : 'Disconnected / Not Monitored';
 
     const attendanceOpen = Boolean(
       attendance && attendance.startDayTime && !attendance.endDayTime && !attendance.endTime
@@ -71,23 +80,30 @@ router.get('/status', auth, async (req, res) => {
       ['active', 'paused'].includes(todayWorkSession.status)
     );
 
-    let activeV2Session = null;
+    const monitoringConsent = Boolean(attendance?.monitoringConsent || todayAttendance?.monitoringConsent);
+
+    // Which device currently owns the workday (set by Start Day and the switch card).
+    let activeDevice = null;
     try {
-      const MonitoringSessionV2 = require('../modules/employee-monitoring-v2/models/MonitoringSessionV2');
-      activeV2Session = await MonitoringSessionV2.findOne({
-        employee: userId,
-        state: 'ACTIVE',
-        lease_expires_at: { $gt: new Date() }
-      }).sort({ started_at: -1 }).lean();
-    } catch (v2Err) {
-      // Non-fatal if model not yet defined or lookup fails
+      const deviceSession = await DeviceSession.findOne({
+        user: userId,
+        startDayTime: { $gte: overnightCutoff },
+        'activeDevice.deviceType': { $in: ['Desktop', 'Mobile'] }
+      }).sort({ startDayTime: -1, updatedAt: -1 }).lean();
+      if (deviceSession && deviceSession.activeDevice) {
+        activeDevice = {
+          deviceType: deviceSession.activeDevice.deviceType,
+          label: deviceSession.activeDevice.label || null,
+          switchedAt: deviceSession.activeDevice.switchedAt
+            ? new Date(deviceSession.activeDevice.switchedAt).toISOString()
+            : null
+        };
+      }
+    } catch (deviceSessionErr) {
+      // Non-fatal: older workdays predate the device handover feature.
     }
 
-    const monitoringConsent = Boolean(attendance?.monitoringConsent || todayAttendance?.monitoringConsent);
-    const activeSessionId = activeV2Session ? activeV2Session.session_id : null;
-
     if (attendanceOpen) {
-      const monitoringStatus = (monitoringConsent && activeV2Session) ? 'Active' : 'Disconnected / Not Monitored';
       return res.json({
         dayStarted: true,
         dayEndedToday: false,
@@ -99,13 +115,12 @@ router.get('/status', auth, async (req, res) => {
         userName: realName,
         userEmail: realEmail,
         monitoringConsent,
-        monitoringStatus,
-        activeSessionId
+        monitoringStatus: v1MonitoringStatus,
+        activeDevice
       });
     }
 
     if (workSessionOpen && !(todayAttendance && (todayAttendance.endDayTime || todayAttendance.endTime))) {
-      const monitoringStatus = (monitoringConsent && activeV2Session) ? 'Active' : 'Disconnected / Not Monitored';
       return res.json({
         dayStarted: true,
         dayEndedToday: false,
@@ -116,8 +131,8 @@ router.get('/status', auth, async (req, res) => {
         userName: realName,
         userEmail: realEmail,
         monitoringConsent,
-        monitoringStatus,
-        activeSessionId
+        monitoringStatus: v1MonitoringStatus,
+        activeDevice
       });
     }
 
@@ -142,7 +157,7 @@ router.get('/status', auth, async (req, res) => {
       userEmail: realEmail,
       monitoringConsent: false,
       monitoringStatus: 'Disconnected / Not Monitored',
-      activeSessionId: null,
+      activeDevice: null,
       previousDayProgressMissing: Boolean(prevMissing.missing),
       previousWorkDate: prevMissing.previousWorkDate || null,
       previousDateLabel: prevMissing.previousDateLabel || null,
