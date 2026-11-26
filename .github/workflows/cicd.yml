@@ -48,6 +48,8 @@ jobs:
             Monitoring/prometheus.yml
             Monitoring/datasource.yml
             mongo-init.js
+            employee-agent/dist/Employee Activity Agent Setup 1.0.0.exe
+            employee-agent/dist/Employee Activity Agent Setup 1.0.0.exe.blockmap
 
   build:
     name: Build production images
@@ -120,7 +122,7 @@ jobs:
 
       - name: Tar deployment files
         run: |
-          tar -czf deployment.tar.gz docker-compose.production.template.yml .env "proxy configurations" Monitoring mongo-init.js
+          tar -czf deployment.tar.gz docker-compose.production.template.yml .env "proxy configurations" Monitoring mongo-init.js employee-agent
 
       - name: Install sshpass
         run: |
@@ -166,7 +168,17 @@ jobs:
             # Create it as the SSH user BEFORE compose runs (Docker would
             # otherwise create it root-owned, blocking future scp uploads).
             mkdir -p /var/tmp/NIYANTRAN/installers
-            # Optional automation: set the AGENT_INSTALLER_URL repo secret to a
+            # The installer exe is tracked in git (see employee-agent/.gitignore)
+            # and rides along in the deployment tarball — stage it into the
+            # bind-mounted dir so no manual scp is ever required.
+            if [ -f "employee-agent/dist/Employee Activity Agent Setup 1.0.0.exe" ]; then
+              cp -f "employee-agent/dist/Employee Activity Agent Setup 1.0.0.exe" \
+                /var/tmp/NIYANTRAN/installers/ \
+                || echo "WARN: could not stage repo installer into /var/tmp/NIYANTRAN/installers"
+            else
+              echo "WARN: installer not present in deployment archive — Download will 404 until it is"
+            fi
+            # Optional override: set the AGENT_INSTALLER_URL repo secret to a
             # direct download link (GitHub Release asset / bucket object) and
             # every deploy re-fetches the installer. Never fails the deploy.
             if [ -n "${{ secrets.AGENT_INSTALLER_URL }}" ]; then
