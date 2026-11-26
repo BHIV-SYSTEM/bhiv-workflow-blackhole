@@ -1,0 +1,197 @@
+services:
+  proxy:
+    image: nginx:1.25-alpine
+    container_name: niyantran_proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./proxy configurations/nginx.ssl.conf:/etc/nginx/conf.d/default.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - niyantran_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  database:
+    image: mongo:6.0
+    container_name: niyantran_database
+    restart: unless-stopped
+    # Public ports are OMITTED for security & database isolation (private to niyantran_network)
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME:-root}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
+      - MONGO_INITDB_DATABASE=${MONGO_INITDB_DATABASE:-niyantran}
+      - MONGO_APP_USERNAME=${MONGO_APP_USERNAME:-niyantran_app}
+      - MONGO_APP_PASSWORD=${MONGO_APP_PASSWORD}
+    volumes:
+      - mongodb_data:/data/db
+      - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    networks:
+      - niyantran_network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── TANTRA Ecosystem Services ────────────────────────────────────────────
+  # Bucket: EXTERNAL — deployed on VM (http://163.128.209.18:8012)
+  # PRANA:  NOT DEPLOYED — git repo only, for future integration
+  # KARMA:  Reached via Bucket relay on VM (not direct)
+  # None of these run as containers in this compose file.
+
+  # ── Niyantran Application ────────────────────────────────────────────────
+
+  backend:
+    image: bhiv/niyantran-backend:test
+    container_name: niyantran_backend
+    restart: unless-stopped
+    # Public ports are OMITTED for security isolation
+    environment:
+      MONGODB_URI: ${MONGODB_URI}
+      # Bucket on VM — no local container needed
+      BUCKET_BASE_URL: http://163.128.209.18:8012
+      BUCKET_URL: http://163.128.209.18:8012
+    env_file:
+      - .env
+    networks:
+      - niyantran_network
+    depends_on:
+      database:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  frontend:
+    image: bhiv/niyantran-frontend:test
+    container_name: niyantran_frontend
+    restart: unless-stopped
+    # Public ports are OMITTED for proxy-only ingress
+    env_file:
+      - .env
+    networks:
+      - niyantran_network
+    depends_on:
+      backend:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Monitoring Stack ─────────────────────────────────────────────────────
+
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    container_name: niyantran_prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./Monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - niyantran_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  grafana:
+    image: grafana/grafana-oss:10.0.3
+    container_name: niyantran_grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./Monitoring/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro
+      - grafana_data:/var/lib/grafana
+    networks:
+      - niyantran_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  node-exporter:
+    image: prom/node-exporter:v1.6.0
+    container_name: niyantran_node_exporter
+    restart: unless-stopped
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    networks:
+      - niyantran_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47.2
+    container_name: niyantran_cadvisor
+    restart: unless-stopped
+    privileged: true
+    devices:
+      - /dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    networks:
+      - niyantran_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  niyantran_network:
+    driver: bridge
+
+volumes:
+  mongodb_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+
+

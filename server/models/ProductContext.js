@@ -75,8 +75,8 @@ const ProductContextSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED', 'OUTDATED', 'DELETED'],
-    default: 'PENDING_APPROVAL',
+    enum: ['ACTIVE', 'DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED', 'OUTDATED', 'DELETED'],
+    default: 'ACTIVE',
     index: true
   },
   isDeleted: {

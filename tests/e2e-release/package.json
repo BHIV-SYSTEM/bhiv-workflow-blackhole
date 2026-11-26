@@ -1,0 +1,19 @@
+{
+  "name": "niyantran-e2e-release",
+  "version": "1.0.0",
+  "description": "Isolated E2E test harness and suite for Niyantran Production Release (R1-R4)",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node runner.js",
+    "test:smoke": "node runner.js --smoke"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "mongodb-memory-server": "^11.4.0",
+    "mongoose": "^8.14.0",
+    "playwright-core": "^1.65.1",
+    "socket.io-client": "^4.8.1"
+  }
+}

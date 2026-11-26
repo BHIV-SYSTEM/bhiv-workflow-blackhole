@@ -18,12 +18,21 @@ const path = require("path");
 
 const JWT_SECRET = process.env.JWT_SECRET || "blackhole-e2e-super-secret-key-2026";
 process.env.JWT_SECRET = JWT_SECRET;
+process.env.PARIKSHAK_URL = process.env.PARIKSHAK_URL || "http://127.0.0.1:59999";
 
 const ProductContext = require("../models/ProductContext");
 const User = require("../models/User");
 const Department = require("../models/Department");
+const Task = require("../models/Task");
+const TaskSubmission = require("../models/TaskSubmission");
 const knowledgeAdminRoutes = require("../routes/knowledgeAdmin");
-const { isGovernorCaller, incrementVersion } = knowledgeAdminRoutes;
+const authRoutes = require("../routes/auth");
+const praveshRoutes = require("../routes/pravesh");
+const taskRoutes = require("../routes/tasks");
+const userRoutes = require("../routes/users");
+const taskIngestionRoutes = require("../routes/taskIngestion");
+const { generateCanonicalTaskPacket } = require("../services/taskIngestionService");
+const { isGovernorCaller, isAdminCaller, incrementVersion, validateContextInternal } = knowledgeAdminRoutes;
 const { migrateProductContexts, resolveUserForRecord } = require("../scripts/migrateProductContexts");
 
 // Helper to create test JWT tokens
@@ -60,6 +69,11 @@ describe("Milestone 3: Knowledge Admin Multi-Product Support & Akash Sir Approva
     // Mount on both paths for full backward compatibility & spec conformance
     app.use("/api/knowledge", knowledgeAdminRoutes);
     app.use("/api/knowledge-admin", knowledgeAdminRoutes);
+    app.use("/api/auth", authRoutes);
+    app.use("/api/pravesh", praveshRoutes);
+    app.use("/api/tasks/ingest", taskIngestionRoutes);
+    app.use("/api/tasks", taskRoutes);
+    app.use("/api/users", userRoutes);
   });
 
   afterAll(async () => {
@@ -72,6 +86,8 @@ describe("Milestone 3: Knowledge Admin Multi-Product Support & Akash Sir Approva
           { employeeId: /^EMP-BHIV-TEST/ },
           { employeeId: /^EMP-DUAL-/ },
           { employeeId: /^EMP-CORE-/ },
+          { employeeId: /^EMP-M1-/ },
+          { employeeId: /^EMP-PAG-/ },
           { employeeId: "EMP-BHIV-080" }
         ]
       });
@@ -81,11 +97,16 @@ describe("Milestone 3: Knowledge Admin Multi-Product Support & Akash Sir Approva
           { email: /polymath/ },
           { email: /isolation/ },
           { email: /other\.core/ },
+          { email: /m1\.test/ },
           { canonicalEmployeeId: /^EMP-TEST-/ },
           { canonicalEmployeeId: /^EMP-DUAL-/ },
-          { canonicalEmployeeId: /^EMP-CORE-/ }
+          { canonicalEmployeeId: /^EMP-CORE-/ },
+          { canonicalEmployeeId: /^EMP-M1-/ }
         ]
       });
+      if (mongoose.connection.readyState !== 0) {
+        await mongoose.disconnect();
+      }
     } catch (e) {
       // Ignore cleanup error
     }
@@ -106,7 +127,7 @@ describe("Milestone 3: Knowledge Admin Multi-Product Support & Akash Sir Approva
       expect(validationErr.errors.content).toBeDefined();
     });
 
-    it("applies default values: status='PENDING_APPROVAL', version='v1.0', tenantId='ten-bhiv-core'", async () => {
+    it("applies default values: status='ACTIVE', version='v1.0', tenantId='ten-bhiv-core'", async () => {
       const testUser = new mongoose.Types.ObjectId();
       const doc = new ProductContext({
         employeeId: "EMP-TEST-DEF-01",
@@ -116,7 +137,7 @@ describe("Milestone 3: Knowledge Admin Multi-Product Support & Akash Sir Approva
         content: "Core architecture specification"
       });
 
-      expect(doc.status).toBe("PENDING_APPROVAL");
+      expect(doc.status).toBe("ACTIVE");
       expect(doc.version).toBe("v1.0");
       expect(doc.tenantId).toBe("ten-bhiv-core");
       // Pre-validate hook uppercases productId and generates contextId
@@ -248,11 +269,12 @@ describe("Milestone 3: Knowledge Admin Multi-Product Support & Akash Sir Approva
   });
 
   // =========================================================================
-  // Feature 13: Akash Sir's Governor Approval Workflow & Multi-Product APIs
+  // Feature 13 (R2/F4): Direct Knowledge CRUD & Multi-Product APIs (No Approval)
   // =========================================================================
-  describe("Feature 13: Governor Approval Workflow & Multi-Product Routes", () => {
+  describe("Feature 13: Direct Knowledge CRUD & Multi-Product Routes (No Approval Gating)", () => {
     let devToken;
     let governorToken;
+    let managerToken;
     let fakeAkashToken;
     let prakashToken;
     let testContextId;
@@ -274,6 +296,14 @@ describe("Milestone 3: Knowledge Admin Multi-Product Support & Akash Sir Approva
         tenantId: "ten-bhiv-core"
       });
 
+      managerToken = generateToken({
+        name: "Manager User",
+        email: "manager.m1@blackhole.ai",
+        role: "Manager",
+        canonicalEmployeeId: "EMP-TEST-MGR-01",
+        tenantId: "ten-bhiv-core"
+      });
+
       fakeAkashToken = generateToken({
         name: "Fake Akash",
         email: "fake.akash@sips.edu",
@@ -291,7 +321,7 @@ describe("Milestone 3: Knowledge Admin Multi-Product Support & Akash Sir Approva
       });
     });
 
-    it("creates a product context with status PENDING_APPROVAL via POST /api/knowledge/contexts", async () => {
+    it("creates a product context immediately with status ACTIVE via POST /api/knowledge/contexts", async () => {
       const res = await request(app)
         .post("/api/knowledge/contexts")
         .set("Authorization", `Bearer ${devToken}`)
@@ -304,106 +334,46 @@ describe("Milestone 3: Knowledge Admin Multi-Product Support & Akash Sir Approva
 
       expect(res.status).toBe(201);
       expect(res.body.productId).toBe("VAJRA");
-      expect(res.body.status).toBe("PENDING_APPROVAL");
+      expect(res.body.status).toBe("ACTIVE");
       expect(res.body.version).toBe("v1.0");
       expect(res.body.contextId).toMatch(/^CTX-/);
 
       testContextId = res.body.contextId;
     });
 
-    it("prevents non-governor user from approving context (returns 403 Forbidden)", async () => {
-      const res = await request(app)
-        .post(`/api/knowledge/contexts/${testContextId}/approve`)
-        .set("Authorization", `Bearer ${devToken}`)
-        .send({});
+    it("removes Governor approval queue, approve, and reject routes completely", async () => {
+      const queueRes = await request(app)
+        .get("/api/knowledge/contexts/pending-approval")
+        .set("Authorization", `Bearer ${governorToken}`);
+      // Either 404 or treated as :id lookup returning 404 Context not found (no pending-approval route)
+      expect(queueRes.status).toBe(404);
 
-      expect(res.status).toBe(403);
-      expect(res.body.detail).toContain("Governor role required for context approval");
-    });
-
-    it("allows Governor (Akash) to approve context, setting status APPROVED and populating approvedBy/approvedAt", async () => {
-      const res = await request(app)
+      const approveRes = await request(app)
         .post(`/api/knowledge/contexts/${testContextId}/approve`)
         .set("Authorization", `Bearer ${governorToken}`)
         .send({});
+      expect(approveRes.status).toBe(404);
 
-      expect(res.status).toBe(200);
-      expect(res.body.status).toBe("SUCCESS");
-      expect(res.body.context.status).toBe("APPROVED");
-      expect(res.body.context.approvedBy).toBe("Akash");
-      expect(res.body.context.approvedAt).toBeDefined();
+      const approveAliasRes = await request(app)
+        .post(`/api/knowledge/approvals/${testContextId}/approve`)
+        .set("Authorization", `Bearer ${governorToken}`)
+        .send({});
+      expect(approveAliasRes.status).toBe(404);
 
-      // Verify persistence in MongoDB
-      const dbDoc = await ProductContext.findOne({ contextId: testContextId });
-      expect(dbDoc.status).toBe("APPROVED");
-      expect(dbDoc.approvedBy).toBe("Akash");
-    });
-
-    it("prevents non-governor from rejecting context (returns 403)", async () => {
-      const res = await request(app)
-        .post(`/api/knowledge/contexts/${testContextId}/reject`)
-        .set("Authorization", `Bearer ${devToken}`)
-        .send({ rejectionReason: "Unauthorized attempt" });
-
-      expect(res.status).toBe(403);
-      expect(res.body.detail).toContain("Governor role required for context rejection");
-    });
-
-    it("allows Governor to reject context with reason via POST /api/knowledge/contexts/:id/reject", async () => {
-      const reason = "Specification lacks cryptographic signature verification details.";
-      const res = await request(app)
+      const rejectRes = await request(app)
         .post(`/api/knowledge/contexts/${testContextId}/reject`)
         .set("Authorization", `Bearer ${governorToken}`)
-        .send({ rejectionReason: reason });
+        .send({ rejectionReason: "Deprecated" });
+      expect(rejectRes.status).toBe(404);
 
-      expect(res.status).toBe(200);
-      expect(res.body.status).toBe("REJECTED");
-      expect(res.body.context.status).toBe("REJECTED");
-      expect(res.body.context.rejectionReason).toBe(reason);
-
-      // Verify in DB
-      const dbDoc = await ProductContext.findOne({ contextId: testContextId });
-      expect(dbDoc.status).toBe("REJECTED");
-      expect(dbDoc.rejectionReason).toBe(reason);
+      const rejectAliasRes = await request(app)
+        .post(`/api/knowledge/approvals/${testContextId}/reject`)
+        .set("Authorization", `Bearer ${governorToken}`)
+        .send({ rejectionReason: "Deprecated" });
+      expect(rejectAliasRes.status).toBe(404);
     });
 
-    it("strictly rejects spoofed user 'Fake Akash' (Intern) from approving or rejecting contexts (returns 403 Forbidden)", async () => {
-      const approveRes = await request(app)
-        .post(`/api/knowledge/contexts/${testContextId}/approve`)
-        .set("Authorization", `Bearer ${fakeAkashToken}`)
-        .send({});
-
-      expect(approveRes.status).toBe(403);
-      expect(approveRes.body.detail).toContain("Governor role required for context approval");
-
-      const rejectRes = await request(app)
-        .post(`/api/knowledge/contexts/${testContextId}/reject`)
-        .set("Authorization", `Bearer ${fakeAkashToken}`)
-        .send({ rejectionReason: "Spoofed intern attempt" });
-
-      expect(rejectRes.status).toBe(403);
-      expect(rejectRes.body.detail).toContain("Governor role required for context rejection");
-    });
-
-    it("strictly rejects user 'Prakash Sharma' (Employee) with substring 'akash' from approving or rejecting contexts (returns 403 Forbidden)", async () => {
-      const approveRes = await request(app)
-        .post(`/api/knowledge/contexts/${testContextId}/approve`)
-        .set("Authorization", `Bearer ${prakashToken}`)
-        .send({});
-
-      expect(approveRes.status).toBe(403);
-      expect(approveRes.body.detail).toContain("Governor role required for context approval");
-
-      const rejectRes = await request(app)
-        .post(`/api/knowledge/contexts/${testContextId}/reject`)
-        .set("Authorization", `Bearer ${prakashToken}`)
-        .send({ rejectionReason: "Employee attempt" });
-
-      expect(rejectRes.status).toBe(403);
-      expect(rejectRes.body.detail).toContain("Governor role required for context rejection");
-    });
-
-    it("isGovernorCaller helper enforces strict role, canonical ID, and corporate email without loose substring matching", () => {
+    it("isGovernorCaller and isAdminCaller enforce strict roles without loose substring matching", () => {
       expect(isGovernorCaller(null)).toBe(false);
       expect(isGovernorCaller({})).toBe(false);
       expect(isGovernorCaller({ name: "Fake Akash", role: "Intern", email: "fake.akash@sips.edu" })).toBe(false);
@@ -416,15 +386,16 @@ describe("Milestone 3: Knowledge Admin Multi-Product Support & Akash Sir Approva
       expect(isGovernorCaller({ email: "akash@blackhole.ai" })).toBe(true);
       expect(isGovernorCaller({ email: "ansh@blackhole.ai" })).toBe(true);
       expect(isGovernorCaller({ email: "governor@blackhole.ai" })).toBe(true);
+
+      // isAdminCaller aligns with KnowledgeAdmin.jsx (Governor, Admin, Manager)
+      expect(isAdminCaller({ role: "Manager", name: "Mgr" })).toBe(true);
+      expect(isAdminCaller({ role: "Admin", name: "Adm" })).toBe(true);
+      expect(isAdminCaller({ role: "Governor", name: "Gov" })).toBe(true);
+      expect(isAdminCaller({ role: "User", name: "Usr" })).toBe(false);
+      expect(isAdminCaller({ role: "Intern", name: "Fake Akash", email: "fake.akash@sips.edu" })).toBe(false);
     });
 
-    it("editing an existing context advances version, pushes history, and resets status to PENDING_APPROVAL", async () => {
-      // First re-approve it as Governor
-      await request(app)
-        .post(`/api/knowledge/contexts/${testContextId}/approve`)
-        .set("Authorization", `Bearer ${governorToken}`);
-
-      // Now developer submits an update
+    it("editing an existing context advances version, pushes history, and keeps status ACTIVE", async () => {
       const updateRes = await request(app)
         .put(`/api/knowledge/contexts/${testContextId}`)
         .set("Authorization", `Bearer ${devToken}`)
@@ -434,25 +405,18 @@ describe("Milestone 3: Knowledge Admin Multi-Product Support & Akash Sir Approva
         });
 
       expect(updateRes.status).toBe(200);
-      expect(updateRes.body.status).toBe("PENDING_APPROVAL");
+      expect(updateRes.body.status).toBe("ACTIVE");
       expect(updateRes.body.version).toBe("v1.1");
       expect(updateRes.body.content).toContain("Revised VAJRA spec");
       expect(updateRes.body.versionHistory.length).toBeGreaterThanOrEqual(1);
 
-      // Verify in DB
       const dbDoc = await ProductContext.findOne({ contextId: testContextId });
-      expect(dbDoc.status).toBe("PENDING_APPROVAL");
+      expect(dbDoc.status).toBe("ACTIVE");
       expect(dbDoc.version).toBe("v1.1");
       expect(dbDoc.versionHistory.length).toBeGreaterThanOrEqual(1);
     });
 
-    it("prevents submitting identical context if identical approved version already exists (returns 409 Conflict)", async () => {
-      // Re-approve the current context
-      await request(app)
-        .post(`/api/knowledge/contexts/${testContextId}/approve`)
-        .set("Authorization", `Bearer ${governorToken}`);
-
-      // Attempt to submit identical content
+    it("re-submitting via POST /contexts updates directly to ACTIVE without 409 duplicate blocking", async () => {
       const dupRes = await request(app)
         .post("/api/knowledge/contexts")
         .set("Authorization", `Bearer ${devToken}`)
@@ -461,8 +425,54 @@ describe("Milestone 3: Knowledge Admin Multi-Product Support & Akash Sir Approva
           content: "Revised VAJRA spec with RS256 token signing and replay protection."
         });
 
-      expect(dupRes.status).toBe(409);
-      expect(dupRes.body.detail).toContain("Identical approved context already exists");
+      expect(dupRes.status).toBe(200);
+      expect(dupRes.body.status).toBe("ACTIVE");
+      expect(dupRes.body.version).toBe("v1.2");
+    });
+
+    it("validate-context treats all non-deleted statuses (ACTIVE, APPROVED, PENDING_APPROVAL, REJECTED, DRAFT, OUTDATED) as active and never blocks", async () => {
+      const statusesToTest = ["ACTIVE", "APPROVED", "PENDING_APPROVAL", "REJECTED", "DRAFT", "OUTDATED"];
+      for (const st of statusesToTest) {
+        await ProductContext.updateOne({ contextId: testContextId }, { $set: { status: st, isDeleted: false } });
+        const valRes = await request(app)
+          .get("/api/knowledge/validate-context?productId=VAJRA")
+          .set("Authorization", `Bearer ${devToken}`);
+
+        expect(valRes.status).toBe(200);
+        expect(valRes.body.canSubmit).toBe(true);
+        expect(valRes.body.allowed).toBe(true);
+        expect(valRes.body.hasContext).toBe(true);
+        expect(valRes.body.active).toBe(true);
+        expect(valRes.body.contextWarning).toBe(false);
+        expect(valRes.body.status).toBe("ACTIVE");
+        expect(valRes.body.rawStatus).toBe(st);
+      }
+
+      // Missing product context returns warning but still non-blocking (canSubmit: true, allowed: true)
+      const missingRes = await request(app)
+        .get("/api/knowledge/validate-context?productId=NON_EXISTENT_PROD")
+        .set("Authorization", `Bearer ${devToken}`);
+      expect(missingRes.status).toBe(200);
+      expect(missingRes.body.status).toBe("MISSING");
+      expect(missingRes.body.hasContext).toBe(false);
+      expect(missingRes.body.active).toBe(false);
+      expect(missingRes.body.contextWarning).toBe(true);
+      expect(missingRes.body.canSubmit).toBe(true);
+      expect(missingRes.body.allowed).toBe(true);
+      expect(missingRes.body.action).toBe("ADD_CONTEXT");
+    });
+
+    it("GET /api/knowledge/stats treats all non-deleted contexts as active with zero pending/rejected/outdated", async () => {
+      const res = await request(app)
+        .get("/api/knowledge/stats")
+        .set("Authorization", `Bearer ${governorToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("SUCCESS");
+      expect(res.body.stats.active).toBe(res.body.stats.totalContexts);
+      expect(res.body.stats.pendingApproval).toBe(0);
+      expect(res.body.stats.rejected).toBe(0);
+      expect(res.body.stats.outdated).toBe(0);
     });
 
     it("lists contexts with pagination, search, and filtering via GET /api/knowledge/contexts", async () => {
@@ -799,7 +809,7 @@ describe("Milestone 3: Knowledge Admin Multi-Product Support & Akash Sir Approva
       expect(victimDoc).toBeNull();
     });
 
-    it("POST /ingest prevents non-governor callers from specifying individual_id of another user", async () => {
+    it("POST /ingest prevents non-governor callers from specifying individual_id of another user and saves locally as ACTIVE", async () => {
       const res = await request(app)
         .post("/api/knowledge/ingest")
         .set("Authorization", `Bearer ${tOtherCore}`)
@@ -811,10 +821,367 @@ describe("Milestone 3: Knowledge Admin Multi-Product Support & Akash Sir Approva
 
       expect(res.status).toBe(200);
       expect(res.body.context.employeeId).toBe("EMP-CORE-OTHER-99");
+      expect(res.body.context.status).toBe("ACTIVE");
 
       // Verify in DB that no document was created for sharedEmpId under SPOOF-INGEST
       const victimDoc = await ProductContext.findOne({ employeeId: sharedEmpId, productId: "SPOOF-INGEST" });
       expect(victimDoc).toBeNull();
+    });
+  });
+
+  // =========================================================================
+  // M1 Features F6, F7, F3, F9 Comprehensive Verification
+  // =========================================================================
+  describe("M1 Features F6, F7, F3, F9: Identity, Admin CRUD, Compliance Merge & Projections", () => {
+    it("F6: resolves caller identity via User.findById fallback when JWT omits canonicalEmployeeId/employeeId/tenantId without EMP-BHIV-USR collision", async () => {
+      const u1 = await User.create({
+        name: "Fallback User One",
+        email: "m1.test.u1.101@blackhole.ai",
+        password: "Password123!",
+        role: "User",
+        canonicalEmployeeId: "EMP-M1-FALLBACK-01",
+        employeeId: "M1FB01",
+        tenantId: "ten-bhiv-core",
+        stillExist: 1
+      });
+      const u2 = await User.create({
+        name: "Fallback User Two",
+        email: "m1.test.u2.102@blackhole.ai",
+        password: "Password123!",
+        role: "User",
+        canonicalEmployeeId: "EMP-M1-FALLBACK-02",
+        employeeId: "M1FB02",
+        tenantId: "ten-bhiv-core",
+        stillExist: 1
+      });
+
+      const bareToken1 = jwt.sign({ id: String(u1._id), role: "User" }, JWT_SECRET, { expiresIn: "1h" });
+      const bareToken2 = jwt.sign({ id: String(u2._id), role: "User" }, JWT_SECRET, { expiresIn: "1h" });
+
+      const r1 = await request(app)
+        .post("/api/knowledge/contexts")
+        .set("Authorization", `Bearer ${bareToken1}`)
+        .send({ productId: "BHIV", content: "User 1 BHIV context" });
+      expect(r1.status).toBe(201);
+      expect(r1.body.employeeId).toBe("EMP-M1-FALLBACK-01");
+      expect(r1.body.status).toBe("ACTIVE");
+
+      const r2 = await request(app)
+        .post("/api/knowledge/contexts")
+        .set("Authorization", `Bearer ${bareToken2}`)
+        .send({ productId: "BHIV", content: "User 2 BHIV context" });
+      expect(r2.status).toBe(201);
+      expect(r2.body.employeeId).toBe("EMP-M1-FALLBACK-02");
+      expect(r2.body.status).toBe("ACTIVE");
+
+      // Owner PUT succeeds with bare JWT
+      const putRes = await request(app)
+        .put(`/api/knowledge/contexts/${r1.body.contextId}`)
+        .set("Authorization", `Bearer ${bareToken1}`)
+        .send({ content: "User 1 updated BHIV context" });
+      expect(putRes.status).toBe(200);
+      expect(putRes.body.status).toBe("ACTIVE");
+    });
+
+    it("F6: POST /api/auth/login and GET /api/auth/me return employeeId, canonicalEmployeeId, tenantId, and organization", async () => {
+      const loginUser = await User.create({
+        name: "Login Claims User",
+        email: "m1.test.login.205@blackhole.ai",
+        password: "Password123!",
+        role: "User",
+        canonicalEmployeeId: "EMP-M1-LOGIN-205",
+        employeeId: "BHIV205",
+        tenantId: "ten-bhiv-core",
+        organization: "BHIV",
+        stillExist: 1
+      });
+
+      const loginRes = await request(app)
+        .post("/api/auth/login")
+        .send({ email: "m1.test.login.205@blackhole.ai", password: "Password123!" });
+
+      expect(loginRes.status).toBe(200);
+      expect(loginRes.body.user.employeeId).toBe("BHIV205");
+      expect(loginRes.body.user.canonicalEmployeeId).toBe("EMP-M1-LOGIN-205");
+      expect(loginRes.body.user.tenantId).toBe("ten-bhiv-core");
+      expect(loginRes.body.user.organization).toBe("BHIV");
+
+      const decoded = jwt.verify(loginRes.body.token, JWT_SECRET);
+      expect(decoded.employeeId).toBe("BHIV205");
+      expect(decoded.canonicalEmployeeId).toBe("EMP-M1-LOGIN-205");
+      expect(decoded.tenantId).toBe("ten-bhiv-core");
+      expect(decoded.organization).toBe("BHIV");
+
+      const meRes = await request(app)
+        .get("/api/auth/me")
+        .set("x-auth-token", loginRes.body.token);
+      expect(meRes.status).toBe(200);
+      expect(meRes.body.canonicalEmployeeId).toBe("EMP-M1-LOGIN-205");
+      expect(meRes.body.tenantId).toBe("ten-bhiv-core");
+      expect(meRes.body.organization).toBe("BHIV");
+    });
+
+    it("F7: Manager/Admin can create (targetUserId), update, and delete contexts for target employees while non-admin spoofing is blocked", async () => {
+      const targetUser = await User.create({
+        name: "Target Employee",
+        email: "m1.test.target.301@blackhole.ai",
+        password: "Password123!",
+        role: "User",
+        canonicalEmployeeId: "EMP-M1-TARGET-301",
+        employeeId: "M1TGT301",
+        tenantId: "ten-bhiv-core",
+        stillExist: 1
+      });
+
+      const mgrToken = generateToken({
+        name: "Manager One",
+        email: "mgr1@blackhole.ai",
+        role: "Manager",
+        canonicalEmployeeId: "EMP-M1-MGR-01",
+        tenantId: "ten-bhiv-core"
+      });
+
+      const userToken = generateToken({
+        id: String(targetUser._id),
+        name: "Normal User",
+        email: "normal@blackhole.ai",
+        role: "User",
+        canonicalEmployeeId: "EMP-M1-NORM-01",
+        tenantId: "ten-bhiv-core"
+      });
+
+      // Manager creates for targetUserId
+      const createRes = await request(app)
+        .post("/api/knowledge/contexts")
+        .set("Authorization", `Bearer ${mgrToken}`)
+        .send({
+          targetUserId: String(targetUser._id),
+          productId: "SAMVAD",
+          content: "Manager-created SAMVAD context for target employee"
+        });
+      expect(createRes.status).toBe(201);
+      expect(createRes.body.employeeId).toBe("EMP-M1-TARGET-301");
+      expect(String(createRes.body.user)).toBe(String(targetUser._id));
+      expect(createRes.body.status).toBe("ACTIVE");
+
+      // Manager updates target employee's context
+      const updateRes = await request(app)
+        .put(`/api/knowledge/contexts/${createRes.body.contextId}`)
+        .set("Authorization", `Bearer ${mgrToken}`)
+        .send({ content: "Manager-updated SAMVAD context" });
+      expect(updateRes.status).toBe(200);
+      expect(updateRes.body.status).toBe("ACTIVE");
+
+      // Non-admin cannot spoof targetUserId/employeeId
+      const spoofRes = await request(app)
+        .post("/api/knowledge/contexts")
+        .set("Authorization", `Bearer ${userToken}`)
+        .send({
+          targetUserId: String(targetUser._id),
+          employeeId: "EMP-M1-TARGET-301",
+          productId: "DRISHTI",
+          content: "Spoof attempt"
+        });
+      expect(spoofRes.status).toBe(201);
+      expect(spoofRes.body.employeeId).toBe("EMP-M1-NORM-01");
+
+      // Manager deletes target employee's context
+      const delRes = await request(app)
+        .delete(`/api/knowledge/contexts/${createRes.body.contextId}`)
+        .set("Authorization", `Bearer ${mgrToken}`)
+        .send({ reason: "Admin cleanup" });
+      expect(delRes.status).toBe(200);
+      expect(delRes.body.context.status).toBe("DELETED");
+    });
+
+    it("F7: GET /compliance excludes deleted contexts and merges contexts across canonicalEmployeeId, employeeId, and user._id", async () => {
+      const mergeUser = await User.create({
+        name: "Merge Directory User",
+        email: "m1.test.merge.401@blackhole.ai",
+        password: "Password123!",
+        role: "User",
+        canonicalEmployeeId: "EMP-M1-MERGE-401",
+        employeeId: "M1MRG401",
+        tenantId: "ten-bhiv-core",
+        stillExist: 1
+      });
+      const adminTok = generateToken({
+        name: "Admin Compliance",
+        email: "admin.comp@blackhole.ai",
+        role: "Admin",
+        canonicalEmployeeId: "EMP-M1-ADM-400",
+        tenantId: "ten-bhiv-core"
+      });
+
+      const otherUid = new mongoose.Types.ObjectId();
+      await ProductContext.create([
+        {
+          contextId: `CTX-M1-CAN-${Date.now()}`,
+          employeeId: "EMP-M1-MERGE-401",
+          user: mergeUser._id,
+          productId: "BHIV",
+          tenantId: "ten-bhiv-core",
+          status: "ACTIVE",
+          content: "Canonical context"
+        },
+        {
+          contextId: `CTX-M1-LEG-${Date.now()}`,
+          employeeId: "M1MRG401",
+          user: otherUid,
+          productId: "TRINETRA",
+          tenantId: "ten-bhiv-core",
+          status: "PENDING_APPROVAL",
+          content: "Legacy employeeId context"
+        },
+        {
+          contextId: `CTX-M1-USR-${Date.now()}`,
+          employeeId: "EMP-OLD-ALIAS-401",
+          user: mergeUser._id,
+          productId: "UNIGURU",
+          tenantId: "ten-bhiv-core",
+          status: "REJECTED",
+          content: "User ObjectId linked context"
+        },
+        {
+          contextId: `CTX-M1-DEL-${Date.now()}`,
+          employeeId: "EMP-M1-MERGE-401",
+          user: mergeUser._id,
+          productId: "PRAVESH",
+          tenantId: "ten-bhiv-core",
+          status: "DELETED",
+          isDeleted: true,
+          content: "Deleted context must be excluded"
+        }
+      ]);
+
+      const compRes = await request(app)
+        .get("/api/knowledge/compliance")
+        .set("Authorization", `Bearer ${adminTok}`);
+      expect(compRes.status).toBe(200);
+
+      const entry = compRes.body.users.find(u => String(u._id) === String(mergeUser._id));
+      expect(entry).toBeDefined();
+      expect(entry.hasContext).toBe(true);
+      expect(entry.contextCount).toBe(3);
+      expect(entry.contextsByProduct.BHIV).toBeDefined();
+      expect(entry.contextsByProduct.TRINETRA).toBeDefined();
+      expect(entry.contextsByProduct.UNIGURU).toBeDefined();
+      expect(entry.contextsByProduct.PRAVESH).toBeUndefined();
+      expect(entry.contexts.some(c => c.isDeleted || c.status === "DELETED")).toBe(false);
+    });
+
+    it("F7: GET /contexts returns >100 items without truncation", async () => {
+      const govTok = generateToken({
+        name: "Akash",
+        email: "akash@blackhole.ai",
+        role: "Governor",
+        canonicalEmployeeId: "EMP-BHIV-GOV-01",
+        tenantId: "ten-bhiv-core"
+      });
+      const dummyUserId = new mongoose.Types.ObjectId();
+      const bulkDocs = [];
+      for (let i = 0; i < 105; i++) {
+        bulkDocs.push({
+          contextId: `CTX-PAG-${i}-${Date.now()}`,
+          employeeId: `EMP-PAG-${i}`,
+          user: dummyUserId,
+          productId: "BHIV",
+          productName: "BHIV",
+          tenantId: "ten-bhiv-core",
+          status: "ACTIVE",
+          content: `Bulk context ${i}`
+        });
+      }
+      await ProductContext.insertMany(bulkDocs);
+
+      const res = await request(app)
+        .get("/api/knowledge/contexts?search=EMP-PAG-")
+        .set("Authorization", `Bearer ${govTok}`);
+      expect(res.status).toBe(200);
+      expect(res.body.items.length).toBe(105);
+      expect(res.body.total).toBe(105);
+    });
+
+    it("F3 & F9: task ingestion packet & register-intake propagate normalized product and task_id, and task/user projections include them", async () => {
+      const packet = generateCanonicalTaskPacket(
+        { title: "Test", description: "Desc", priority: "Medium", rawLength: 10, cleanedLength: 10 },
+        "spec.txt",
+        "text/plain",
+        null,
+        { task_id: "T-TST-901", product: "parikshak" }
+      );
+      expect(packet.taskDetails.product).toBe("PARIKSHAK");
+      expect(packet.taskDetails.task_id).toBe("T-TST-901");
+
+      const dept = await Department.create({ name: `Dept-M1-${Date.now()}` });
+      const emp = await User.create({
+        name: "Projection Employee",
+        email: "m1.test.proj.501@blackhole.ai",
+        password: "Password123!",
+        role: "User",
+        department: dept._id,
+        canonicalEmployeeId: "EMP-M1-PROJ-501",
+        employeeId: "BHIV501",
+        tenantId: "ten-bhiv-core",
+        stillExist: 1
+      });
+      const empToken = generateToken({
+        id: String(emp._id),
+        name: emp.name,
+        email: emp.email,
+        role: "User",
+        canonicalEmployeeId: "EMP-M1-PROJ-501",
+        employeeId: "BHIV501",
+        tenantId: "ten-bhiv-core"
+      });
+
+      const intakeRes = await request(app)
+        .post("/api/tasks/register-intake")
+        .set("Authorization", `Bearer ${empToken}`)
+        .send({
+          originalInstruction: "Implement F3 product propagation check",
+          product: "niyantran",
+          task_id: "T-NIY-501",
+          department: String(dept._id)
+        });
+      expect(intakeRes.status).toBe(201);
+      expect(intakeRes.body.task.product).toBe("NIYANTRAN");
+      expect(intakeRes.body.task.task_id).toBe("T-NIY-501");
+
+      const tasksRes = await request(app)
+        .get("/api/tasks?limit=20&page=1")
+        .set("Authorization", `Bearer ${empToken}`);
+      expect(tasksRes.status).toBe(200);
+      const foundTask = tasksRes.body.tasks.find(t => t.task_id === "T-NIY-501");
+      expect(foundTask).toBeDefined();
+      expect(foundTask.product).toBe("NIYANTRAN");
+      expect(foundTask.assignee.employeeId).toBe("BHIV501");
+      expect(foundTask.assignee.canonicalEmployeeId).toBe("EMP-M1-PROJ-501");
+
+      const userTasksRes = await request(app)
+        .get(`/api/users/${emp._id}/tasks`)
+        .set("Authorization", `Bearer ${empToken}`);
+      expect(userTasksRes.status).toBe(200);
+      const myTask = userTasksRes.body.find(t => t.task_id === "T-NIY-501");
+      expect(myTask).toBeDefined();
+      expect(myTask.assignee.canonicalEmployeeId).toBe("EMP-M1-PROJ-501");
+
+      await TaskSubmission.create({
+        task: foundTask._id,
+        user: emp._id,
+        githubLink: "https://github.com/bhiv/test-repo",
+        notes: "Submission test"
+      });
+      const subRes = await request(app)
+        .get(`/api/users/${emp._id}/submissions`)
+        .set("Authorization", `Bearer ${empToken}`);
+      expect(subRes.status).toBe(200);
+      expect(subRes.body[0].task.task_id).toBe("T-NIY-501");
+      expect(subRes.body[0].task.product).toBe("NIYANTRAN");
+
+      await TaskSubmission.deleteMany({ user: emp._id });
+      await Task.deleteMany({ _id: foundTask._id });
+      await Department.deleteMany({ _id: dept._id });
     });
   });
 });

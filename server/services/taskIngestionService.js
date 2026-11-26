@@ -437,8 +437,9 @@ function cleanAndFormatTaskText(rawText) {
 /**
  * Generates Canonical Task Packet JSON structure
  */
-function generateCanonicalTaskPacket(cleanedResult, filename, mimeType, fileBuffer = null) {
+function generateCanonicalTaskPacket(cleanedResult, filename, mimeType, fileBuffer = null, extras = {}) {
   const ingestionId = `ingest_${Date.now()}_${crypto.randomBytes(3).toString("hex")}`;
+  const normalizedProduct = (extras.product || "BHIV").toString().trim().toUpperCase() || "BHIV";
 
   let documentHash = "";
   if (fileBuffer) {
@@ -450,6 +451,8 @@ function generateCanonicalTaskPacket(cleanedResult, filename, mimeType, fileBuff
     ingestionId,
     canonicalPacketVersion: "1.0",
     taskDetails: {
+      task_id: extras.task_id || null,
+      product: normalizedProduct,
       title: cleanedResult.title,
       description: cleanedResult.description,
       priority: cleanedResult.priority,
@@ -587,6 +590,9 @@ async function processTaskIngestion(fileBuffer, metadata = {}) {
   const mimeType = metadata.mimeType || "text/plain";
   const requireApproval = metadata.requireApproval === true;
   const creatorId = metadata.creatorId || null;
+  const normalizedProduct = (metadata.product || metadata.productId || metadata.product_id || "BHIV").toString().trim().toUpperCase() || "BHIV";
+  const resolvedTaskId = (metadata.task_id || metadata.taskId || "").toString().trim()
+    || `T-TSK-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
 
   // Step 1: Document Ingestion
   let rawText = await extractTextFromDocument(fileBuffer, mimeType, filename, metadata);
@@ -602,7 +608,10 @@ async function processTaskIngestion(fileBuffer, metadata = {}) {
   const cleanedResult = cleanAndFormatTaskText(rawText);
 
   // Step 3: Canonical Task Packet Generation
-  const canonicalPacket = generateCanonicalTaskPacket(cleanedResult, filename, mimeType, fileBuffer);
+  const canonicalPacket = generateCanonicalTaskPacket(cleanedResult, filename, mimeType, fileBuffer, {
+    task_id: resolvedTaskId,
+    product: normalizedProduct,
+  });
 
   // Step 4: Candidate & Department Detection
   const resolution = await resolveTaskAssigneeAndDepartment(cleanedResult.assigneeHint, cleanedResult.departmentHint, metadata);
@@ -659,6 +668,9 @@ async function processTaskIngestion(fileBuffer, metadata = {}) {
         ingestionId: canonicalPacket.ingestionId,
         canonicalPacket,
         payload: {
+          task_id: resolvedTaskId,
+          product: normalizedProduct,
+          tenantId: metadata.tenantId || "ten-bhiv-core",
           title: canonicalPacket.taskDetails.title,
           description: canonicalPacket.taskDetails.description,
           priority: canonicalPacket.taskDetails.priority,
@@ -680,6 +692,9 @@ async function processTaskIngestion(fileBuffer, metadata = {}) {
       capabilityHandler: async (resolvedIntent) => {
         const taskPayload = resolvedIntent.parameters?.payload || resolvedIntent.parameters || {};
         const newTask = new Task({
+          task_id: taskPayload.task_id || resolvedTaskId,
+          product: (taskPayload.product || normalizedProduct || "BHIV").toString().trim().toUpperCase() || "BHIV",
+          tenantId: taskPayload.tenantId || metadata.tenantId || "ten-bhiv-core",
           title: taskPayload.title || canonicalPacket.taskDetails.title,
           description: taskPayload.description || canonicalPacket.taskDetails.description,
           priority: taskPayload.priority || canonicalPacket.taskDetails.priority,
@@ -711,6 +726,9 @@ async function processTaskIngestion(fileBuffer, metadata = {}) {
   );
 
   const newTask = createdTask || new Task({
+    task_id: resolvedTaskId,
+    product: normalizedProduct,
+    tenantId: metadata.tenantId || "ten-bhiv-core",
     title: canonicalPacket.taskDetails.title,
     description: canonicalPacket.taskDetails.description,
     priority: canonicalPacket.taskDetails.priority,
@@ -761,7 +779,7 @@ async function processTaskIngestion(fileBuffer, metadata = {}) {
     try {
       populatedTask = await Task.findById(newTask._id)
         .populate("department", "name color")
-        .populate("assignee", "name avatar email stillExist")
+        .populate("assignee", "name avatar email stillExist employeeId canonicalEmployeeId")
         .populate("dependencies", "title status");
     } catch (popErr) {
       console.warn("[TASK-INGESTION] Task population notice:", popErr.message);
