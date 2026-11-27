@@ -3,7 +3,10 @@ const router = express.Router();
 const auth = require('../middleware/auth');
 const EmployeeActivity = require('../models/EmployeeActivity');
 const {
+  getIstDayBounds,
+  IST_OFFSET_MS,
   summarizeActivitiesWithSession,
+  resolveSessionsMap,
   evaluateSample,
   normalizeIntervalSeconds,
 } = require('../utils/telemetryMetrics');
@@ -399,19 +402,22 @@ router.get('/activity/summary/:userId', auth, async (req, res) => {
       return res.status(403).json({ error: 'Not authorized' });
     }
 
-    // Get today's date range
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    // Get today's IST date range (00:00:00 IST to 23:59:59.999 IST)
+    const now = new Date();
+    const { start: today, end: endOfToday, dateKey } = getIstDayBounds(now);
+    const tomorrow = new Date(endOfToday.getTime() + 1);
 
     // Oldest-first: the review is a timeline of the day.
-    const activities = await EmployeeActivity.find({
-      employee: userId,
-      timestamp: { $gte: today, $lt: tomorrow }
-    }).sort({ timestamp: 1 }).lean();
+    const [activities, sessionsMap] = await Promise.all([
+      EmployeeActivity.find({
+        employee: userId,
+        timestamp: { $gte: today, $lt: tomorrow }
+      }).sort({ timestamp: 1 }).lean(),
+      resolveSessionsMap([userId], today, endOfToday, now)
+    ]);
 
-    const unified = summarizeActivitiesWithSession(activities);
+    const sessionInfo = sessionsMap.get(`${userId}_${dateKey}`) || null;
+    const unified = summarizeActivitiesWithSession(activities, sessionInfo);
 
     // Red/yellow/green day score: starts at 0, rises with continuous work,
     // decays gently on idle, and credits voice-command users via platform +
@@ -475,8 +481,8 @@ router.get('/activity/summary/:userId', auth, async (req, res) => {
     const hourly = [];
     const hourBuckets = new Map();
     for (const act of activities) {
-      const d = new Date(act.timestamp);
-      const hourKey = d.getHours();
+      const d = new Date(new Date(act.timestamp).getTime() + IST_OFFSET_MS);
+      const hourKey = d.getUTCHours();
       let bucket = hourBuckets.get(hourKey);
       if (!bucket) {
         bucket = {

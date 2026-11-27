@@ -1,6 +1,7 @@
 const ExcelJS = require('exceljs');
 const path = require('path');
 const { formatEmployeeId } = require('./employeeId');
+const { getLocalDateKey } = require('./telemetryMetrics');
 
 const TEST_NAME_REGEX = /\b(bhiv\s*(test|sips)|test\s*account|dummy|demo\s*user)\b/i;
 const TEST_PREFIX_REGEX = /^(test[\s._-]|dummy[\s._-])/i;
@@ -150,13 +151,13 @@ function computeQualitativeRating({
 
 function getPerformanceGroup(avgProductivity) {
   const pct = Number(avgProductivity || 0);
-  if (pct > 80) {
-    return { tier: 'high', label: 'High Performance (>80%)', sortOrder: 0 };
+  if (pct >= 80) {
+    return { tier: 'high', label: 'High Performance (>=80%)', sortOrder: 0 };
   }
-  if (pct >= 65) {
-    return { tier: 'moderate', label: 'Moderate Performance (65%-80%)', sortOrder: 1 };
+  if (pct >= 70) {
+    return { tier: 'moderate', label: 'Moderate Performance (70%-79%)', sortOrder: 1 };
   }
-  return { tier: 'low', label: 'Low Performance (1%-64%)', sortOrder: 2 };
+  return { tier: 'low', label: 'Low Performance (<70%)', sortOrder: 2 };
 }
 
 function computeCombinedScore({ rating, avgProductivity, activeSeconds }) {
@@ -220,32 +221,31 @@ function enrichAndRankTeamMembers(rawMembers = []) {
   });
 }
 
+const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
 function formatReportDateDisplay(startDate, endDate) {
-  const s = new Date(startDate);
-  const e = new Date(endDate);
-  const fmtSingle = (d) => {
-    const day = String(d.getDate()).padStart(2, '0');
-    const mon = d.toLocaleString('en-US', { month: 'short' });
-    return `${day}-${mon}`;
+  const sKey = getLocalDateKey(startDate) || getLocalDateKey(new Date());
+  const eKey = getLocalDateKey(endDate) || sKey;
+  const fmtParts = (key) => {
+    const [y, m, d] = key.split('-');
+    const mon = SHORT_MONTHS[Number(m) - 1] || m;
+    return { short: `${d}-${mon}`, full: `${d}-${mon}-${y}` };
   };
-  const fmtFull = (d) => {
-    const day = String(d.getDate()).padStart(2, '0');
-    const mon = d.toLocaleString('en-US', { month: 'short' });
-    return `${day}-${mon}-${d.getFullYear()}`;
-  };
-  if (s.toDateString() === e.toDateString()) {
-    return { short: fmtSingle(s), full: fmtFull(s) };
+  const sFmt = fmtParts(sKey);
+  const eFmt = fmtParts(eKey);
+  if (sKey === eKey) {
+    return sFmt;
   }
   return {
-    short: `${fmtSingle(s)} to ${fmtSingle(e)}`,
-    full: `${fmtFull(s)} to ${fmtFull(e)}`
+    short: `${sFmt.short} to ${eFmt.short}`,
+    full: `${sFmt.full} to ${eFmt.full}`
   };
 }
 
 const TIER_STYLES = {
-  high: { fill: 'FFD1FAE5', font: 'FF065F46' },     // Green (> 80%)
-  moderate: { fill: 'FFFED7AA', font: 'FF9A3412' }, // Orange (65% - 80%)
-  low: { fill: 'FF991B1B', font: 'FFFFFFFF' }       // Dark Red (1% - 64%)
+  high: { fill: 'FFD1FAE5', font: 'FF065F46' },     // Green (>= 80%)
+  moderate: { fill: 'FFFED7AA', font: 'FF9A3412' }, // Orange/Yellow (70% - 79%)
+  low: { fill: 'FF991B1B', font: 'FFFFFFFF' }       // Dark Red (< 70%)
 };
 
 const CELL_HIGHLIGHT_STYLES = {
@@ -335,7 +335,7 @@ async function buildTeamReportWorkbook({ rawMembers = [], startDate, endDate, re
   sheet.getCell('A5').value = 'Row Performance Colors:';
   sheet.getCell('A5').font = { name: 'Calibri', size: 9.5, bold: true };
   sheet.mergeCells('B5:Q5');
-  sheet.getCell('B5').value = 'GREEN: Productivity > 80% | ORANGE: Productivity 65% - 80% | DARK RED: Productivity 1% - 64%';
+  sheet.getCell('B5').value = 'GREEN: Productivity >= 80% | YELLOW/ORANGE: Productivity 70% - 79% | DARK RED: Productivity < 70%';
   sheet.getCell('B5').font = { name: 'Calibri', size: 9.5, bold: true, color: { argb: 'FF334155' } };
 
   sheet.getCell('A6').value = 'Cell Highlight & Rating Rules:';
@@ -503,20 +503,20 @@ async function buildTeamReportWorkbook({ rawMembers = [], startDate, endDate, re
       numFmt: '0'
     },
     {
-      label: 'High Performance Tier (> 80% — Green)',
-      value: totalEmp > 0 ? { formula: `COUNTIF('Team Report'!F${dataStartRow}:F${lastDataRow},">0.8")`, result: highCount } : 0,
+      label: 'High Performance Tier (>= 80% — Green)',
+      value: totalEmp > 0 ? { formula: `COUNTIF('Team Report'!F${dataStartRow}:F${lastDataRow},">=0.8")`, result: highCount } : 0,
       numFmt: '0',
       style: TIER_STYLES.high
     },
     {
-      label: 'Moderate Performance Tier (65% - 80% — Orange)',
-      value: totalEmp > 0 ? { formula: `COUNTIFS('Team Report'!F${dataStartRow}:F${lastDataRow},">=0.65",'Team Report'!F${dataStartRow}:F${lastDataRow},"<=0.8")`, result: moderateCount } : 0,
+      label: 'Moderate Performance Tier (70% - 79% — Yellow/Orange)',
+      value: totalEmp > 0 ? { formula: `COUNTIFS('Team Report'!F${dataStartRow}:F${lastDataRow},">=0.7",'Team Report'!F${dataStartRow}:F${lastDataRow},"<0.8")`, result: moderateCount } : 0,
       numFmt: '0',
       style: TIER_STYLES.moderate
     },
     {
-      label: 'Low Performance Tier (1% - 64% — Dark Red)',
-      value: totalEmp > 0 ? { formula: `COUNTIF('Team Report'!F${dataStartRow}:F${lastDataRow},"<0.65")`, result: lowCount } : 0,
+      label: 'Low Performance Tier (< 70% — Dark Red)',
+      value: totalEmp > 0 ? { formula: `COUNTIF('Team Report'!F${dataStartRow}:F${lastDataRow},"<0.7")`, result: lowCount } : 0,
       numFmt: '0',
       style: TIER_STYLES.low
     },

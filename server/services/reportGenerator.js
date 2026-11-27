@@ -15,6 +15,8 @@ const Progress = require('../models/Progress');
 const { formatEmployeeId } = require('../utils/employeeId');
 const {
   getLocalDateKey,
+  getIstRangeBounds,
+  eachIstDateKey,
   summarizeActivitiesWithSession,
   resolveSessionsMap
 } = require('../utils/telemetryMetrics');
@@ -60,13 +62,7 @@ function formatActiveTime(seconds) {
 }
 
 function getLocalDateString(d) {
-  if (!d) return null;
-  const dateObj = d instanceof Date ? d : new Date(d);
-  if (isNaN(dateObj.getTime())) return null;
-  const y = dateObj.getFullYear();
-  const m = String(dateObj.getMonth() + 1).padStart(2, '0');
-  const day = String(dateObj.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  return getLocalDateKey(d);
 }
 
 function normalizeGoalSnippet(text, maxLen = 240) {
@@ -134,24 +130,7 @@ class ReportGenerator {
   }
 
   parseDateRange(startDate, endDate) {
-    let start, end;
-    if (typeof startDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(startDate.trim())) {
-      const [y, m, d] = startDate.trim().split('-').map(Number);
-      start = new Date(y, m - 1, d, 0, 0, 0, 0);
-    } else {
-      start = new Date(startDate);
-      start.setHours(0, 0, 0, 0);
-    }
-
-    if (typeof endDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(endDate.trim())) {
-      const [y, m, d] = endDate.trim().split('-').map(Number);
-      end = new Date(y, m - 1, d, 23, 59, 59, 999);
-    } else {
-      end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
-    }
-
-    return { start, end };
+    return getIstRangeBounds(startDate, endDate);
   }
 
   async ensureReportsDirectory() {
@@ -392,7 +371,7 @@ class ReportGenerator {
       {
         label: 'Productivity Score',
         value: `${summary.productivityScore}%`,
-        color: summary.productivityScore >= 60 ? '#10b981' : (summary.productivityScore >= 40 ? '#f59e0b' : '#ef4444')
+        color: summary.productivityScore >= 80 ? '#10b981' : (summary.productivityScore >= 70 ? '#f59e0b' : '#ef4444')
       },
       {
         label: 'Active Work Hours',
@@ -490,8 +469,7 @@ class ReportGenerator {
     );
 
     const rows = [];
-    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      const dStr = getLocalDateString(d);
+    for (const dStr of eachIstDateKey(start, end)) {
       const dayLogs = activitiesByDay.get(dStr) || [];
       const daySession = sessionByDay.get(dStr) || null;
       const summary = summarizeActivitiesWithSession(dayLogs, daySession);
@@ -1372,8 +1350,7 @@ class ReportGenerator {
     });
 
     const dailyTeamMap = {};
-    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      const dStr = getLocalDateString(d);
+    for (const dStr of eachIstDateKey(start, end)) {
       dailyTeamMap[dStr] = { sum: 0, count: 0 };
     }
 
@@ -1622,7 +1599,7 @@ class ReportGenerator {
         {
           label: 'Team Avg Productivity',
           value: `${avgTeamProd}%`,
-          color: avgTeamProd > 80 ? '#10b981' : (avgTeamProd >= 65 ? '#f59e0b' : '#dc2626')
+          color: avgTeamProd >= 80 ? '#10b981' : (avgTeamProd >= 70 ? '#f59e0b' : '#dc2626')
         },
         {
           label: 'Avg Rating (out of 5.0)',
@@ -1657,7 +1634,7 @@ class ReportGenerator {
       const stripY = boxY + boxHeight + 8;
       doc.roundedRect(35, stripY, 772, 22, 4).fillAndStroke('#f1f5f9', '#cbd5e1');
       doc.fontSize(7.5).font('Helvetica-Bold').fillColor('#0f172a').text(
-        `Executive Summary:  Active: ${rankedMembers.length}   |   High (>80% Green): ${highTierCount}   |   Moderate (65-80% Orange): ${moderateTierCount}   |   Low (1-64% Dark Red): ${lowTierCount}   |   Missing Keys (Blue): ${missingKeyCount}   |   >8h Active (Purple): ${overEightCount}   |   <1h Active (Red): ${underOneCount}`,
+        `Executive Summary:  Active: ${rankedMembers.length}   |   High (>=80% Green): ${highTierCount}   |   Moderate (70-79% Orange): ${moderateTierCount}   |   Low (<70% Dark Red): ${lowTierCount}   |   Missing Keys (Blue): ${missingKeyCount}   |   >8h Active (Purple): ${overEightCount}   |   <1h Active (Red): ${underOneCount}`,
         43,
         stripY + 7,
         { width: 756, ellipsis: true }

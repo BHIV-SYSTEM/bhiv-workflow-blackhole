@@ -779,11 +779,10 @@ router.get('/reports/:employeeId', async (req, res) => {
     }
     const resolvedEmpId = employee._id.toString();
 
-    const start = startDate ? parseLocalDateParam(startDate) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    start.setHours(0, 0, 0, 0);
-
-    const end = endDate ? parseLocalDateParam(endDate) : new Date();
-    end.setHours(23, 59, 59, 999);
+    const { start, end } = getIstRangeBounds(
+      startDate || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+      endDate || new Date()
+    );
 
     const [activities, screenshots, alerts, sessionsMap, aims, progresses] = await Promise.all([
       EmployeeActivity.find({
@@ -825,9 +824,7 @@ router.get('/reports/:employeeId', async (req, res) => {
     });
 
     const dailyMetricsMap = {};
-    const curr = new Date(start);
-    while (curr <= end) {
-      const dateKey = getLocalDateKey(curr);
+    for (const dateKey of eachIstDateKey(start, end)) {
       const dayLogs = activitiesByDate[dateKey] || [];
       const sessionInfo = sessionsMap.get(`${resolvedEmpId}_${dateKey}`) || null;
       const metrics = summarizeActivitiesWithSession(dayLogs, sessionInfo);
@@ -851,7 +848,6 @@ router.get('/reports/:employeeId', async (req, res) => {
         totalKeystroke: metrics.totalKeystrokes,
         avgMouseActivity: metrics.avgMouseActivity
       };
-      curr.setDate(curr.getDate() + 1);
     }
 
     const dailyMetrics = Object.values(dailyMetricsMap);
@@ -1538,11 +1534,8 @@ router.get('/team-summary', async (req, res) => {
       .populate('department', 'name')
       .lean();
 
-    // Define today's time window
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date();
-    endOfDay.setHours(23, 59, 59, 999);
+    // Define today's IST time window
+    const { start: startOfDay, end: endOfDay } = getIstDayBounds(new Date());
 
     const empIds = employees.map(emp => emp._id);
 
@@ -1741,10 +1734,7 @@ router.get('/team-summary', async (req, res) => {
 router.get('/daily-summary', async (req, res) => {
   try {
     const { date, department = 'all', statusTab = 'active' } = req.query;
-    const targetDate = parseLocalDateParam(date);
-
-    const startOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 0, 0, 0, 0);
-    const endOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 23, 59, 59, 999);
+    const { start: startOfDay, end: endOfDay } = getIstDayBounds(date || new Date());
 
     let userQuery = { role: { $nin: ['admin', 'Admin'] } };
 
@@ -1910,9 +1900,9 @@ router.get('/monthly-summary', async (req, res) => {
   try {
     const { month, department = 'all', statusTab = 'active' } = req.query; // YYYY-MM
     const now = new Date();
-    
-    let year = now.getFullYear();
-    let monthIdx = now.getMonth();
+    const nowKey = getLocalDateKey(now);
+    let year = Number(nowKey.slice(0, 4));
+    let monthIdx = Number(nowKey.slice(5, 7)) - 1;
 
     if (month && month.includes('-')) {
       const parts = month.split('-');
@@ -1920,8 +1910,12 @@ router.get('/monthly-summary', async (req, res) => {
       monthIdx = parseInt(parts[1]) - 1;
     }
 
-    const startOfMonth = new Date(year, monthIdx, 1, 0, 0, 0, 0);
-    const endOfMonth = new Date(year, monthIdx + 1, 0, 23, 59, 59, 999);
+    const daysInMonthCount = new Date(Date.UTC(year, monthIdx + 1, 0)).getUTCDate();
+    const monthPrefix = `${year}-${String(monthIdx + 1).padStart(2, '0')}`;
+    const { start: startOfMonth, end: endOfMonth } = getIstRangeBounds(
+      `${monthPrefix}-01`,
+      `${monthPrefix}-${String(daysInMonthCount).padStart(2, '0')}`
+    );
 
     let userQuery = { role: { $nin: ['admin', 'Admin'] } };
 
@@ -2003,7 +1997,7 @@ router.get('/monthly-summary', async (req, res) => {
       evaluationsByEmpDate.set(key, { metrics, dayScore });
     }
 
-    const daysInMonth = endOfMonth.getDate();
+    const daysInMonth = daysInMonthCount;
     const dayByDayBreakdown = [];
 
     for (let d = 1; d <= daysInMonth; d++) {
@@ -2194,8 +2188,9 @@ router.get('/monthly-employee-breakdown', async (req, res) => {
     }
 
     const now = new Date();
-    let year = now.getFullYear();
-    let monthIdx = now.getMonth();
+    const nowKey = getLocalDateKey(now);
+    let year = Number(nowKey.slice(0, 4));
+    let monthIdx = Number(nowKey.slice(5, 7)) - 1;
 
     if (month && month.includes('-')) {
       const parts = month.split('-');
@@ -2203,8 +2198,12 @@ router.get('/monthly-employee-breakdown', async (req, res) => {
       monthIdx = parseInt(parts[1]) - 1;
     }
 
-    const startOfMonth = new Date(year, monthIdx, 1, 0, 0, 0, 0);
-    const endOfMonth = new Date(year, monthIdx + 1, 0, 23, 59, 59, 999);
+    const daysInMonthCount = new Date(Date.UTC(year, monthIdx + 1, 0)).getUTCDate();
+    const monthPrefix = `${year}-${String(monthIdx + 1).padStart(2, '0')}`;
+    const { start: startOfMonth, end: endOfMonth } = getIstRangeBounds(
+      `${monthPrefix}-01`,
+      `${monthPrefix}-${String(daysInMonthCount).padStart(2, '0')}`
+    );
 
     const logs = await EmployeeActivity.find({
       employee: employeeId,
@@ -2214,7 +2213,7 @@ router.get('/monthly-employee-breakdown', async (req, res) => {
     .sort({ timestamp: 1 })
     .lean();
 
-    const daysInMonth = endOfMonth.getDate();
+    const daysInMonth = daysInMonthCount;
     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const dayShortNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const logsByDateMap = {};
@@ -2243,8 +2242,7 @@ router.get('/monthly-employee-breakdown', async (req, res) => {
     let totalMonthlyDayProdSum = 0;
     let workedDaysCount = 0;
 
-    const todayDate = new Date();
-    todayDate.setHours(23, 59, 59, 999);
+    const todayDate = getIstDayBounds(new Date()).end;
 
     const dailyBreakdown = [];
     for (let d = 1; d <= daysInMonth; d++) {

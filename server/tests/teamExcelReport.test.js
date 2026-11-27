@@ -6,10 +6,17 @@ const {
   isExcludedReportUser,
   normalizeMemberGoalFields,
   computeQualitativeRating,
+  getPerformanceGroup,
   enrichAndRankTeamMembers,
   buildTeamReportWorkbook
 } = require('../utils/teamExcelReport');
-const { summarizeActivitiesWithSession, getEfficiencyLabel } = require('../utils/telemetryMetrics');
+const {
+  summarizeActivitiesWithSession,
+  getEfficiencyLabel,
+  getLocalDateKey,
+  getIstDayBounds,
+  getIstRangeBounds
+} = require('../utils/telemetryMetrics');
 
 describe('Team Excel Report (.xlsx) & Unified Telemetry', () => {
   test('filters blank, Bhiv test, Bhiv Sips, and dummy accounts', () => {
@@ -177,27 +184,44 @@ describe('Team Excel Report (.xlsx) & Unified Telemetry', () => {
         'Combined Score', 'Performance Group'
       ]);
 
-      // Row 9: High (>80%), Active Hour > 8h -> Purple
+      // Row 9: High (>=80%), Active Hour > 8h -> Purple
       expect(teamSheet.getRow(9).getCell(3).value).toBe('Prakash Yadav');
       expect(teamSheet.getRow(9).getCell(9).value).toBe('0h 45m');
       expect(teamSheet.getRow(9).getCell(8).fill.fgColor.argb).toBe('FF6B21A8');
       expect(teamSheet.getRow(9).getCell(1).fill.fgColor.argb).toBe('FFD1FAE5');
 
-      // Row 10: Moderate (65-80%), Missing Keystrokes -> Blue, empty Achievement -> 'None'
+      // Row 10: Moderate (70%-79%), Missing Keystrokes -> Blue, empty Achievement -> 'None'
       expect(teamSheet.getRow(10).getCell(3).value).toBe('Gauri Deshpande');
       expect(teamSheet.getRow(10).getCell(10).value).toBe('-');
       expect(teamSheet.getRow(10).getCell(10).fill.fgColor.argb).toBe('FF1D4ED8');
       expect(teamSheet.getRow(10).getCell(15).value).toBe('None');
 
-      // Row 11: Low (1-64%), Active < 1h -> Dark Red, all 3 missing -> NOT Mention + Rating 0.0
+      // Row 11: Low (<70%), Active < 1h -> Dark Red, all 3 missing -> NOT Mention + Rating 0.0
       expect(teamSheet.getRow(11).getCell(3).value).toBe('Karan Bharda');
       expect(teamSheet.getRow(11).getCell(7).value).toBe(0);
       expect(teamSheet.getRow(11).getCell(8).fill.fgColor.argb).toBe('FF7F1D1D');
       expect(teamSheet.getRow(11).getCell(13).value).toBe('NOT Mention');
       expect(teamSheet.getRow(11).getCell(13).fill.fgColor.argb).toBe('FF7F1D1D');
+
+      expect(getPerformanceGroup(80).tier).toBe('high');
+      expect(getPerformanceGroup(79).tier).toBe('moderate');
+      expect(getPerformanceGroup(70).tier).toBe('moderate');
+      expect(getPerformanceGroup(69).tier).toBe('low');
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
+  });
+
+  test('IST day boundary helpers match IST midnight regardless of host timezone', () => {
+    expect(getLocalDateKey('2026-11-26T18:30:00.000Z')).toBe('2026-11-27');
+    expect(getLocalDateKey('2026-11-26T18:29:59.000Z')).toBe('2026-11-26');
+    const bounds = getIstDayBounds('2026-11-27');
+    expect(bounds.start.toISOString()).toBe('2026-11-26T18:30:00.000Z');
+    expect(bounds.end.toISOString()).toBe('2026-11-27T18:29:59.999Z');
+    expect(bounds.dateKey).toBe('2026-11-27');
+    const range = getIstRangeBounds('2026-11-27', '2026-11-27');
+    expect(range.start.toISOString()).toBe('2026-11-26T18:30:00.000Z');
+    expect(range.end.toISOString()).toBe('2026-11-27T18:29:59.999Z');
   });
 
   test('telemetryMetrics exposes idleTimeFormatted consistent with activeSeconds', () => {

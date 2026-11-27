@@ -11,26 +11,68 @@ const WorkSession = require('../models/WorkSession');
 const Attendance = require('../models/Attendance');
 const DailyAttendance = require('../models/DailyAttendance');
 
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Format any Date / ISO value as YYYY-MM-DD in IST (UTC+05:30),
+ * so UTC containers and IST local machines always agree on day keys.
+ */
 function getLocalDateKey(dateVal) {
   if (!dateVal) return null;
+  if (typeof dateVal === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateVal.trim())) {
+    return dateVal.trim();
+  }
   const d = dateVal instanceof Date ? dateVal : new Date(dateVal);
   if (Number.isNaN(d.getTime())) return null;
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
+  const ist = new Date(d.getTime() + IST_OFFSET_MS);
+  const y = ist.getUTCFullYear();
+  const m = String(ist.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(ist.getUTCDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
 }
 
+/**
+ * Return exact UTC [start, end] bounds covering an IST calendar day (00:00:00.000 - 23:59:59.999 IST).
+ */
+function getIstDayBounds(dateInput = new Date()) {
+  let y, m, d;
+  if (typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateInput.trim())) {
+    [y, m, d] = dateInput.trim().split('-').map(Number);
+  } else {
+    const parsed = dateInput ? new Date(dateInput) : new Date();
+    const valid = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+    const ist = new Date(valid.getTime() + IST_OFFSET_MS);
+    y = ist.getUTCFullYear();
+    m = ist.getUTCMonth() + 1;
+    d = ist.getUTCDate();
+  }
+  const startMs = Date.UTC(y, m - 1, d, 0, 0, 0, 0) - IST_OFFSET_MS;
+  return {
+    start: new Date(startMs),
+    end: new Date(startMs + DAY_MS - 1),
+    dateKey: `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+  };
+}
+
+function getIstRangeBounds(startInput, endInput) {
+  const { start } = getIstDayBounds(startInput || new Date());
+  const { end } = getIstDayBounds(endInput || startInput || new Date());
+  return { start, end };
+}
+
+function eachIstDateKey(startInput, endInput) {
+  const { start, end } = getIstRangeBounds(startInput, endInput);
+  const keys = [];
+  for (let ms = start.getTime(); ms <= end.getTime(); ms += DAY_MS) {
+    const key = getLocalDateKey(new Date(ms));
+    if (key) keys.push(key);
+  }
+  return keys;
+}
+
 function parseLocalDateParam(dateStr) {
-  if (typeof dateStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateStr.trim())) {
-    const [y, m, d] = dateStr.trim().split('-').map(Number);
-    return new Date(y, m - 1, d, 0, 0, 0, 0);
-  }
-  const d = dateStr ? new Date(dateStr) : new Date();
-  if (Number.isNaN(d.getTime())) {
-    return new Date();
-  }
-  return d;
+  return getIstDayBounds(dateStr || new Date()).start;
 }
 
 function formatDurationHM(seconds) {
@@ -375,7 +417,11 @@ async function resolveSessionsMap(empIds, startDate, endDate, now = new Date()) 
 }
 
 module.exports = {
+  IST_OFFSET_MS,
   getLocalDateKey,
+  getIstDayBounds,
+  getIstRangeBounds,
+  eachIstDateKey,
   parseLocalDateParam,
   formatDurationHM,
   getEfficiencyLabel,
