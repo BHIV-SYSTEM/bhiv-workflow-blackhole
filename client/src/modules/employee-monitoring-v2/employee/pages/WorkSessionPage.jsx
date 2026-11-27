@@ -54,6 +54,43 @@ const productivityTone = (score) =>
     : score >= 30 ? 'text-amber-600 dark:text-amber-400'
       : 'text-rose-600 dark:text-rose-400';
 
+/**
+ * Day-productivity zones (employee-confirmed): red <70, yellow 70–79, green ≥80.
+ * The day score starts at 0 and climbs with continuous work; idle only shaves
+ * a little off. Voice-command users are scored on platform + engagement
+ * instead of keystrokes (mode: 'voice').
+ */
+const ZONE_META = {
+  green: {
+    label: 'Green',
+    tone: 'text-emerald-600 dark:text-emerald-400',
+    bar: 'bg-emerald-500',
+    badge: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30',
+  },
+  yellow: {
+    label: 'Yellow',
+    tone: 'text-amber-600 dark:text-amber-400',
+    bar: 'bg-amber-500',
+    badge: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30',
+  },
+  red: {
+    label: 'Red',
+    tone: 'text-rose-600 dark:text-rose-400',
+    bar: 'bg-rose-500',
+    badge: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30',
+  },
+};
+
+const zoneOf = (score) =>
+  score >= 80 ? 'green' : score >= 70 ? 'yellow' : 'red';
+
+const CRITERIA_LABELS = [
+  ['actions', 'Actions'],
+  ['mouse', 'Mouse movement'],
+  ['keys', 'Keystrokes'],
+  ['platform', 'Platform'],
+];
+
 export const WorkSessionPage = () => {
   const { user } = useAuth();
   const userId = user?._id || user?.id;
@@ -136,6 +173,18 @@ export const WorkSessionPage = () => {
   const recentLogs = summary?.recentLogs || [];
   const hasData = Boolean(summary && (summary.totalLogs > 0 || websiteVisits.length > 0));
   const productivityScore = Math.min(100, Math.max(0, Number(summary?.avgProductivityScore || 0)));
+
+  const dayProd = summary?.dayProductivity || null;
+  const dayZone = dayProd
+    ? (dayProd.zone || zoneOf(dayProd.score || 0))
+    : zoneOf(summary?.avgProductivityScore || 0);
+  const dayScore = dayProd ? (dayProd.score || 0) : productivityScore;
+  const zoneMeta = ZONE_META[dayZone] || ZONE_META.red;
+  const criteria = dayProd?.criteria || null;
+  const voiceMode = dayProd?.mode === 'voice';
+  const trendLabel = dayProd?.trend === 'rising' ? 'Rising'
+    : dayProd?.trend === 'falling' ? 'Falling'
+      : dayProd?.trend === 'steady' ? 'Steady' : '';
 
   return (
     <div className="space-y-6 pb-8">
@@ -335,20 +384,27 @@ export const WorkSessionPage = () => {
                 </p>
               </CardContent>
             </Card>
-
-            <Card className="neo-card shadow-lg border-l-4 border-l-emerald-500">
+            <Card className={`neo-card shadow-lg border-l-4 ${dayZone === 'green' ? 'border-l-emerald-500' : dayZone === 'yellow' ? 'border-l-amber-500' : 'border-l-rose-500'}`}>
               <CardContent className="pt-5 space-y-2">
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <span className="font-medium">Productivity</span>
-                  <div className="h-8 w-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-500">
-                    <TrendingUp className="h-4 w-4" />
+                  <div className="flex items-center gap-2">
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${zoneMeta.badge}`}>
+                      {zoneMeta.label}
+                    </span>
+                    <div className="h-8 w-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-500">
+                      <TrendingUp className="h-4 w-4" />
+                    </div>
                   </div>
                 </div>
-                <div className={`text-2xl font-bold tabular-nums ${productivityTone(productivityScore)}`}>
-                  {productivityScore}%
+                <div className={`text-2xl font-bold tabular-nums ${zoneMeta.tone}`}>
+                  {dayScore}%
                 </div>
-                <Progress value={productivityScore} className="h-1.5" />
-                <p className="text-[11px] text-muted-foreground">{summary.productivityEfficiency || 'No Activity'}</p>
+                <Progress value={dayScore} className="h-1.5" />
+                <p className="text-[11px] text-muted-foreground">
+                  {voiceMode ? 'Voice-driven work' : 'Standard tracking'}
+                  {trendLabel ? ` · ${trendLabel}` : ''}
+                </p>
               </CardContent>
             </Card>
 
@@ -365,6 +421,57 @@ export const WorkSessionPage = () => {
               </CardContent>
             </Card>
           </div>
+
+          {/* Productivity criteria: the four inputs behind the day score */}
+          <Card className="neo-card shadow-lg">
+            <CardHeader className="border-b">
+              <CardTitle className="text-base flex items-center gap-2 flex-wrap">
+                <TrendingUp className="h-4 w-4 text-primary" /> How Productivity Is Calculated
+                {voiceMode && (
+                  <Badge variant="outline" className="text-[10px]">Voice mode · no keyboard needed</Badge>
+                )}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4 space-y-3">
+              <p className="text-[11px] text-muted-foreground">
+                Starts at 0% when your day begins. Continuous work raises it (about 5 minutes of solid
+                work reaches green); a few idle minutes only take a little off. Scored on four criteria:
+                {voiceMode
+                  ? ' platform 40, engagement 30, mouse 15, voice input 15 — voice work counts without keystrokes.'
+                  : ' actions, mouse movement, keystrokes, and the platform you are using.'}
+              </p>
+              {criteria ? (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {CRITERIA_LABELS.map(([key, label]) => {
+                    const raw = Number(criteria[key] || 0);
+                    const max = voiceMode && (key === 'platform') ? 40
+                      : voiceMode && (key === 'actions') ? 30
+                        : voiceMode ? 15 : 25;
+                    const pct = Math.max(0, Math.min(100, Math.round((raw / max) * 100)));
+                    return (
+                      <div key={key} className="space-y-1">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="text-muted-foreground">{label}</span>
+                          <span className="font-mono">{Math.round(raw)}/{max}</span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div className={`h-full rounded-full ${zoneOf(pct) === 'green' ? 'bg-emerald-500' : zoneOf(pct) === 'yellow' ? 'bg-amber-500' : 'bg-rose-400'}`}
+                            style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-[11px] text-muted-foreground">No telemetry yet — the score appears once your agent starts sending activity.</p>
+              )}
+              <p className="text-[10px] text-muted-foreground">
+                Zones: <span className="text-rose-600 dark:text-rose-400 font-medium">Red &lt;70</span> ·{' '}
+                <span className="text-amber-600 dark:text-amber-400 font-medium">Yellow 70–79</span> ·{' '}
+                <span className="text-emerald-600 dark:text-emerald-400 font-medium">Green ≥80</span>
+              </p>
+            </CardContent>
+          </Card>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
             {/* Hour-by-hour activity */}
@@ -385,19 +492,21 @@ export const WorkSessionPage = () => {
                     {hourly.map((h) => {
                       const activity = (h.keystrokes || 0) + (h.mouseEvents || 0);
                       const heightPct = Math.max(6, Math.round((activity / peakActivity) * 100));
-                      const tone = h.avgProductivity >= 50
+                      const hScore = h.dayScore ?? h.avgProductivity ?? 0;
+                      const hZone = zoneOf(hScore);
+                      const tone = hZone === 'green'
                         ? 'bg-emerald-500 hover:bg-emerald-400'
-                        : h.avgProductivity >= 30
+                        : hZone === 'yellow'
                           ? 'bg-amber-500 hover:bg-amber-400'
                           : 'bg-rose-400 hover:bg-rose-300';
                       return (
                         <div
                           key={h.hour}
                           className="flex-1 min-w-[24px] flex flex-col items-center justify-end h-full gap-1.5 group"
-                          title={`${h.label} — ${fmtInt(h.keystrokes)} keys, ${fmtInt(h.mouseEvents)} mouse, ${h.avgProductivity}% productive`}
+                          title={`${h.label} — ${fmtInt(h.keystrokes)} keys, ${fmtInt(h.mouseEvents)} mouse, day score ${hScore}% (${hZone})`}
                         >
                           <span className="text-[10px] font-mono text-muted-foreground tabular-nums">
-                            {activity > 0 ? `${h.avgProductivity}%` : ''}
+                            {activity > 0 ? `${hScore}%` : ''}
                           </span>
                           <div className={`w-full max-w-[32px] rounded-t-md transition-colors ${tone}`} style={{ height: `${heightPct}%` }} />
                           <span className="text-[10px] text-muted-foreground font-mono">{h.label}</span>
@@ -407,9 +516,9 @@ export const WorkSessionPage = () => {
                   </div>
                 )}
                 <div className="flex flex-wrap items-center gap-4 pt-3 text-[11px] text-muted-foreground">
-                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> ≥50% productive</span>
-                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> 30–49%</span>
-                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-rose-400" /> &lt;30%</span>
+                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Green ≥80</span>
+                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> Yellow 70–79</span>
+                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-rose-400" /> Red &lt;70</span>
                 </div>
               </CardContent>
             </Card>

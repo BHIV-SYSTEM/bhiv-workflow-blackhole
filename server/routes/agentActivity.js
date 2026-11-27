@@ -7,6 +7,7 @@ const {
   evaluateSample,
   normalizeIntervalSeconds,
 } = require('../utils/telemetryMetrics');
+const { computeDayProductivity } = require('../utils/dayProductivity');
 
 /**
  * Human-readable host for a URL (e.g. "github.com"). Falls back to the raw
@@ -409,6 +410,12 @@ router.get('/activity/summary/:userId', auth, async (req, res) => {
 
     const unified = summarizeActivitiesWithSession(activities);
 
+    // Red/yellow/green day score: starts at 0, rises with continuous work,
+    // decays gently on idle, and credits voice-command users via platform +
+    // engagement instead of keystrokes they never produce.
+    const dayProd = computeDayProductivity(activities);
+    const dayScoreByHour = new Map(dayProd.hourly.map((h) => [h.hour, h.score]));
+
     // Raw mouse movement volume (the 0-100 score saturates; the event count
     // shows how much the employee actually moved/clicked).
     let totalMouseEvents = 0;
@@ -502,6 +509,8 @@ router.get('/activity/summary/:userId', auth, async (req, res) => {
         avgProductivity: bucket.scoreSamples > 0
           ? Math.min(100, Math.round(bucket.scoreSum / bucket.scoreSamples))
           : 0,
+        // End-of-hour value of the red/yellow/green day score (0 at day start).
+        dayScore: dayScoreByHour.get(bucket.hour) ?? 0,
       });
     }
 
@@ -517,6 +526,19 @@ router.get('/activity/summary/:userId', auth, async (req, res) => {
       idleTime: unified.idleTime,
       avgProductivityScore: unified.avgProductivityScore,
       productivityEfficiency: unified.productivityEfficiency,
+      // New day-productivity engine (kept additive: legacy fields above are
+      // untouched for the admin dashboard, reports, and detail modal).
+      dayProductivity: {
+        score: dayProd.score,
+        zone: dayProd.zone,
+        mode: dayProd.mode,
+        criteria: dayProd.criteria,
+        trend: dayProd.trend,
+        engagedSeconds: dayProd.engagedSeconds,
+        voiceShare: dayProd.voiceShare,
+        formula: dayProd.formula,
+        thresholds: { red: '<70', yellow: '70-79', green: '>=80' },
+      },
       hasActivity: unified.hasActivity,
       appDetails: unified.appDetails,
       websiteVisits,

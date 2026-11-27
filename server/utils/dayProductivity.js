@@ -1,0 +1,351 @@
+/**
+ * Day Productivity Engine — red / yellow / green day score.
+ *
+ * A day score starts at 0 the moment the employee starts working and evolves
+ * tick-by-tick (each telemetry sample ≈ 5 s) with an asymmetric rise/decay
+ * recurrence:
+ *
+ *   P(0) = 0
+ *   if target > P:  P ← P + α · (target − P) · Δt     (rise, α = 0.008 /s)
+ *   else:           P ← P + β · (target − P) · Δt     (decay, β = 0.0008 /s)
+ *
+ * so continuous work lifts the score quickly (≈3 min → yellow, ≈5 min → green
+ * at a solid target) while idle only shaves a few points a minute off — the
+ * decrease is intentionally small (2 idle minutes from 90 keeps green, 5 idle
+ * minutes tip into yellow). Δt is capped at 120 s so an agent/telemetry
+ * gap can never nuke the score.
+ *
+ * The per-tick `target` is built from exactly four criteria:
+ *
+ *   Standard mode (typing/mouse work), 25 points each:
+ *     actions (any input this tick, graded by system-idle),
+ *     mouse movement (normalized 0-100),
+ *     keystrokes (cadence-normalized),
+ *     platform (category of the active application).
+ *
+ *   Voice mode (voice-command users: no keyboard, near-zero mouse because the
+ *   agent executes what they say), detected when the engaged time is dominated
+ *   by voice/assistive platforms while the key rate stays negligible:
+ *     platform 40, engagement 30, mouse 15 (down-weighted),
+ *     input-substitute 15 (full credit while engaged on a voice platform —
+ *     typing is simply not their input method).
+ *
+ * This substitution is what keeps voice-command users out of perpetual red:
+ * they score on WHERE they work and WHETHER they are engaged, not on keystrokes
+ * they will never produce.
+ *
+ * Zones (employee-confirmed): red < 70, yellow 70-79, green ≥ 80.
+ */
+
+const { evaluateSample } = require('./telemetryMetrics');
+
+const ZONE = { RED: 'red', YELLOW: 'yellow', GREEN: 'green' };
+const ZONE_THRESHOLDS = { yellow: 70, green: 80 }; // red < 70, yellow 70-79, green >= 80
+
+// Asymmetric recurrence constants (per second).
+const RISE_RATE = 0.008;   // α — climb toward the tick target while working
+const DECAY_RATE = 0.0008; // β — gentle pull down while idle/distracted (a few points/minute)
+const MAX_TICK_GAP_SEC = 120;
+
+// Unproductive platforms can never sustain a green target.
+const DISTRACTION_TARGET_CAP = 45;
+
+// Mode detection: voice/assistive platforms must own enough engaged time and
+// the employee must barely type (normal typing ≈ 200+ keys/min).
+const VOICE_MODE_MIN_ENGAGED_TICKS = 4;
+const VOICE_MODE_PLATFORM_SHARE = 0.35;
+const VOICE_MODE_MAX_KEYS_PER_MIN = 25;
+
+const PLATFORM_FACTOR_STANDARD = {
+  productive: 1.0,
+  assistive: 0.9,
+  voice: 0.9,
+  neutral: 0.6,
+  unproductive: 0.2,
+};
+
+const PLATFORM_FACTOR_VOICE = {
+  voice: 1.0,
+  assistive: 0.95,
+  productive: 0.85,
+  neutral: 0.5,
+  unproductive: 0.15,
+};
+
+// ── Platform classification ──────────────────────────────────────────────────
+// Window titles + app names only (raw URLs are prohibited by the platform
+// privacy boundary). `app_category === 'DISTRACTION'` from the server-side
+// classifier wins outright.
+
+const UNPRODUCTIVE_PATTERNS = [
+  /\byoutube\b/, /\bnetflix\b/, /\bprime video\b/, /\bhotstar\b/, /\bdisney\+/,
+  /\bspotify\b/, /\binstagram\b/, /\bfacebook\b/, /\btwitter\b/, /\breddit\b/,
+  /\btiktok\b/, /\btwitch\b/, /\bsteam\b/, /\belectric\s*games\b/, /\bgames?\b.*\blauncher\b/,
+  /\bpinterest\b/, /\bsnapchat\b/, /\btelegram\b.*\bweb\b/, /\bsoundcloud\b/,
+];
+
+const VOICE_PATTERNS = [
+  /\bdictation\b/, /\bdragon\b/, /\bspeech\s*recognition\b/, /\bspeech\s*to\s*text\b/,
+  /\bvoice\s*to\s*text\b/, /\bvoice\s*typing\b/, /\bgoogle\s*voice\s*typing\b/,
+  /\botter\b/, /\bwhisper\b/, /\bvoicenote\b/, /\bvoice\s*note\b/, /\baudio\s*memo\b/,
+  /\bwindows\s*speech\b/, /\bvoice\s*control\b/, /\bvoice\s*command\b/,
+  /\bvoice\s*recorder\b/, /\bvoice\s*memos?\b/, /\bmicrophone\b/,
+];
+
+const ASSISTIVE_PATTERNS = [
+  /\bchatgpt\b/, /\bgpt-?\d\b/, /\bopenai\b/, /\bclaude\b/, /\bcopilot\b/,
+  /\bgemini\b/, /\bperplexity\b/, /\bdeepseek\b/, /\bllama\b/, /\bchatbot\b/,
+  /\bai assistant\b/, /\bartificial intelligence\b/, /\bcursor\b/, /\bwindsurf\b/,
+  /\bcodeium\b/, /\btabnine\b/, /\bgrimoire\b/, /\bpoe\.com\b/, /\byou\.com\b/,
+  /\bblackhole\s*agent\b/, /\bniyantran\b.*\bagent\b/,
+];
+
+const PRODUCTIVE_PATTERNS = [
+  /\bvisual studio code\b/, /\bvscode\b/, /\bvs code\b/, /\bintellij\b/, /\bwebstorm\b/,
+  /\bpycharm\b/, /\bpostman\b/, /\bdocker\b/, /\bterminal\b/, /\bpowershell\b/,
+  /\bcmd\b/, /\bgit\b/, /\bgithub\b/, /\bgitlab\b/, /\bbitbucket\b/, /\bjira\b/,
+  /\bconfluence\b/, /\bslack\b/, /\bteams\b/, /\boutlook\b/, /\bexcel\b/, /\bword\b/,
+  /\bpowerpoint\b/, /\bfigma\b/, /\bnotion\b/, /\btrello\b/, /\basana\b/,
+  /\blinear\b/, /\bsonar\b/, /\bwebpack\b/, /\bvite\b/, /\bnode\.js\b/, /\bnpm\b/,
+  /\bpython\b/, /\bpycharm\b/, /\bandroid studio\b/, /\bxcode\b/, /\bdatagrip\b/,
+  /\binfiverse\b/, /\bblackhole\b/, /\bniyantran\b/, /\bactivity\s*dashboard\b/,
+];
+
+const PRODUCTIVE_NAME_PATTERNS = [
+  // Bare process names the title-based patterns miss (VS Code's window title
+  // is usually "file.js - Code").
+  /^code(\.exe)?$/i, /^windowsterminal(\.exe)?$/i, /^powershell(\.exe)?$/i,
+  /^cmd(\.exe)?$/i, /^wt(\.exe)?$/i, /^devenv(\.exe)?$/i, /^pycharm64(\.exe)?$/i,
+  /^idea64(\.exe)?$/i, /^excel(\.exe)?$/i, /^winword(\.exe)?$/i, /^outlook(\.exe)?$/i,
+  /^teams(\.exe)?$/i, /^slack(\.exe)?$/i, /^docker desktop(\.exe)?$/i,
+];
+
+function classifyPlatform(act) {
+  const appCategory = String(act?.app_category || '').toUpperCase();
+  if (appCategory === 'DISTRACTION') return 'unproductive';
+
+  const appName = String(act?.active_application?.name || '');
+  const title = String(act?.active_application?.title || '');
+  const haystack = `${appName} ${title}`.toLowerCase();
+  if (!haystack.trim()) return 'neutral';
+
+  if (UNPRODUCTIVE_PATTERNS.some((re) => re.test(haystack))) return 'unproductive';
+  if (VOICE_PATTERNS.some((re) => re.test(haystack))) return 'voice';
+  if (ASSISTIVE_PATTERNS.some((re) => re.test(haystack))) return 'assistive';
+  if (PRODUCTIVE_PATTERNS.some((re) => re.test(haystack))) return 'productive';
+  if (PRODUCTIVE_NAME_PATTERNS.some((re) => re.test(appName.trim()))) return 'productive';
+  return 'neutral';
+}
+
+// ── Per-criterion helpers ────────────────────────────────────────────────────
+
+/** Graded engagement from system idle (reading/thinking credit, 5-min cliff). */
+function engagementFactor(rawIdleSec) {
+  if (rawIdleSec < 30) return 1;
+  if (rawIdleSec < 120) return 0.8;
+  if (rawIdleSec < 300) return 0.5;
+  return 0;
+}
+
+/** Normalized mouse movement 0-100 (same normalization as evaluateSample). */
+function normalizedMouse(act, ev) {
+  const mouseScore = Number(act?.mouse_activity_score || 0);
+  if (mouseScore > 0) return Math.min(100, mouseScore);
+  const events = Number(act?.mouse_event_count || 0);
+  if (events > 0 && ev.sampleSec > 0) {
+    return Math.min(100, Math.round((((events / ev.sampleSec) * 60) / 120) * 100));
+  }
+  return 0;
+}
+
+/** Keystroke criterion: 60 keys/min or more earns full credit. */
+function keyFactor(ev) {
+  if (ev.keys <= 0 || ev.sampleSec <= 0) return 0;
+  const cadencePerMin = (ev.keys / ev.sampleSec) * 60;
+  return Math.min(1, cadencePerMin / 60);
+}
+
+function classifyZone(score, hasActivity) {
+  if (!hasActivity) return ZONE.RED;
+  if (score >= ZONE_THRESHOLDS.green) return ZONE.GREEN;
+  if (score >= ZONE_THRESHOLDS.yellow) return ZONE.YELLOW;
+  return ZONE.RED;
+}
+
+// ── Tick target ──────────────────────────────────────────────────────────────
+
+function standardTarget(act, ev, platform, rawIdle) {
+  const hasInput = ev.hasInput;
+  const actionsFactor = hasInput
+    ? 1
+    : (rawIdle < 30 ? 0.6 : rawIdle < 120 ? 0.4 : rawIdle < 300 ? 0.2 : 0);
+
+  const actions = 25 * actionsFactor;
+  const mouse = 25 * (normalizedMouse(act, ev) / 100);
+  const keys = 25 * keyFactor(ev);
+  const platformPts = 25 * (PLATFORM_FACTOR_STANDARD[platform] ?? 0.6);
+
+  let target = actions + mouse + keys + platformPts;
+  if (platform === 'unproductive') target = Math.min(target, DISTRACTION_TARGET_CAP);
+  return { target, criteria: { actions, mouse, keys, platform: platformPts } };
+}
+
+function voiceTarget(act, ev, platform, rawIdle) {
+  const engaged = engagementFactor(rawIdle);
+  const voiceLike = platform === 'voice' || platform === 'assistive';
+
+  const platformPts = 40 * (PLATFORM_FACTOR_VOICE[platform] ?? 0.5);
+  const engagement = 30 * engaged;
+  const mouse = 15 * (normalizedMouse(act, ev) / 100);
+  // Input substitute: full credit while engaged on a voice/assistive platform
+  // even with zero keystrokes — voice IS their keyboard.
+  const input = 15 * ((ev.hasInput || (engaged > 0 && voiceLike)) ? 1 : 0);
+
+  let target = platformPts + engagement + mouse + input;
+  if (platform === 'unproductive') target = Math.min(target, DISTRACTION_TARGET_CAP);
+  return { target, criteria: { actions: engagement, mouse, keys: input, platform: platformPts } };
+}
+
+// ── Engine ───────────────────────────────────────────────────────────────────
+
+/**
+ * Compute the day productivity score for an ordered (oldest-first) list of
+ * EmployeeActivity samples.
+ *
+ * @returns {{
+ *   score: number, zone: 'red'|'yellow'|'green', mode: 'standard'|'voice',
+ *   hasActivity: boolean, criteria: {actions:number, mouse:number, keys:number, platform:number},
+ *   trend: 'rising'|'steady'|'falling'|'none', engagedSeconds: number,
+ *   voiceShare: number, formula: string, hourly: Array<{hour:number, score:number}>
+ * }}
+ */
+function computeDayProductivity(activities = []) {
+  const logs = Array.isArray(activities) ? activities : [];
+
+  const base = {
+    score: 0,
+    zone: ZONE.RED,
+    mode: 'standard',
+    hasActivity: logs.length > 0,
+    criteria: { actions: 0, mouse: 0, keys: 0, platform: 0 },
+    trend: 'none',
+    engagedSeconds: 0,
+    voiceShare: 0,
+    formula:
+      'P(0)=0; per 5s tick: target = actions + mouse + keystrokes + platform '
+      + '(voice mode: platform 40 + engagement 30 + mouse 15 + input-substitute 15); '
+      + 'rise P += 0.008·(target−P)·Δt, decay P += 0.0008·(target−P)·Δt; '
+      + 'green ≥80, yellow 70–79, red <70.',
+    hourly: [],
+  };
+  if (logs.length === 0) return base;
+
+  // Pass 1 — classify every tick and detect the input mode.
+  const ticks = logs.map((act) => {
+    const ev = evaluateSample(act);
+    const platform = classifyPlatform(act);
+    // evaluateSample normalizes idle internally; re-derive the raw value the
+    // same way so engagement grading matches the shared source of truth.
+    let rawIdle = Number(act?.idle_duration || 0);
+    if (!Number.isFinite(rawIdle) || rawIdle < 0) rawIdle = 0;
+    if (rawIdle > 10000) rawIdle = Math.round(rawIdle / 1000);
+    return { act, ev, platform, rawIdle };
+  });
+
+  let engagedTicks = 0;
+  let voiceLikeTicks = 0;
+  let totalKeys = 0;
+  let engagedSeconds = 0;
+  for (const t of ticks) {
+    const engaged = t.ev.isIdleSample ? 0 : 1;
+    if (engaged) {
+      engagedTicks += 1;
+      engagedSeconds += t.ev.sampleSec;
+      totalKeys += t.ev.keys;
+      if (t.platform === 'voice' || t.platform === 'assistive') voiceLikeTicks += 1;
+    }
+  }
+  const voiceShare = engagedTicks > 0 ? voiceLikeTicks / engagedTicks : 0;
+  const keysPerMin = engagedSeconds > 0 ? (totalKeys / engagedSeconds) * 60 : 0;
+  const mode = (
+    engagedTicks >= VOICE_MODE_MIN_ENGAGED_TICKS
+    && voiceShare >= VOICE_MODE_PLATFORM_SHARE
+    && keysPerMin < VOICE_MODE_MAX_KEYS_PER_MIN
+  ) ? 'voice' : 'standard';
+
+  // Pass 2 — asymmetric rise/decay recurrence, P(0) = 0.
+  let score = 0;
+  let prevMs = null;
+  const scoreTimeline = []; // {ms, score} for trend
+  const hourlyMap = new Map(); // hour -> last score seen in that hour
+  const criteriaSum = { actions: 0, mouse: 0, keys: 0, platform: 0 };
+
+  for (const t of ticks) {
+    const ms = new Date(t.act.timestamp).getTime();
+    const tickSec = t.ev.sampleSec;
+    const dt = Number.isFinite(ms) && prevMs !== null
+      ? Math.min(MAX_TICK_GAP_SEC, Math.max(0, (ms - prevMs) / 1000)) || tickSec
+      : tickSec;
+    prevMs = Number.isFinite(ms) ? ms : prevMs;
+
+    const built = mode === 'voice'
+      ? voiceTarget(t.act, t.ev, t.platform, t.rawIdle)
+      : standardTarget(t.act, t.ev, t.platform, t.rawIdle);
+    const target = Math.max(0, Math.min(100, built.target));
+
+    const rate = target > score ? RISE_RATE : DECAY_RATE;
+    score += rate * (target - score) * dt;
+    score = Math.max(0, Math.min(100, score));
+
+    criteriaSum.actions += built.criteria.actions;
+    criteriaSum.mouse += built.criteria.mouse;
+    criteriaSum.keys += built.criteria.keys;
+    criteriaSum.platform += built.criteria.platform;
+
+    if (Number.isFinite(ms)) {
+      scoreTimeline.push({ ms, score });
+      const hour = new Date(ms).getHours();
+      hourlyMap.set(hour, { hour, score });
+    }
+  }
+
+  const n = ticks.length;
+  const criteria = {
+    actions: Math.round((criteriaSum.actions / n) * 10) / 10,
+    mouse: Math.round((criteriaSum.mouse / n) * 10) / 10,
+    keys: Math.round((criteriaSum.keys / n) * 10) / 10,
+    platform: Math.round((criteriaSum.platform / n) * 10) / 10,
+  };
+
+  // Trend: score now vs ~10 min ago (earliest point if the day is younger).
+  let trend = 'none';
+  if (scoreTimeline.length >= 2) {
+    const nowMs = scoreTimeline[scoreTimeline.length - 1].ms;
+    const reference = scoreTimeline.find((p) => p.ms >= nowMs - 10 * 60 * 1000)
+      || scoreTimeline[0];
+    const delta = score - reference.score;
+    trend = delta > 2 ? 'rising' : delta < -2 ? 'falling' : 'steady';
+  }
+
+  const finalScore = Math.round(score);
+  return {
+    score: finalScore,
+    zone: classifyZone(finalScore, true),
+    mode,
+    hasActivity: true,
+    criteria,
+    trend,
+    engagedSeconds,
+    voiceShare: Math.round(voiceShare * 100) / 100,
+    formula: base.formula,
+    hourly: [...hourlyMap.values()].sort((a, b) => a.hour - b.hour),
+  };
+}
+
+module.exports = {
+  ZONE,
+  ZONE_THRESHOLDS,
+  classifyPlatform,
+  classifyZone,
+  computeDayProductivity,
+};
