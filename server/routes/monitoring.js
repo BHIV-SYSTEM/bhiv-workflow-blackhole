@@ -7,10 +7,12 @@ const User = require('../models/User');
 const Department = require('../models/Department');
 const EmployeeActivity = require('../models/EmployeeActivity');
 const MonitoringAlert = require('../models/MonitoringAlert');
+const ScreenCapture = require('../models/ScreenCapture');
 const Aim = require('../models/Aim');
 const Progress = require('../models/Progress');
 const activityTracker = require('../services/activityTracker');
 const websiteMonitor = require('../services/websiteMonitor');
+const intelligentScreenCapture = require('../services/intelligentScreenCapture');
 const groqAIService = require('../services/groqAIService');
 const reportGenerator = require('../services/reportGenerator');
 const { formatEmployeeId } = require('../utils/employeeId');
@@ -766,12 +768,16 @@ router.get('/productivity/:employeeId', async (req, res) => {
 router.get('/reports/:employeeId', async (req, res) => {
   try {
     const { employeeId } = req.params;
-    const { startDate, endDate, reportType = 'summary' } = req.query;
+    const { startDate, endDate } = req.query;
 
-    const employee = await User.findById(employeeId).populate('department', 'name').lean();
+    const mongoose = require('mongoose');
+    const employee = mongoose.Types.ObjectId.isValid(employeeId)
+      ? await User.findById(employeeId).populate('department', 'name').lean()
+      : await User.findOne({ employeeId }).populate('department', 'name').lean();
     if (!employee) {
       return res.status(404).json({ success: false, error: 'Employee not found' });
     }
+    const resolvedEmpId = employee._id.toString();
 
     const start = startDate ? parseLocalDateParam(startDate) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     start.setHours(0, 0, 0, 0);
@@ -781,24 +787,24 @@ router.get('/reports/:employeeId', async (req, res) => {
 
     const [activities, screenshots, alerts, sessionsMap, aims, progresses] = await Promise.all([
       EmployeeActivity.find({
-        employee: employeeId,
+        employee: resolvedEmpId,
         timestamp: { $gte: start, $lte: end }
       }).select('timestamp keystroke_count mouse_activity_score mouse_event_count idle_duration interval_seconds app_category productivity_score active_application metadata').sort({ timestamp: 1 }).lean(),
       ScreenCapture.find({
-        employee: employeeId,
+        employee: resolvedEmpId,
         timestamp: { $gte: start, $lte: end }
       }).select('timestamp trigger_type is_violation').lean(),
       MonitoringAlert.find({
-        employee: employeeId,
+        employee: resolvedEmpId,
         timestamp: { $gte: start, $lte: end }
       }).select('timestamp alert_type severity description').lean(),
-      resolveSessionsMap([employeeId], start, end),
+      resolveSessionsMap([resolvedEmpId], start, end),
       Aim.find({
-        user: employeeId,
+        user: resolvedEmpId,
         date: { $gte: start, $lte: end }
       }).select('date aims blockers achievements').sort({ date: -1 }).lean(),
       Progress.find({
-        user: employeeId,
+        user: resolvedEmpId,
         date: { $gte: start, $lte: end }
       }).select('date notes blockers achievements').sort({ date: -1 }).lean()
     ]);
@@ -823,7 +829,7 @@ router.get('/reports/:employeeId', async (req, res) => {
     while (curr <= end) {
       const dateKey = getLocalDateKey(curr);
       const dayLogs = activitiesByDate[dateKey] || [];
-      const sessionInfo = sessionsMap.get(`${employeeId}_${dateKey}`) || null;
+      const sessionInfo = sessionsMap.get(`${resolvedEmpId}_${dateKey}`) || null;
       const metrics = summarizeActivitiesWithSession(dayLogs, sessionInfo);
       const dayProductivity = dayProductivityFor(dayLogs);
       const hNum = Math.floor(metrics.activeSeconds / 3600);
@@ -840,6 +846,8 @@ router.get('/reports/:employeeId', async (req, res) => {
         activeHours: Math.round((metrics.activeSeconds / 3600) * 10) / 10,
         activeHoursFormatted: `${hNum}h ${mNum}m`,
         activeSeconds: metrics.activeSeconds,
+        idleSeconds: metrics.totalIdleSeconds,
+        idleTimeFormatted: metrics.idleTimeFormatted,
         totalKeystroke: metrics.totalKeystrokes,
         avgMouseActivity: metrics.avgMouseActivity
       };
@@ -1006,6 +1014,31 @@ router.post('/report/bulk', async (req, res) => {
   }
 });
 
+// Export consolidated team data to styled Excel (.xlsx)
+router.post('/export/xlsx/team', async (req, res) => {
+  try {
+    const { startDate, endDate, department, employeeIds } = req.body;
+    const exportResult = await reportGenerator.exportTeamXLSX(
+      startDate || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+      endDate || new Date(),
+      { department, employeeIds }
+    );
+
+    res.json({
+      success: true,
+      export: {
+        filename: exportResult.filename,
+        generatedAt: exportResult.generatedAt,
+        summary: exportResult.summary,
+        downloadUrl: `/api/monitoring/download/${exportResult.filename}`
+      }
+    });
+  } catch (error) {
+    console.error('Error exporting team XLSX:', error);
+    res.status(500).json({ error: 'Failed to export team Excel report' });
+  }
+});
+
 // Export consolidated team data to CSV
 router.post('/export/csv/team', async (req, res) => {
   try {
@@ -1074,6 +1107,8 @@ router.get('/download/:filename', async (req, res) => {
       res.setHeader('Content-Type', 'application/pdf');
     } else if (ext === '.csv') {
       res.setHeader('Content-Type', 'text/csv');
+    } else if (ext === '.xlsx') {
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     }
 
     res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');

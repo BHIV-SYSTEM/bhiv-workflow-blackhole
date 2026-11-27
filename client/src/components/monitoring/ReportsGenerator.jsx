@@ -51,9 +51,13 @@ export function ReportsGenerator({
   // Mode Selection: 'individual' vs 'team'
   const [reportMode, setReportMode] = useState('individual');
 
-  // Employee selection states
-  const [internalEmployees, setInternalEmployees] = useState(employees);
-  const [selectedEmp, setSelectedEmp] = useState(propEmployee || employees[0] || null);
+  // Employee selection states (never auto-select exited employees)
+  const initialActiveEmployees = (employees || []).filter(e => e && e.stillExist !== 0);
+  const initialSelectedEmp = (propEmployee && propEmployee.stillExist !== 0)
+    ? propEmployee
+    : (initialActiveEmployees[0] || null);
+  const [internalEmployees, setInternalEmployees] = useState(initialActiveEmployees);
+  const [selectedEmp, setSelectedEmp] = useState(initialSelectedEmp);
   const [employeeSearch, setEmployeeSearch] = useState(parentSearchQuery || '');
 
   // Team report configuration & states
@@ -76,9 +80,9 @@ export function ReportsGenerator({
   // Sync incoming employees prop (strictly active users)
   useEffect(() => {
     if (employees && employees.length > 0) {
-      const activeOnly = employees.filter(e => e.stillExist !== 0);
+      const activeOnly = employees.filter(e => e && e.stillExist !== 0);
       setInternalEmployees(activeOnly);
-      if (!selectedEmp && activeOnly.length > 0) {
+      if ((!selectedEmp || selectedEmp.stillExist === 0) && activeOnly.length > 0) {
         setSelectedEmp(activeOnly[0]);
       }
     } else {
@@ -90,7 +94,7 @@ export function ReportsGenerator({
   useEffect(() => {
     if (propEmployee && propEmployee.stillExist !== 0) {
       setSelectedEmp(propEmployee);
-    } else if (!selectedEmp && internalEmployees.length > 0) {
+    } else if ((!selectedEmp || selectedEmp.stillExist === 0) && internalEmployees.length > 0) {
       setSelectedEmp(internalEmployees[0]);
     }
   }, [propEmployee, internalEmployees]);
@@ -115,9 +119,9 @@ export function ReportsGenerator({
         }
       });
       if (response.data && response.data.employees) {
-        const activeOnly = response.data.employees.filter(e => e.stillExist !== 0);
+        const activeOnly = response.data.employees.filter(e => e && e.stillExist !== 0);
         setInternalEmployees(activeOnly);
-        if (!selectedEmp && activeOnly.length > 0) {
+        if ((!selectedEmp || selectedEmp.stillExist === 0) && activeOnly.length > 0) {
           setSelectedEmp(activeOnly[0]);
         }
       }
@@ -126,8 +130,12 @@ export function ReportsGenerator({
     }
   };
 
-  const activeEmployee = selectedEmp || propEmployee || internalEmployees[0];
-  const empId = activeEmployee?._id || activeEmployee?.employeeId;
+  const activeEmployee =
+    (selectedEmp && selectedEmp.stillExist !== 0 ? selectedEmp : null) ||
+    (propEmployee && propEmployee.stillExist !== 0 ? propEmployee : null) ||
+    internalEmployees[0] ||
+    null;
+  const empId = activeEmployee?._id || activeEmployee?.id || activeEmployee?.employeeId;
 
   // Re-generate individual report data
   useEffect(() => {
@@ -170,7 +178,7 @@ export function ReportsGenerator({
       console.error('Error generating report:', error);
       toast({
         title: 'Error Fetching Report',
-        description: 'Failed to retrieve telemetry report for selected employee.',
+        description: error.response?.data?.error || 'Failed to retrieve telemetry report for selected employee.',
         variant: 'destructive'
       });
     } finally {
@@ -555,6 +563,67 @@ export function ReportsGenerator({
     }
   };
 
+  const exportTeamToXLSX = async () => {
+    setGenerating(true);
+    try {
+      const sDate = new Date(startDate);
+      const eDate = new Date(endDate);
+      const startStr = format(sDate, 'yyyy-MM-dd');
+      const endStr = format(eDate, 'yyyy-MM-dd');
+      const isSame = sDate.toDateString() === eDate.toDateString();
+      const token = localStorage.getItem('WorkflowToken') || localStorage.getItem('token');
+
+      const res = await axios.post(
+        `${API_URL}/monitoring/export/xlsx/team`,
+        {
+          startDate: startStr,
+          endDate: endStr,
+          department: selectedDepartment
+        },
+        {
+          headers: { 'x-auth-token': token, Authorization: `Bearer ${token}` },
+          timeout: 60000
+        }
+      );
+
+      const filename = res.data?.export?.filename;
+      if (!filename) {
+        throw new Error('Server did not return an Excel filename');
+      }
+
+      const downloadEndpoint = `${API_URL}/monitoring/download/${filename}`;
+      const fileRes = await axios.get(downloadEndpoint, {
+        headers: { 'x-auth-token': token, Authorization: `Bearer ${token}` },
+        responseType: 'blob',
+        timeout: 60000
+      });
+
+      const blob = new Blob([fileRes.data], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const fileDateSuffix = isSame ? `${startStr}` : `${startStr}_to_${endStr}`;
+      link.download = `niyantran_team_report_${fileDateSuffix}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      toast({
+        title: 'Team Excel (.xlsx) Exported',
+        description: `Downloaded formatted Team Report & Executive Summary workbook.`
+      });
+    } catch (err) {
+      console.error('Failed to export team XLSX:', err);
+      const msg = err.response?.data?.error || err.message || 'Could not generate team Excel report';
+      toast({ title: 'Export Failed', description: msg, variant: 'destructive' });
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   const exportTeamToCSV = async () => {
     setGenerating(true);
     try {
@@ -570,72 +639,71 @@ export function ReportsGenerator({
       const dateDisplay = isSame ? `${sDay}/${sMonth}` : `${sDay}/${sMonth} - ${eDay}/${eMonth}`;
       const token = localStorage.getItem('WorkflowToken') || localStorage.getItem('token');
 
-      let members = teamReportData?.members;
-
-      // If members are not loaded in client state yet, request generated CSV directly from backend
-      if (!members || members.length === 0) {
-        const res = await axios.post(
-          `${API_URL}/monitoring/export/csv/team`,
-          {
-            startDate: startStr,
-            endDate: endStr,
-            department: selectedDepartment
-          },
-          {
-            headers: { 'x-auth-token': token, Authorization: `Bearer ${token}` },
-            timeout: 60000
-          }
-        );
-
-        const filename = res.data?.export?.filename;
-        if (filename) {
-          const downloadEndpoint = `${API_URL}/monitoring/download/${filename}`;
-          const fileRes = await axios.get(downloadEndpoint, {
-            headers: { 'x-auth-token': token, Authorization: `Bearer ${token}` },
-            responseType: 'blob',
-            timeout: 60000
-          });
-
-          const blob = new Blob([fileRes.data], { type: 'text/csv;charset=utf-8;' });
-          const url = URL.createObjectURL(blob);
-          const link = document.createElement('a');
-          link.href = url;
-          link.download = filename;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          URL.revokeObjectURL(url);
-
-          toast({
-            title: 'Team CSV Exported',
-            description: `Exported consolidated team data successfully.`
-          });
-          return;
+      const res = await axios.post(
+        `${API_URL}/monitoring/export/csv/team`,
+        {
+          startDate: startStr,
+          endDate: endStr,
+          department: selectedDepartment
+        },
+        {
+          headers: { 'x-auth-token': token, Authorization: `Bearer ${token}` },
+          timeout: 60000
         }
+      );
+
+      const filename = res.data?.export?.filename;
+      if (filename) {
+        const downloadEndpoint = `${API_URL}/monitoring/download/${filename}`;
+        const fileRes = await axios.get(downloadEndpoint, {
+          headers: { 'x-auth-token': token, Authorization: `Bearer ${token}` },
+          responseType: 'blob',
+          timeout: 60000
+        });
+
+        const blob = new Blob([fileRes.data], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        const fileDateSuffix = isSame ? `${startStr}` : `${startStr}_to_${endStr}`;
+        link.download = `niyantran_team_report_${fileDateSuffix}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+
+        toast({
+          title: 'Team CSV Exported',
+          description: `Exported consolidated team data successfully.`
+        });
+        return;
       }
 
-      // Exact columns matching specification with Employee ID, AIM, Blocker, Achievement:
-      // Emp ID,Name,Date,AIM,Blocker,Achievement,Activities,Productivity,Active Hour,Key Strokes,Mouse Score,Efficiency
-      let csv = 'Emp ID,Name,Date,AIM,Blocker,Achievement,Activities,Productivity,Active Hour,Key Strokes,Mouse Score,Efficiency\n';
+      const members = teamReportData?.members || [];
+      let csv = 'Emp ID,Name,Date,AIM,Blocker,Achievement,Activities,Productivity,Rating,Active Hour,Idle Time,Key Strokes,Mouse Score,Efficiency,Performance Group\n';
 
       const cleanTeamField = (txt) => {
         if (!txt || txt === '-') return '-';
         return String(txt).replace(/"/g, '""').replace(/[\r\n\t]+/g, ' ').trim();
       };
 
-      (members || []).forEach(m => {
+      members.forEach(m => {
         const empId = (m.employeeId || formatEmployeeId(m.email) || 'N/A').replace(/"/g, '""');
         const name = (m.name || 'Employee').replace(/"/g, '""');
         const aim = cleanTeamField(m.aim || m.aims);
         const blocker = cleanTeamField(m.blocker || m.blockers);
         const achievement = cleanTeamField(m.achievement || m.achievements);
         const acts = m.totalActivities > 0 ? m.totalActivities : '-';
-        const prod = m.totalActivities > 0 ? `${dayScore(m)}%` : '-';
+        const scorePct = dayScore(m);
+        const prod = m.totalActivities > 0 ? `${scorePct}%` : '-';
+        const rating = Number(m.rating || 0).toFixed(1);
         const hours = (m.totalActivities > 0 || m.activeSeconds > 0) ? (m.activeHoursFormatted || `${m.activeHours}h`) : '-';
+        const idle = (m.idleSeconds > 0 || m.totalActivities > 0 || m.activeSeconds > 0) ? (m.idleTimeFormatted || '0h 0m') : '-';
         const keys = m.totalKeystrokes > 0 ? m.totalKeystrokes : '-';
         const mouse = m.totalActivities > 0 ? `${m.avgMouse}%` : '-';
-        const eff = m.totalActivities > 0 ? dayEfficiencyLabel(dayScore(m)) : '-';
-        csv += `"${empId}","${name}","${dateDisplay}","${aim}","${blocker}","${achievement}",${acts},"${prod}","${hours}","${keys}","${mouse}","${eff}"\n`;
+        const eff = m.totalActivities > 0 ? dayEfficiencyLabel(scorePct) : '-';
+        const group = cleanTeamField(m.performanceGroup);
+        csv += `"${empId}","${name}","${dateDisplay}","${aim}","${blocker}","${achievement}",${acts},"${prod}",${rating},"${hours}","${idle}","${keys}","${mouse}","${eff}","${group}"\n`;
       });
 
       const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
@@ -651,18 +719,8 @@ export function ReportsGenerator({
 
       toast({
         title: 'Team CSV Exported',
-        description: `Exported consolidated team data for ${(members || []).length} members.`
+        description: `Exported consolidated team data for ${members.length} members.`
       });
-
-      // Background server CSV trigger
-      try {
-        axios.post(`${API_URL}/monitoring/export/csv/team`, {
-          startDate: startStr,
-          endDate: endStr,
-          department: selectedDepartment
-        }, { headers: { 'x-auth-token': token, Authorization: `Bearer ${token}` } }).catch(() => {});
-      } catch (e) {}
-
     } catch (err) {
       console.error('Failed to export team CSV:', err);
       const msg = err.response?.data?.error || err.message || 'Could not generate team CSV';
@@ -1111,12 +1169,23 @@ export function ReportsGenerator({
                   <Button
                     variant="default"
                     size="sm"
-                    onClick={exportTeamToCSV}
+                    onClick={exportTeamToXLSX}
                     disabled={generating || teamLoading}
                     className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-9 rounded-xl shadow-sm"
                   >
                     <FileSpreadsheet className="h-4 w-4 mr-1.5" />
-                    {generating ? 'Exporting...' : 'Download Excel'}
+                    {generating ? 'Exporting...' : 'Download Excel (.xlsx)'}
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={exportTeamToCSV}
+                    disabled={generating || teamLoading}
+                    className="font-bold text-xs h-9 rounded-xl"
+                  >
+                    <FileSpreadsheet className="h-4 w-4 mr-1.5 text-emerald-500" />
+                    Download CSV
                   </Button>
 
                   <Button
@@ -1229,6 +1298,7 @@ export function ReportsGenerator({
                         <th className="p-3.5 text-center">Activities</th>
                         <th className="p-3.5 text-center">Productivity %</th>
                         <th className="p-3.5 text-center">Active Hours</th>
+                        <th className="p-3.5 text-center">Idle Time</th>
                         <th className="p-3.5 text-center">Keystrokes</th>
                         <th className="p-3.5 text-center">Mouse Activity</th>
                         <th className="p-3.5 text-right">Efficiency Rating</th>
@@ -1252,6 +1322,7 @@ export function ReportsGenerator({
                               </div>
                             </td>
                             <td className="p-3.5 text-center text-foreground font-bold">{(day.totalActivities > 0 || day.activeSeconds > 0) ? (day.activeHoursFormatted || `${day.activeHours}h`) : '-'}</td>
+                            <td className="p-3.5 text-center text-muted-foreground font-semibold">{(day.totalActivities > 0 || day.idleSeconds > 0) ? (day.idleTimeFormatted || '0h 0m') : '-'}</td>
                             <td className="p-3.5 text-center text-muted-foreground font-medium">
                               {(day.totalKeystroke || 0).toLocaleString()}
                             </td>
@@ -1398,17 +1469,20 @@ export function ReportsGenerator({
                       <th className="p-3.5">Key Achievements</th>
                       <th className="p-3.5 text-center">Activities</th>
                       <th className="p-3.5 text-center">Productivity</th>
+                      <th className="p-3.5 text-center">Rating</th>
                       <th className="p-3.5 text-center">Active Hour</th>
+                      <th className="p-3.5 text-center">Idle Time</th>
                       <th className="p-3.5 text-center">Key Strokes</th>
                       <th className="p-3.5 text-center">Mouse Score</th>
                       <th className="p-3.5 text-center">Efficiency</th>
+                      <th className="p-3.5 text-center">Tier</th>
                       <th className="p-3.5 text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
                     {filteredTeamMembers.length === 0 ? (
                       <tr>
-                        <td colSpan={13} className="p-8 text-center text-muted-foreground">
+                        <td colSpan={16} className="p-8 text-center text-muted-foreground">
                           No active team members match "{teamTableSearch}"
                         </td>
                       </tr>
@@ -1476,9 +1550,19 @@ export function ReportsGenerator({
                               ) : '-'}
                             </td>
 
+                            {/* 4b. Rating */}
+                            <td className="p-3.5 text-center font-bold text-foreground tabular-nums">
+                              {(m.totalActivities > 0 || m.activeSeconds > 0) ? `${Number(m.rating || 0).toFixed(1)}/5` : '-'}
+                            </td>
+
                             {/* 5. Active Hour */}
-                            <td className="p-3.5 text-center text-foreground font-bold">
+                            <td className="p-3.5 text-center text-foreground font-bold whitespace-nowrap">
                               {(m.totalActivities > 0 || m.activeSeconds > 0) ? (m.activeHoursFormatted || `${m.activeHours}h`) : '-'}
+                            </td>
+
+                            {/* 5b. Idle Time */}
+                            <td className="p-3.5 text-center text-muted-foreground font-semibold whitespace-nowrap">
+                              {(m.idleSeconds > 0 || m.totalActivities > 0 || m.activeSeconds > 0) ? (m.idleTimeFormatted || '0h 0m') : '-'}
                             </td>
 
                             {/* 6. Key Strokes */}
@@ -1499,6 +1583,26 @@ export function ReportsGenerator({
                                   className={`text-[10px] font-bold ${dayZoneStyle(dayScore(m)).badge}`}
                                 >
                                   {teamEffLabel}
+                                </Badge>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              )}
+                            </td>
+
+                            {/* 9. Performance Tier */}
+                            <td className="p-3.5 text-center whitespace-nowrap">
+                              {(m.totalActivities > 0 || m.activeSeconds > 0) ? (
+                                <Badge
+                                  variant="outline"
+                                  className={`text-[10px] font-bold ${
+                                    m.performanceTier === 'high'
+                                      ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30'
+                                      : m.performanceTier === 'moderate'
+                                      ? 'text-amber-400 bg-amber-500/10 border-amber-500/30'
+                                      : 'text-rose-400 bg-rose-500/10 border-rose-500/30'
+                                  }`}
+                                >
+                                  {m.performanceGroup}
                                 </Badge>
                               ) : (
                                 <span className="text-muted-foreground">-</span>

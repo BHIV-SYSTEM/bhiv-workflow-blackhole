@@ -24,6 +24,15 @@ const {
   efficiencyLabelForDay,
   efficiencyColorForDay,
 } = require('../utils/dayProductivity');
+const {
+  isExcludedReportUser,
+  normalizeMemberGoalFields,
+  computeQualitativeRating,
+  getPerformanceGroup,
+  computeCombinedScore,
+  enrichAndRankTeamMembers,
+  buildTeamReportWorkbook
+} = require('../utils/teamExcelReport');
 
 /**
  * Canonical day score used by every productivity display (daily cards, detail
@@ -374,9 +383,9 @@ class ReportGenerator {
        .text('EXECUTIVE KPI SUMMARY', 35, doc.y);
 
     const boxY = doc.y + 6;
-    const boxWidth = 180;
+    const boxWidth = 142;
     const boxHeight = 54;
-    const gap = 17;
+    const gap = 15.5;
     const startX = 35;
 
     const summaryItems = [
@@ -389,6 +398,11 @@ class ReportGenerator {
         label: 'Active Work Hours',
         value: summary.activeHoursFormatted || `${summary.activeHours}h`,
         color: '#0284c7'
+      },
+      {
+        label: 'Idle Time',
+        value: summary.idleTimeFormatted || '0h 0m',
+        color: '#6366f1'
       },
       {
         label: 'Total Keystrokes',
@@ -486,17 +500,37 @@ class ReportGenerator {
       const eff = efficiencyLabelForDay(dayProductivity.score, summary.hasActivity);
       const effColor = efficiencyColorForDay(dayProductivity.score, summary.hasActivity);
 
+      const goals = normalizeMemberGoalFields(
+        aimMap.get(dStr),
+        blockerMap.get(dStr),
+        achievementMap.get(dStr)
+      );
+      const rating = summary.hasActivity
+        ? computeQualitativeRating({
+            ...goals,
+            activeSeconds: summary.activeSeconds,
+            avgProductivity: dayProductivity.score
+          })
+        : 0;
+      const perf = getPerformanceGroup(dayProductivity.score);
+
       rows.push({
         date: dStr,
-        aim: aimMap.get(dStr) || '-',
-        blocker: blockerMap.get(dStr) || '-',
-        achievement: achievementMap.get(dStr) || '-',
+        aim: goals.aim,
+        blocker: goals.blocker,
+        achievement: goals.achievement,
+        allLogsMissing: goals.allMissing,
         activitiesCount: summary.logCount,
         avgProd: dayProductivity.score,
         dayProductivity,
         legacyAvgProd: summary.avgProductivityScore,
+        rating,
+        performanceTier: summary.hasActivity ? perf.tier : 'inactive',
+        performanceGroup: summary.hasActivity ? perf.label : 'No Activity',
         activeSeconds: summary.activeSeconds,
         activeHoursFormatted: summary.hasActivity ? formatActiveTime(summary.activeSeconds) : '-',
+        idleSeconds: summary.totalIdleSeconds,
+        idleTimeFormatted: summary.hasActivity ? formatActiveTime(summary.totalIdleSeconds) : '-',
         keystrokes: summary.totalKeystrokes,
         avgMouse: summary.avgMouseActivity,
         hasActivity: summary.hasActivity,
@@ -528,27 +562,29 @@ class ReportGenerator {
 
     const printTableHeader = (yPos) => {
       doc.rect(tableX, yPos, tableWidth, 22).fill('#1e293b');
-      doc.fillColor('#ffffff').fontSize(8).font('Helvetica-Bold');
-      doc.text('Date', tableX + 6, yPos + 7, { width: 58 });
-      doc.text('AIM', tableX + 66, yPos + 7, { width: 132 });
-      doc.text('Blocker', tableX + 202, yPos + 7, { width: 105 });
-      doc.text('Key Achievements', tableX + 311, yPos + 7, { width: 132 });
-      doc.text('Activities', tableX + 446, yPos + 7, { width: 48, align: 'center' });
-      doc.text('Productivity', tableX + 498, yPos + 7, { width: 54, align: 'center' });
-      doc.text('Active Hrs', tableX + 556, yPos + 7, { width: 50, align: 'center' });
-      doc.text('Keystrokes', tableX + 610, yPos + 7, { width: 52, align: 'center' });
-      doc.text('Mouse', tableX + 666, yPos + 7, { width: 38, align: 'center' });
-      doc.text('Efficiency', tableX + 706, yPos + 7, { width: 62, align: 'right' });
+      doc.fillColor('#ffffff').fontSize(7.5).font('Helvetica-Bold');
+      doc.text('Date', tableX + 4, yPos + 7, { width: 52 });
+      doc.text('AIM', tableX + 58, yPos + 7, { width: 112 });
+      doc.text('Blocker', tableX + 172, yPos + 7, { width: 90 });
+      doc.text('Achievements', tableX + 264, yPos + 7, { width: 112 });
+      doc.text('Acts', tableX + 378, yPos + 7, { width: 32, align: 'center' });
+      doc.text('Prod', tableX + 412, yPos + 7, { width: 38, align: 'center' });
+      doc.text('Rating', tableX + 452, yPos + 7, { width: 36, align: 'center' });
+      doc.text('Active Hr', tableX + 490, yPos + 7, { width: 46, align: 'center' });
+      doc.text('Idle Time', tableX + 538, yPos + 7, { width: 46, align: 'center' });
+      doc.text('Keys', tableX + 586, yPos + 7, { width: 46, align: 'center' });
+      doc.text('Mouse', tableX + 634, yPos + 7, { width: 38, align: 'center' });
+      doc.text('Tier / Efficiency', tableX + 674, yPos + 7, { width: 94, align: 'right' });
       return yPos + 22;
     };
 
     currentY = printTableHeader(currentY);
 
     dailyRows.forEach((row, idx) => {
-      doc.fontSize(7.5).font('Helvetica');
-      const aimH = doc.heightOfString(row.aim, { width: 132 });
-      const blkH = doc.heightOfString(row.blocker, { width: 105 });
-      const achH = doc.heightOfString(row.achievement, { width: 132 });
+      doc.fontSize(7).font('Helvetica');
+      const aimH = doc.heightOfString(row.aim, { width: 112 });
+      const blkH = doc.heightOfString(row.blocker, { width: 90 });
+      const achH = doc.heightOfString(row.achievement, { width: 112 });
       const rowHeight = Math.max(20, Math.ceil(Math.max(aimH, blkH, achH)) + 10);
 
       if (currentY + rowHeight > pageHeight - 35) {
@@ -559,32 +595,64 @@ class ReportGenerator {
         currentY = printTableHeader(52);
       }
 
-      const isZebra = idx % 2 === 1;
-      doc.rect(tableX, currentY, tableWidth, rowHeight).fill(isZebra ? '#f8fafc' : '#ffffff');
-      doc.rect(tableX, currentY + rowHeight - 1, tableWidth, 1).fill('#e2e8f0');
-
       const count = row.activitiesCount;
       const activeMetric = count > 0 || row.hasActivity;
+      const tierBg = !activeMetric
+        ? (idx % 2 === 1 ? '#f8fafc' : '#ffffff')
+        : row.performanceTier === 'high'
+          ? '#dcfce7'
+          : row.performanceTier === 'moderate'
+            ? '#ffedd5'
+            : '#fee2e2';
 
-      doc.fontSize(7.5).font('Helvetica');
-      doc.fillColor('#0f172a').text(row.date, tableX + 6, currentY + 5, { width: 58 });
-      doc.fillColor('#1e293b').text(row.aim, tableX + 66, currentY + 5, { width: 132 });
-      doc.fillColor('#475569').text(row.blocker, tableX + 202, currentY + 5, { width: 105 });
-      doc.fillColor('#1e293b').text(row.achievement, tableX + 311, currentY + 5, { width: 132 });
+      doc.rect(tableX, currentY, tableWidth, rowHeight).fill(tierBg);
+      doc.rect(tableX, currentY + rowHeight - 1, tableWidth, 1).fill('#e2e8f0');
 
-      doc.fillColor('#475569').text(count > 0 ? count.toString() : '-', tableX + 446, currentY + 5, { width: 48, align: 'center' });
+      doc.fontSize(7).font('Helvetica');
+      doc.fillColor('#0f172a').text(row.date, tableX + 4, currentY + 5, { width: 52 });
+
+      if (row.allLogsMissing) {
+        doc.fillColor('#991b1b').font('Helvetica-Bold');
+      } else {
+        doc.fillColor('#1e293b').font('Helvetica');
+      }
+      doc.text(row.aim, tableX + 58, currentY + 5, { width: 112 });
+      doc.fillColor(row.allLogsMissing ? '#991b1b' : '#475569').text(row.blocker, tableX + 172, currentY + 5, { width: 90 });
+      doc.fillColor(row.allLogsMissing ? '#991b1b' : '#1e293b').text(row.achievement, tableX + 264, currentY + 5, { width: 112 });
+
+      doc.font('Helvetica').fillColor('#475569').text(count > 0 ? count.toString() : '-', tableX + 378, currentY + 5, { width: 32, align: 'center' });
       doc.fillColor(activeMetric ? row.effColor : '#94a3b8')
          .font(activeMetric ? 'Helvetica-Bold' : 'Helvetica')
-         .text(activeMetric ? `${row.avgProd}%` : '-', tableX + 498, currentY + 5, { width: 54, align: 'center' });
+         .text(activeMetric ? `${row.avgProd}%` : '-', tableX + 412, currentY + 5, { width: 38, align: 'center' });
 
-      doc.fillColor('#0f172a').font('Helvetica')
-         .text(row.activeHoursFormatted, tableX + 556, currentY + 5, { width: 50, align: 'center' });
+      doc.fillColor('#0f172a').font('Helvetica-Bold')
+         .text(activeMetric ? `${Number(row.rating || 0).toFixed(1)}` : '-', tableX + 452, currentY + 5, { width: 36, align: 'center' });
+
+      if (activeMetric && row.activeSeconds > 8 * 3600) {
+        doc.roundedRect(tableX + 492, currentY + 3, 42, 13, 3).fill('#6b21a8');
+        doc.fillColor('#ffffff').font('Helvetica-Bold').text(row.activeHoursFormatted, tableX + 490, currentY + 6, { width: 46, align: 'center' });
+      } else if (activeMetric && row.activeSeconds < 3600) {
+        doc.roundedRect(tableX + 492, currentY + 3, 42, 13, 3).fill('#7f1d1d');
+        doc.fillColor('#ffffff').font('Helvetica-Bold').text(row.activeHoursFormatted, tableX + 490, currentY + 6, { width: 46, align: 'center' });
+      } else {
+        doc.fillColor('#0f172a').font('Helvetica').text(row.activeHoursFormatted, tableX + 490, currentY + 5, { width: 46, align: 'center' });
+      }
+
+      doc.fillColor('#475569').font('Helvetica')
+         .text(row.idleTimeFormatted || '-', tableX + 538, currentY + 5, { width: 46, align: 'center' });
+
+      if (activeMetric && (!row.keystrokes || row.keystrokes <= 0)) {
+        doc.roundedRect(tableX + 590, currentY + 3, 38, 13, 3).fill('#1d4ed8');
+        doc.fillColor('#ffffff').font('Helvetica-Bold').text('-', tableX + 586, currentY + 6, { width: 46, align: 'center' });
+      } else {
+        doc.fillColor('#475569').font('Helvetica')
+           .text(row.keystrokes > 0 ? row.keystrokes.toLocaleString() : '-', tableX + 586, currentY + 5, { width: 46, align: 'center' });
+      }
+
       doc.fillColor('#475569')
-         .text(row.keystrokes > 0 ? row.keystrokes.toLocaleString() : '-', tableX + 610, currentY + 5, { width: 52, align: 'center' });
-      doc.fillColor('#475569')
-         .text(count > 0 ? `${row.avgMouse}%` : '-', tableX + 666, currentY + 5, { width: 38, align: 'center' });
+         .text(count > 0 ? `${row.avgMouse}%` : '-', tableX + 634, currentY + 5, { width: 38, align: 'center' });
       doc.fillColor(row.effColor).font('Helvetica-Bold')
-         .text(row.eff, tableX + 706, currentY + 5, { width: 62, align: 'right' });
+         .text(activeMetric ? `${row.eff}` : '-', tableX + 674, currentY + 5, { width: 94, align: 'right' });
 
       currentY += rowHeight;
     });
@@ -906,6 +974,7 @@ class ReportGenerator {
     const allDays = new Set([...activitiesByDay.keys(), ...sessionByDay.keys()]);
     let totalKeys = 0;
     let totalActiveSec = 0;
+    let totalIdleSec = 0;
     let prodDaySum = 0;
     let legacyProdDaySum = 0;
     let prodDayCount = 0;
@@ -916,6 +985,7 @@ class ReportGenerator {
       const summary = summarizeActivitiesWithSession(dayLogs, daySession);
       totalKeys += summary.totalKeystrokes;
       totalActiveSec += summary.activeSeconds;
+      totalIdleSec += summary.totalIdleSeconds;
       if (summary.hasActivity) {
         prodDaySum += dayProductivityFor(dayLogs).score;
         legacyProdDaySum += summary.avgProductivityScore;
@@ -928,6 +998,7 @@ class ReportGenerator {
     const zone = classifyZone(avgProd, prodDayCount > 0);
     const activeHours = Math.round((totalActiveSec / 3600) * 10) / 10;
     const activeHoursFormatted = formatActiveTime(totalActiveSec);
+    const idleTimeFormatted = formatActiveTime(totalIdleSec);
     const avgMouse = overallSummary.avgMouseActivity;
 
     return {
@@ -938,6 +1009,8 @@ class ReportGenerator {
       activeHours,
       activeHoursFormatted,
       activeSeconds: totalActiveSec,
+      idleSeconds: totalIdleSec,
+      idleTimeFormatted,
       totalKeystrokes: totalKeys,
       avgMouseActivity: avgMouse,
       violations: reportData.alerts?.length || 0,
@@ -1169,11 +1242,12 @@ class ReportGenerator {
       userQuery._id = { $in: options.employeeIds };
     }
 
-    const employees = await User.find(userQuery)
+    const rawEmployees = await User.find(userQuery)
       .select('name email department stillExist role employeeId')
       .populate('department', 'name')
       .lean();
 
+    const employees = rawEmployees.filter((emp) => !isExcludedReportUser(emp));
     const empIds = employees.map(e => e._id);
 
     if (empIds.length === 0) {
@@ -1184,9 +1258,12 @@ class ReportGenerator {
         teamSummary: {
           teamAvgProductivity: 0,
           teamTotalHours: 0,
+          teamTotalHoursFormatted: '0h 0m',
+          teamTotalIdleHoursFormatted: '0h 0m',
           teamTotalKeystrokes: 0,
           teamTotalAlerts: 0,
-          teamTotalActivities: 0
+          teamTotalActivities: 0,
+          teamAvgRating: 0
         },
         members: [],
         teamApps: {},
@@ -1195,254 +1272,19 @@ class ReportGenerator {
       };
     }
 
-    // High performance: aggregate directly in MongoDB using the exact same sample-evaluation rules as telemetryMetrics.js
-    const offsetMin = -new Date().getTimezoneOffset();
-    const tzSign = offsetMin >= 0 ? '+' : '-';
-    const tzAbs = Math.abs(offsetMin);
-    const mongoTz = `${tzSign}${String(Math.floor(tzAbs / 60)).padStart(2, '0')}:${String(tzAbs % 60).padStart(2, '0')}`;
+    // Unified single source of truth: fetch activity rows once and evaluate every day
+    // with summarizeActivitiesWithSession() from telemetryMetrics.js so Reports and
+    // Employee Monitoring always produce identical metrics.
+    const [allActivities, alertTypesData, empAlertsData, sessionsMap, aimsData, progressesData] = await Promise.all([
+      EmployeeActivity.find({
+        employee: { $in: empIds },
+        timestamp: { $gte: start, $lte: end }
+      })
+      .select('employee timestamp keystroke_count mouse_activity_score mouse_event_count idle_duration interval_seconds app_category active_application metadata')
+      .sort({ timestamp: 1 })
+      .lean(),
 
-    const sampleSecExpr = {
-      $cond: [
-        {
-          $and: [
-            { $gte: [{ $ifNull: ['$interval_seconds', 30] }, 1] },
-            { $lte: [{ $ifNull: ['$interval_seconds', 30] }, 120] }
-          ]
-        },
-        { $ifNull: ['$interval_seconds', 30] },
-        30
-      ]
-    };
-    const rawIdleExpr = {
-      $cond: [
-        { $gt: [{ $ifNull: ['$idle_duration', 0] }, 10000] },
-        { $round: [{ $divide: [{ $ifNull: ['$idle_duration', 0] }, 1000] }, 0] },
-        { $max: [0, { $ifNull: ['$idle_duration', 0] }] }
-      ]
-    };
-    const hasInputExpr = {
-      $or: [
-        { $gt: [{ $ifNull: ['$keystroke_count', 0] }, 0] },
-        { $gt: [{ $ifNull: ['$mouse_activity_score', 0] }, 0] },
-        { $gt: [{ $ifNull: ['$mouse_event_count', 0] }, 0] }
-      ]
-    };
-    const isIdleExpr = {
-      $and: [
-        { $not: [hasInputExpr] },
-        { $gte: ['$_rawIdle', 300] }
-      ]
-    };
-    const appNameExpr = { $ifNull: ['$active_application.name', ''] };
-    const hasAppNameExpr = {
-      $and: [
-        { $ne: ['$_appName', ''] },
-        { $ne: ['$_appName', 'Unknown'] },
-        { $ne: ['$_appName', 'null'] }
-      ]
-    };
-    const isBgBrowserPollExpr = {
-      $and: [
-        { $not: [hasInputExpr] },
-        { $gte: ['$_sampleSec', 25] },
-        { $not: [hasAppNameExpr] }
-      ]
-    };
-    const isDesktopSampleExpr = {
-      $or: [
-        { $lte: ['$_sampleSec', 15] },
-        { $and: [hasAppNameExpr, { $ne: ['$_appName', 'Other'] }] }
-      ]
-    };
-    const effectiveMouseScoreExpr = {
-      $cond: [
-        { $gt: [{ $ifNull: ['$mouse_activity_score', 0] }, 0] },
-        { $min: [100, { $ifNull: ['$mouse_activity_score', 0] }] },
-        {
-          $cond: [
-            { $gt: [{ $ifNull: ['$mouse_event_count', 0] }, 0] },
-            {
-              $min: [
-                100,
-                {
-                  $round: [
-                    {
-                      $multiply: [
-                        {
-                          $divide: [
-                            { $multiply: [{ $divide: [{ $ifNull: ['$mouse_event_count', 0] }, '$_sampleSec'] }, 60] },
-                            240
-                          ]
-                        },
-                        100
-                      ]
-                    },
-                    0
-                  ]
-                }
-              ]
-            },
-            0
-          ]
-        }
-      ]
-    };
-    const isDistractionExpr = { $eq: [{ $toUpper: { $ifNull: ['$app_category', ''] } }, 'DISTRACTION'] };
-    const qualityScoreExpr = {
-      $cond: [
-        '$_isIdle',
-        0,
-        {
-          $cond: [
-            hasInputExpr,
-            {
-              $min: [
-                100,
-                {
-                  $round: [
-                    {
-                      $add: [
-                        { $cond: [isDistractionExpr, 20, 65] },
-                        {
-                          $multiply: [
-                            {
-                              $min: [
-                                1,
-                                {
-                                  $divide: [
-                                    { $multiply: [{ $divide: [{ $ifNull: ['$keystroke_count', 0] }, '$_sampleSec'] }, 60] },
-                                    60
-                                  ]
-                                }
-                              ]
-                            },
-                            20
-                          ]
-                        },
-                        {
-                          $multiply: [
-                            { $divide: [effectiveMouseScoreExpr, 100] },
-                            15
-                          ]
-                        }
-                      ]
-                    },
-                    0
-                  ]
-                }
-              ]
-            },
-            {
-              $cond: [
-                { $lt: ['$_rawIdle', 30] },
-                { $cond: [isDistractionExpr, 15, 55] },
-                {
-                  $cond: [
-                    { $lt: ['$_rawIdle', 120] },
-                    { $cond: [isDistractionExpr, 10, 45] },
-                    { $cond: [isDistractionExpr, 5, 25] }
-                  ]
-                }
-              ]
-            }
-          ]
-        }
-      ]
-    };
-
-    const [
-      empDailyStats,
-      topAppsData,
-      alertTypesData,
-      empAlertsData,
-      sessionsMap,
-      aimsData,
-      progressesData,
-      rawDayActivities
-    ] = await Promise.all([
-      // 1. Employee per-day telemetry buckets (duration-weighted & interval-normalized)
-      EmployeeActivity.aggregate([
-        {
-          $match: {
-            employee: { $in: empIds },
-            timestamp: { $gte: start, $lte: end }
-          }
-        },
-        {
-          $addFields: {
-            _sampleSec: sampleSecExpr,
-            _rawIdle: rawIdleExpr,
-            _appName: appNameExpr
-          }
-        },
-        {
-          $addFields: {
-            _isIdle: isIdleExpr,
-            _isBgBrowserPoll: isBgBrowserPollExpr,
-            _isDesktopSample: isDesktopSampleExpr
-          }
-        },
-        {
-          $addFields: {
-            _activeSec: { $cond: ['$_isIdle', 0, '$_sampleSec'] },
-            _qualityScore: qualityScoreExpr,
-            _dayKey: { $dateToString: { format: '%Y-%m-%d', date: '$timestamp', timezone: mongoTz } }
-          }
-        },
-        {
-          $group: {
-            _id: { employee: '$employee', date: '$_dayKey' },
-            totalActivities: { $sum: 1 },
-            keystrokes: { $sum: { $ifNull: ['$keystroke_count', 0] } },
-            activeMouseSum: {
-              $sum: {
-                $cond: [{ $gt: [{ $ifNull: ['$mouse_activity_score', 0] }, 0] }, '$mouse_activity_score', 0]
-              }
-            },
-            activeMouseCount: {
-              $sum: {
-                $cond: [{ $gt: [{ $ifNull: ['$mouse_activity_score', 0] }, 0] }, 1, 0]
-              }
-            },
-            totalTelemetrySec: { $sum: '$_sampleSec' },
-            weightedQualitySum: { $sum: { $multiply: ['$_qualityScore', '$_sampleSec'] } },
-            desktopSampleCount: { $sum: { $cond: ['$_isDesktopSample', 1, 0] } },
-            nonBgTelemetrySec: { $sum: { $cond: [{ $not: ['$_isBgBrowserPoll'] }, '$_sampleSec', 0] } },
-            nonBgWeightedSum: {
-              $sum: {
-                $cond: [
-                  { $not: ['$_isBgBrowserPoll'] },
-                  { $multiply: ['$_qualityScore', '$_sampleSec'] },
-                  0
-                ]
-              }
-            },
-            activeSeconds: { $sum: '$_activeSec' }
-          }
-        }
-      ]),
-
-      // 2. Team top applications
-      EmployeeActivity.aggregate([
-        {
-          $match: {
-            employee: { $in: empIds },
-            timestamp: { $gte: start, $lte: end }
-          }
-        },
-        {
-          $group: {
-            _id: {
-              $ifNull: ['$active_application.name', 'Desktop Workspace']
-            },
-            count: { $sum: 1 }
-          }
-        },
-        { $sort: { count: -1 } },
-        { $limit: 25 }
-      ]),
-
-      // 3. Team alert categories breakdown
+      // Team alert categories breakdown
       MonitoringAlert.aggregate([
         {
           $match: {
@@ -1458,7 +1300,7 @@ class ReportGenerator {
         }
       ]),
 
-      // 4. Alert count per employee
+      // Alert count per employee
       MonitoringAlert.aggregate([
         {
           $match: {
@@ -1474,26 +1316,20 @@ class ReportGenerator {
         }
       ]),
 
-      // 5. Unified session durations (WorkSession > Attendance > DailyAttendance)
+      // Unified session durations (WorkSession > Attendance > DailyAttendance)
       resolveSessionsMap(empIds, start, end),
 
-      // 6. Team daily aims
+      // Team daily aims
       Aim.find({
         user: { $in: empIds },
         date: { $gte: start, $lte: end }
       }).select('user date aims blockers achievements progressPercentage').sort({ date: -1 }).lean(),
 
-      // 7. Team progress updates
+      // Team progress updates
       Progress.find({
         user: { $in: empIds },
         date: { $gte: start, $lte: end }
-      }).select('user date notes blockers achievements progressPercentage').sort({ date: -1 }).lean(),
-
-      // 8. Raw samples for the canonical day-score engine (same input as live monitoring)
-      EmployeeActivity.find({
-        employee: { $in: empIds },
-        timestamp: { $gte: start, $lte: end }
-      }).select('employee timestamp keystroke_count mouse_activity_score mouse_event_count idle_duration interval_seconds app_category active_application').sort({ timestamp: 1 }).lean()
+      }).select('user date notes blockers achievements progressPercentage').sort({ date: -1 }).lean()
     ]);
 
     const {
@@ -1512,11 +1348,20 @@ class ReportGenerator {
     });
 
     const teamApps = {};
-    topAppsData.forEach(app => {
-      let name = app._id || 'Desktop Workspace';
-      if (name === 'Unknown' || name === 'null') name = 'Desktop Workspace';
-      teamApps[name] = app.count;
-    });
+    const dailyByEmpMap = new Map();
+    for (const act of allActivities) {
+      const empIdStr = act?.employee ? act.employee.toString() : null;
+      const dKey = getLocalDateKey(act?.timestamp);
+      if (empIdStr && dKey) {
+        if (!dailyByEmpMap.has(empIdStr)) dailyByEmpMap.set(empIdStr, new Map());
+        const empDays = dailyByEmpMap.get(empIdStr);
+        if (!empDays.has(dKey)) empDays.set(dKey, []);
+        empDays.get(dKey).push(act);
+      }
+      let appName = act?.active_application?.name || 'Desktop Workspace';
+      if (appName === 'Unknown' || appName === 'null') appName = 'Desktop Workspace';
+      teamApps[appName] = (teamApps[appName] || 0) + 1;
+    }
 
     const alertStats = {};
     let teamTotalAlerts = 0;
@@ -1531,33 +1376,6 @@ class ReportGenerator {
       const dStr = getLocalDateString(d);
       dailyTeamMap[dStr] = { sum: 0, count: 0 };
     }
-
-    // Group daily telemetry buckets per employee and merge with resolved session days
-    const dailyByEmpMap = new Map();
-    empDailyStats.forEach(row => {
-      const empIdStr = row?._id?.employee ? row._id.employee.toString() : null;
-      const dKey = row?._id?.date;
-      if (!empIdStr || !dKey) return;
-      if (!dailyByEmpMap.has(empIdStr)) dailyByEmpMap.set(empIdStr, new Map());
-      dailyByEmpMap.get(empIdStr).set(dKey, row);
-    });
-
-    // Canonical day score per employee/day, computed from the same raw samples
-    // used by live monitoring. This prevents report percentages from drifting
-    // away from the daily card and detail chart.
-    const dayScoreByEmpDate = new Map();
-    (rawDayActivities || []).forEach(act => {
-      const empIdStr = act?.employee ? act.employee.toString() : null;
-      const dKey = getLocalDateKey(act.timestamp);
-      if (!empIdStr || !dKey) return;
-      if (!dayScoreByEmpDate.has(empIdStr)) dayScoreByEmpDate.set(empIdStr, new Map());
-      const byDate = dayScoreByEmpDate.get(empIdStr);
-      if (!byDate.has(dKey)) byDate.set(dKey, []);
-      byDate.get(dKey).push(act);
-    });
-    dayScoreByEmpDate.forEach((byDate) => {
-      byDate.forEach((logs, dKey) => byDate.set(dKey, dayProductivityFor(logs).score));
-    });
 
     const sessionByEmpMap = new Map();
     if (sessionsMap instanceof Map) {
@@ -1577,52 +1395,35 @@ class ReportGenerator {
 
       let totalActivities = 0;
       let keystrokes = 0;
-      let activeMouseSum = 0;
-      let activeMouseCount = 0;
+      let totalIdleSec = 0;
       let effectiveActiveSec = 0;
       let prodDaySum = 0;
       let legacyProdDaySum = 0;
+      let mouseDaySum = 0;
+      let mouseDayCount = 0;
       let workedDays = 0;
 
       allDayKeys.forEach(dKey => {
-        const dayTelemetry = empDays.get(dKey);
-        const daySession = empSessions.get(dKey);
-        const sessionSec = Number(daySession?.sessionSeconds || 0);
-        const hasTelemetry = Boolean(dayTelemetry && dayTelemetry.totalActivities > 0);
-        const hasSession = sessionSec > 0 || Boolean(daySession?.startTime);
+        const dayLogs = empDays.get(dKey) || [];
+        const daySession = empSessions.get(dKey) || null;
+        const dayMetrics = summarizeActivitiesWithSession(dayLogs, daySession);
+        if (!dayMetrics.hasActivity) return;
 
-        if (!hasTelemetry && !hasSession) return;
-
+        const dayProductivity = dayProductivityFor(dayLogs);
         workedDays++;
-        const dayActiveSec = sessionSec > 0
-          ? sessionSec
-          : Number(dayTelemetry?.activeSeconds || 0);
-        effectiveActiveSec += dayActiveSec;
-
-        let dayProd = 0;
-        let legacyDayProd = 0;
-        if (hasTelemetry && dayTelemetry.totalTelemetrySec > 0) {
-          const useNonBg = (dayTelemetry.desktopSampleCount || 0) > 0 && (dayTelemetry.nonBgTelemetrySec || 0) > 0;
-          const denom = useNonBg ? dayTelemetry.nonBgTelemetrySec : dayTelemetry.totalTelemetrySec;
-          const numer = useNonBg ? dayTelemetry.nonBgWeightedSum : dayTelemetry.weightedQualitySum;
-          legacyDayProd = Math.min(100, Math.round(numer / denom));
-        } else if (sessionSec > 0) {
-          legacyDayProd = 50;
-        }
-        const canonicalDayProd = dayScoreByEmpDate.get(idStr)?.get(dKey);
-        dayProd = canonicalDayProd !== undefined ? canonicalDayProd : legacyDayProd;
-        prodDaySum += dayProd;
-        legacyProdDaySum += legacyDayProd;
-
-        if (hasTelemetry) {
-          totalActivities += dayTelemetry.totalActivities;
-          keystrokes += dayTelemetry.keystrokes || 0;
-          activeMouseSum += dayTelemetry.activeMouseSum || 0;
-          activeMouseCount += dayTelemetry.activeMouseCount || 0;
+        totalActivities += dayMetrics.logCount;
+        keystrokes += dayMetrics.totalKeystrokes;
+        totalIdleSec += dayMetrics.totalIdleSeconds;
+        effectiveActiveSec += dayMetrics.activeSeconds;
+        prodDaySum += dayProductivity.score;
+        legacyProdDaySum += dayMetrics.avgProductivityScore;
+        if (dayMetrics.avgMouseActivity > 0) {
+          mouseDaySum += dayMetrics.avgMouseActivity;
+          mouseDayCount++;
         }
 
         if (dailyTeamMap[dKey]) {
-          dailyTeamMap[dKey].sum += dayProd;
+          dailyTeamMap[dKey].sum += dayProductivity.score;
           dailyTeamMap[dKey].count += 1;
         }
       });
@@ -1633,12 +1434,31 @@ class ReportGenerator {
       const avgProd = workedDays > 0 ? Math.round(prodDaySum / workedDays) : 0;
       const activeHoursDecimal = Math.round((effectiveActiveSec / 3600) * 10) / 10;
       const activeHoursFormatted = formatActiveTime(effectiveActiveSec);
-      const avgMouse = activeMouseCount > 0 ? Math.round(activeMouseSum / activeMouseCount) : 0;
+      const idleTimeFormatted = formatActiveTime(totalIdleSec);
+      const idleTime = `${Math.floor(totalIdleSec / 60)}m`;
+      const avgMouse = mouseDayCount > 0 ? Math.round(mouseDaySum / mouseDayCount) : 0;
+      const hasActivity = workedDays > 0 || effectiveActiveSec > 0;
 
-      const hasWork = workedDays > 0 || effectiveActiveSec > 0;
-      const avgZone = classifyZone(avgProd, hasWork);
-      const efficiency = efficiencyLabelForDay(avgProd, hasWork);
-      const effColor = efficiencyColorForDay(avgProd, hasWork);
+      const avgZone = classifyZone(avgProd, hasActivity);
+      const efficiency = efficiencyLabelForDay(avgProd, hasActivity);
+      const effColor = efficiencyColorForDay(avgProd, hasActivity);
+
+      const goals = normalizeMemberGoalFields(
+        empAimMap.get(idStr),
+        empBlockerMap.get(idStr),
+        empAchieveMap.get(idStr)
+      );
+      const rating = computeQualitativeRating({
+        ...goals,
+        activeSeconds: effectiveActiveSec,
+        avgProductivity: avgProd
+      });
+      const perf = getPerformanceGroup(avgProd);
+      const combinedScore = computeCombinedScore({
+        rating,
+        avgProductivity: avgProd,
+        activeSeconds: effectiveActiveSec
+      });
 
       return {
         id: idStr,
@@ -1655,14 +1475,22 @@ class ReportGenerator {
         activeHours: activeHoursDecimal,
         activeHoursFormatted,
         activeSeconds: effectiveActiveSec,
+        idleSeconds: totalIdleSec,
+        idleTime,
+        idleTimeFormatted,
         totalKeystrokes: keystrokes,
         avgMouse,
         alertsCount,
         efficiency,
         effColor,
-        aim: empAimMap.get(idStr) || '-',
-        blocker: empBlockerMap.get(idStr) || '-',
-        achievement: empAchieveMap.get(idStr) || '-'
+        aim: goals.aim,
+        blocker: goals.blocker,
+        achievement: goals.achievement,
+        allLogsMissing: goals.allMissing,
+        rating,
+        combinedScore,
+        performanceGroup: hasActivity ? perf.label : 'No Activity',
+        performanceTier: hasActivity ? perf.tier : 'inactive'
       };
     });
 
@@ -1677,8 +1505,12 @@ class ReportGenerator {
     const teamAvgProd = activeMembers.length > 0
       ? Math.round(activeMembers.reduce((sum, m) => sum + m.avgProductivity, 0) / activeMembers.length)
       : 0;
+    const teamAvgRating = activeMembers.length > 0
+      ? Math.round((activeMembers.reduce((sum, m) => sum + (m.rating || 0), 0) / activeMembers.length) * 100) / 100
+      : 0;
     const teamTotalHours = Math.round(members.reduce((sum, m) => sum + (m.activeSeconds / 3600), 0) * 10) / 10;
     const teamTotalKeystrokes = members.reduce((sum, m) => sum + m.totalKeystrokes, 0);
+    const teamTotalIdleSeconds = members.reduce((sum, m) => sum + (m.idleSeconds || 0), 0);
 
     return {
       period: { startDate, endDate },
@@ -1691,8 +1523,10 @@ class ReportGenerator {
         legacyTeamAvgProductivity: activeMembers.length > 0
           ? Math.round(activeMembers.reduce((sum, m) => sum + (m.legacyAvgProductivity || 0), 0) / activeMembers.length)
           : 0,
+        teamAvgRating,
         teamTotalHours,
         teamTotalHoursFormatted: formatActiveTime(members.reduce((sum, m) => sum + m.activeSeconds, 0)),
+        teamTotalIdleHoursFormatted: formatActiveTime(teamTotalIdleSeconds),
         teamTotalKeystrokes,
         teamTotalAlerts,
         teamTotalActivities
@@ -1741,6 +1575,23 @@ class ReportGenerator {
       const dateDisplay = isSameDay ? `${sDay}/${sMonth}` : `${sDay}/${sMonth} - ${eDay}/${eMonth}`;
       const periodLabel = isSameDay ? `Date: ${sDay}/${sMonth}/${sDate.getFullYear()}` : `Period: ${sDay}/${sMonth}/${sDate.getFullYear()} to ${eDay}/${eMonth}/${eDate.getFullYear()}`;
 
+      const rankedMembers = enrichAndRankTeamMembers(data.members);
+      const highTierCount = rankedMembers.filter(m => m.performanceTier === 'high').length;
+      const moderateTierCount = rankedMembers.filter(m => m.performanceTier === 'moderate').length;
+      const lowTierCount = rankedMembers.filter(m => m.performanceTier === 'low').length;
+      const missingKeyCount = rankedMembers.filter(m => !m.totalKeystrokes || m.totalKeystrokes <= 0).length;
+      const overEightCount = rankedMembers.filter(m => (m.activeSeconds || 0) > 8 * 3600).length;
+      const underOneCount = rankedMembers.filter(m => (m.activeSeconds || 0) < 3600).length;
+      const avgTeamProd = rankedMembers.length > 0
+        ? Math.round(rankedMembers.reduce((s, m) => s + Number(m.avgProductivity || 0), 0) / rankedMembers.length)
+        : 0;
+      const avgTeamRating = rankedMembers.length > 0
+        ? (rankedMembers.reduce((s, m) => s + Number(m.rating || 0), 0) / rankedMembers.length).toFixed(2)
+        : '0.00';
+      const totalActiveSecSum = rankedMembers.reduce((s, m) => s + Number(m.activeSeconds || 0), 0);
+      const totalIdleSecSum = rankedMembers.reduce((s, m) => s + Number(m.idleSeconds || 0), 0);
+      const totalKeystrokesSum = rankedMembers.reduce((s, m) => s + Number(m.totalKeystrokes || 0), 0);
+
       // ==================== PAGE 1 ====================
       // Header Banner
       doc.rect(0, 0, pageWidth, 88).fill('#0f172a');
@@ -1751,57 +1602,72 @@ class ReportGenerator {
 
       doc.fontSize(9).fillColor('#e2e8f0').font('Helvetica-Bold')
          .text('Report Scope: ', 35, 60, { continued: true })
-         .font('Helvetica').text(`Active Workforce (${data.totalEmployees} Active Members)   •   ${periodLabel}`);
+         .font('Helvetica').text(`Active Logged Employees: ${rankedMembers.length}   •   ${periodLabel}`);
 
       doc.fontSize(8.5).fillColor('#94a3b8')
-         .text(`Generated on ${new Date().toLocaleString()}   •   Scope: Active Employees Only`, 35, 73);
+         .text(`Generated on ${new Date().toLocaleString()}   •   Excludes Blank, Test & Zero-Activity Dummy Accounts`, 35, 73);
 
-      doc.y = 102;
+      doc.y = 100;
 
-      // Executive KPI Cards
-      doc.fontSize(11.5).font('Helvetica-Bold').fillColor('#0f172a').text('TEAM EXECUTIVE KPI SUMMARY', 35, doc.y);
+      // Executive KPI Cards (5 aligned across 772pt)
+      doc.fontSize(11).font('Helvetica-Bold').fillColor('#0f172a').text('TEAM EXECUTIVE KPI SUMMARY', 35, doc.y);
 
       const boxY = doc.y + 6;
-      const boxWidth = 180;
-      const boxHeight = 54;
-      const gap = 17;
+      const boxWidth = 142;
+      const boxHeight = 52;
+      const gap = 15.5;
       const startX = 35;
 
       const kpiItems = [
         {
           label: 'Team Avg Productivity',
-          value: `${data.teamSummary.teamAvgProductivity}%`,
-          color: data.teamSummary.teamAvgProductivity >= 60 ? '#10b981' : (data.teamSummary.teamAvgProductivity >= 40 ? '#f59e0b' : '#ef4444')
+          value: `${avgTeamProd}%`,
+          color: avgTeamProd > 80 ? '#10b981' : (avgTeamProd >= 65 ? '#f59e0b' : '#dc2626')
+        },
+        {
+          label: 'Avg Rating (out of 5.0)',
+          value: `${avgTeamRating}/5`,
+          color: '#7c3aed'
         },
         {
           label: 'Total Active Hours',
-          value: data.teamSummary.teamTotalHoursFormatted || `${data.teamSummary.teamTotalHours}h`,
+          value: formatActiveTime(totalActiveSecSum),
           color: '#0284c7'
         },
         {
-          label: 'Total Keystrokes',
-          value: data.teamSummary.teamTotalKeystrokes.toLocaleString(),
-          color: '#8b5cf6'
+          label: 'Total Idle Time',
+          value: formatActiveTime(totalIdleSecSum),
+          color: '#6366f1'
         },
         {
-          label: 'Total Security Alerts',
-          value: `${data.teamSummary.teamTotalAlerts}`,
-          color: data.teamSummary.teamTotalAlerts > 0 ? '#ef4444' : '#10b981'
+          label: 'Total Keystrokes',
+          value: totalKeystrokesSum.toLocaleString(),
+          color: '#0f766e'
         }
       ];
 
       kpiItems.forEach((item, index) => {
         const currentX = startX + index * (boxWidth + gap);
         doc.roundedRect(currentX, boxY, boxWidth, boxHeight, 6).fillAndStroke('#f8fafc', '#e2e8f0');
-        doc.fillColor(item.color).fontSize(18).font('Helvetica-Bold').text(item.value, currentX, boxY + 10, { width: boxWidth, align: 'center' });
-        doc.fillColor('#64748b').fontSize(8.5).font('Helvetica').text(item.label, currentX, boxY + 34, { width: boxWidth, align: 'center' });
+        doc.fillColor(item.color).fontSize(16).font('Helvetica-Bold').text(item.value, currentX, boxY + 10, { width: boxWidth, align: 'center' });
+        doc.fillColor('#64748b').fontSize(8).font('Helvetica').text(item.label, currentX, boxY + 33, { width: boxWidth, align: 'center' });
       });
 
-      doc.y = boxY + boxHeight + 16;
+      // Executive Tier & Highlight Breakdown Strip
+      const stripY = boxY + boxHeight + 8;
+      doc.roundedRect(35, stripY, 772, 22, 4).fillAndStroke('#f1f5f9', '#cbd5e1');
+      doc.fontSize(7.5).font('Helvetica-Bold').fillColor('#0f172a').text(
+        `Executive Summary:  Active: ${rankedMembers.length}   |   High (>80% Green): ${highTierCount}   |   Moderate (65-80% Orange): ${moderateTierCount}   |   Low (1-64% Dark Red): ${lowTierCount}   |   Missing Keys (Blue): ${missingKeyCount}   |   >8h Active (Purple): ${overEightCount}   |   <1h Active (Red): ${underOneCount}`,
+        43,
+        stripY + 7,
+        { width: 756, ellipsis: true }
+      );
 
-      // All Members Roster Table (12 Columns matching CSV/Excel: Emp ID, Name, Date, AIM, Blocker, Key Achievements, Activities, Productivity, Active Hr, Key Strokes, Mouse Score, Efficiency)
-      doc.fontSize(11.5).font('Helvetica-Bold').fillColor('#0f172a').text('ALL MEMBERS PERFORMANCE ROSTER', 35, doc.y);
-      doc.moveDown(0.5);
+      doc.y = stripY + 30;
+
+      // All Members Roster Table
+      doc.fontSize(11).font('Helvetica-Bold').fillColor('#0f172a').text('ALL MEMBERS PERFORMANCE ROSTER', 35, doc.y);
+      doc.moveDown(0.4);
 
       const tableX = 35;
       const tableWidth = 772;
@@ -1809,33 +1675,35 @@ class ReportGenerator {
 
       const printTableHeader = (yPos) => {
         doc.rect(tableX, yPos, tableWidth, 22).fill('#1e293b');
-        doc.fillColor('#ffffff').fontSize(7.5).font('Helvetica-Bold');
-        doc.text('Emp ID', tableX + 4, yPos + 7, { width: 44 });
-        doc.text('Name', tableX + 50, yPos + 7, { width: 76 });
-        doc.text('Date', tableX + 128, yPos + 7, { width: 36, align: 'center' });
-        doc.text('AIM', tableX + 166, yPos + 7, { width: 112 });
-        doc.text('Blocker', tableX + 280, yPos + 7, { width: 88 });
-        doc.text('Key Achievements', tableX + 370, yPos + 7, { width: 108 });
-        doc.text('Activities', tableX + 480, yPos + 7, { width: 38, align: 'center' });
-        doc.text('Productivity', tableX + 520, yPos + 7, { width: 44, align: 'center' });
-        doc.text('Active Hr', tableX + 566, yPos + 7, { width: 44, align: 'center' });
-        doc.text('Key Strokes', tableX + 612, yPos + 7, { width: 46, align: 'center' });
-        doc.text('Mouse', tableX + 660, yPos + 7, { width: 38, align: 'center' });
-        doc.text('Efficiency', tableX + 700, yPos + 7, { width: 68, align: 'right' });
+        doc.fillColor('#ffffff').fontSize(7).font('Helvetica-Bold');
+        doc.text('#', tableX + 2, yPos + 7, { width: 20, align: 'center' });
+        doc.text('Emp ID', tableX + 24, yPos + 7, { width: 42 });
+        doc.text('Name', tableX + 68, yPos + 7, { width: 68 });
+        doc.text('AIMS', tableX + 138, yPos + 7, { width: 96 });
+        doc.text('Blockers', tableX + 236, yPos + 7, { width: 76 });
+        doc.text('Achievements', tableX + 314, yPos + 7, { width: 96 });
+        doc.text('Acts', tableX + 412, yPos + 7, { width: 28, align: 'center' });
+        doc.text('Prod', tableX + 442, yPos + 7, { width: 32, align: 'center' });
+        doc.text('Rating', tableX + 476, yPos + 7, { width: 32, align: 'center' });
+        doc.text('Active Hr', tableX + 510, yPos + 7, { width: 40, align: 'center' });
+        doc.text('Idle Time', tableX + 552, yPos + 7, { width: 38, align: 'center' });
+        doc.text('Keys', tableX + 592, yPos + 7, { width: 38, align: 'center' });
+        doc.text('Mouse', tableX + 632, yPos + 7, { width: 32, align: 'center' });
+        doc.text('Tier / Efficiency', tableX + 666, yPos + 7, { width: 102, align: 'right' });
         return yPos + 22;
       };
 
       currentY = printTableHeader(currentY);
 
-      data.members.forEach((m, idx) => {
-        const aimText = m.aim || '-';
-        const blockerText = m.blocker || '-';
-        const achievementText = m.achievement || '-';
+      rankedMembers.forEach((m) => {
+        const aimText = m.aim || 'NOT Mention';
+        const blockerText = m.blocker || 'NOT Mention';
+        const achievementText = m.achievement || 'NOT Mention';
 
-        doc.fontSize(7).font('Helvetica');
-        const aimH = doc.heightOfString(aimText, { width: 112 });
-        const blkH = doc.heightOfString(blockerText, { width: 88 });
-        const achH = doc.heightOfString(achievementText, { width: 108 });
+        doc.fontSize(6.8).font('Helvetica');
+        const aimH = doc.heightOfString(aimText, { width: 96 });
+        const blkH = doc.heightOfString(blockerText, { width: 76 });
+        const achH = doc.heightOfString(achievementText, { width: 96 });
         const rowHeight = Math.max(20, Math.ceil(Math.max(aimH, blkH, achH)) + 9);
 
         if (currentY + rowHeight > pageHeight - 35) {
@@ -1845,50 +1713,85 @@ class ReportGenerator {
           currentY = printTableHeader(52);
         }
 
-        const isZebra = idx % 2 === 1;
-        doc.rect(tableX, currentY, tableWidth, rowHeight).fill(isZebra ? '#f8fafc' : '#ffffff');
-        doc.rect(tableX, currentY + rowHeight - 1, tableWidth, 1).fill('#e2e8f0');
+        const tierBg = m.performanceTier === 'high'
+          ? '#dcfce7'
+          : m.performanceTier === 'moderate'
+            ? '#ffedd5'
+            : '#fee2e2';
+        const tierFont = m.performanceTier === 'high'
+          ? '#065f46'
+          : m.performanceTier === 'moderate'
+            ? '#9a3412'
+            : '#991b1b';
 
-        doc.fontSize(7).font('Helvetica');
+        doc.rect(tableX, currentY, tableWidth, rowHeight).fill(tierBg);
+        doc.rect(tableX, currentY + rowHeight - 1, tableWidth, 1).fill('#cbd5e1');
 
-        // 0. Emp ID
-        doc.fillColor('#6366f1').font('Helvetica-Bold').text(m.employeeId || 'N/A', tableX + 4, currentY + 5, { width: 44, ellipsis: true });
+        doc.fontSize(6.8).font('Helvetica');
 
-        // 1. Name
-        doc.fillColor('#0f172a').font('Helvetica-Bold').text(m.name, tableX + 50, currentY + 5, { width: 76, ellipsis: true });
+        // 0. Rank
+        doc.fillColor('#0f172a').font('Helvetica-Bold').text(String(m.rank), tableX + 2, currentY + 5, { width: 20, align: 'center' });
 
-        // 2. Date
-        doc.fillColor('#475569').font('Helvetica').text(dateDisplay, tableX + 128, currentY + 5, { width: 36, align: 'center' });
+        // 1. Emp ID
+        doc.fillColor('#4338ca').font('Helvetica-Bold').text(m.employeeId || 'N/A', tableX + 24, currentY + 5, { width: 42, ellipsis: true });
 
-        // 3. AIM
-        doc.fillColor('#1e293b').text(aimText, tableX + 166, currentY + 5, { width: 112 });
+        // 2. Name
+        doc.fillColor('#0f172a').font('Helvetica-Bold').text(m.name, tableX + 68, currentY + 5, { width: 68, ellipsis: true });
 
-        // 4. Blocker
-        doc.fillColor(blockerText !== '-' ? '#b45309' : '#94a3b8').text(blockerText, tableX + 280, currentY + 5, { width: 88 });
+        // 3. AIMS / Blockers / Achievements
+        if (m.allLogsMissing) {
+          doc.fillColor('#991b1b').font('Helvetica-Bold');
+          doc.text(aimText, tableX + 138, currentY + 5, { width: 96 });
+          doc.text(blockerText, tableX + 236, currentY + 5, { width: 76 });
+          doc.text(achievementText, tableX + 314, currentY + 5, { width: 96 });
+        } else {
+          doc.fillColor('#1e293b').font('Helvetica').text(aimText, tableX + 138, currentY + 5, { width: 96 });
+          doc.fillColor('#92400e').text(blockerText, tableX + 236, currentY + 5, { width: 76 });
+          doc.fillColor('#065f46').text(achievementText, tableX + 314, currentY + 5, { width: 96 });
+        }
 
-        // 5. Key Achievements
-        doc.fillColor(achievementText !== '-' ? '#047857' : '#94a3b8').text(achievementText, tableX + 370, currentY + 5, { width: 108 });
+        // 4. Activities
+        doc.fillColor('#334155').font('Helvetica').text(m.totalActivities > 0 ? m.totalActivities.toString() : '0', tableX + 412, currentY + 5, { width: 28, align: 'center' });
 
-        // 6. Activities
-        doc.fillColor('#475569').text(m.totalActivities > 0 ? m.totalActivities.toString() : '-', tableX + 480, currentY + 5, { width: 38, align: 'center' });
-
-        // 7. Productivity
+        // 5. Productivity
         const hasMetrics = m.totalActivities > 0 || m.activeSeconds > 0;
-        doc.fillColor(hasMetrics ? m.effColor : '#94a3b8').font(hasMetrics ? 'Helvetica-Bold' : 'Helvetica')
-           .text(hasMetrics ? `${m.avgProductivity}%` : '-', tableX + 520, currentY + 5, { width: 44, align: 'center' });
+        doc.fillColor(tierFont).font('Helvetica-Bold')
+           .text(hasMetrics ? `${m.avgProductivity}%` : '-', tableX + 442, currentY + 5, { width: 32, align: 'center' });
 
-        // 8. Active Hour
+        // 6. Rating
+        doc.fillColor('#0f172a').font('Helvetica-Bold')
+           .text(Number(m.rating || 0).toFixed(1), tableX + 476, currentY + 5, { width: 32, align: 'center' });
+
+        // 7. Active Hour (>8h Purple, <1h Dark Red)
         const activeText = hasMetrics ? (m.activeHoursFormatted || `${m.activeHours}h`) : '-';
-        doc.fillColor('#0f172a').font('Helvetica').text(activeText, tableX + 566, currentY + 5, { width: 44, align: 'center' });
+        if (hasMetrics && m.activeSeconds > 8 * 3600) {
+          doc.roundedRect(tableX + 511, currentY + 3, 38, 13, 3).fill('#6b21a8');
+          doc.fillColor('#ffffff').font('Helvetica-Bold').text(activeText, tableX + 510, currentY + 6, { width: 40, align: 'center' });
+        } else if (hasMetrics && m.activeSeconds < 3600) {
+          doc.roundedRect(tableX + 511, currentY + 3, 38, 13, 3).fill('#7f1d1d');
+          doc.fillColor('#ffffff').font('Helvetica-Bold').text(activeText, tableX + 510, currentY + 6, { width: 40, align: 'center' });
+        } else {
+          doc.fillColor('#0f172a').font('Helvetica').text(activeText, tableX + 510, currentY + 5, { width: 40, align: 'center' });
+        }
 
-        // 9. Key Strokes
-        doc.fillColor('#475569').text(m.totalKeystrokes > 0 ? m.totalKeystrokes.toLocaleString() : '-', tableX + 612, currentY + 5, { width: 46, align: 'center' });
+        // 8. Idle Time
+        const idleText = (m.idleSeconds > 0 || hasMetrics) ? (m.idleTimeFormatted || '0h 0m') : '-';
+        doc.fillColor('#334155').font('Helvetica').text(idleText, tableX + 552, currentY + 5, { width: 38, align: 'center' });
+
+        // 9. Key Strokes (Blue highlight if missing)
+        if (!m.totalKeystrokes || m.totalKeystrokes <= 0) {
+          doc.roundedRect(tableX + 594, currentY + 3, 34, 13, 3).fill('#1d4ed8');
+          doc.fillColor('#ffffff').font('Helvetica-Bold').text('-', tableX + 592, currentY + 6, { width: 38, align: 'center' });
+        } else {
+          doc.fillColor('#334155').font('Helvetica').text(m.totalKeystrokes.toLocaleString(), tableX + 592, currentY + 5, { width: 38, align: 'center' });
+        }
 
         // 10. Mouse Score
-        doc.fillColor('#475569').text(m.totalActivities > 0 ? `${m.avgMouse}%` : '-', tableX + 660, currentY + 5, { width: 38, align: 'center' });
+        doc.fillColor('#334155').text(`${m.avgMouse || 0}%`, tableX + 632, currentY + 5, { width: 32, align: 'center' });
 
-        // 11. Efficiency Rating
-        doc.fillColor(m.effColor).font('Helvetica-Bold').text(m.efficiency === 'No Activity' ? '-' : m.efficiency, tableX + 700, currentY + 5, { width: 68, align: 'right' });
+        // 11. Performance Group / Efficiency
+        doc.fillColor(tierFont).font('Helvetica-Bold')
+           .text(`${m.performanceGroup} (${dateDisplay})`, tableX + 666, currentY + 5, { width: 102, align: 'right', ellipsis: true });
 
         currentY += rowHeight;
       });
@@ -2016,11 +1919,31 @@ class ReportGenerator {
   }
 
   /**
+   * TEAM XLSX EXPORT (Two-sheet formatted workbook: Team Report + Executive Summary)
+   */
+  async exportTeamXLSX(startDate, endDate, options = {}) {
+    try {
+      await this.ensureReportsDirectory();
+      const data = await this.gatherTeamReportData(startDate, endDate, options);
+      return await buildTeamReportWorkbook({
+        rawMembers: data.members,
+        startDate,
+        endDate,
+        reportsDir: this.reportsDir
+      });
+    } catch (error) {
+      console.error('Error in exportTeamXLSX:', error);
+      throw error;
+    }
+  }
+
+  /**
    * TEAM CSV EXPORT
    */
   async exportTeamCSV(startDate, endDate, options = {}) {
     try {
       const data = await this.gatherTeamReportData(startDate, endDate, options);
+      const rankedMembers = enrichAndRankTeamMembers(data.members);
       const sDate = new Date(startDate);
       const eDate = new Date(endDate);
       const isSameDay = sDate.toDateString() === eDate.toDateString();
@@ -2030,28 +1953,30 @@ class ReportGenerator {
       const eMonth = String(eDate.getMonth() + 1).padStart(2, '0');
       const dateDisplay = isSameDay ? `${sDay}/${sMonth}` : `${sDay}/${sMonth} - ${eDay}/${eMonth}`;
 
-      // Exact Columns matching specification with Employee ID, AIM, Blocker, Achievement:
-      // Emp ID,Name,Date,AIM,Blocker,Achievement,Activities,Productivity,Active Hour,Key Strokes,Mouse Score,Efficiency
-      let csv = 'Emp ID,Name,Date,AIM,Blocker,Achievement,Activities,Productivity,Active Hour,Key Strokes,Mouse Score,Efficiency\n';
+      let csv = 'Rank,Emp ID,Name,Date,Activities,Productivity (%),Rating,Active Hour,Idle Time,Key Strokes,Mouse Score,Efficiency,AIMS,BLOCKERS/ERRORS,ACHIEVEMENTS,Combined Score,Performance Group\n';
 
       const cleanField = (txt) => {
         if (!txt || txt === '-') return '-';
         return String(txt).replace(/"/g, '""').replace(/[\r\n\t]+/g, ' ').trim();
       };
 
-      data.members.forEach(m => {
+      rankedMembers.forEach(m => {
         const empId = (m.employeeId || formatEmployeeId(m.email) || 'N/A').replace(/"/g, '""');
         const name = (m.name || 'Employee').replace(/"/g, '""');
         const aim = cleanField(m.aim);
         const blocker = cleanField(m.blocker);
         const achievement = cleanField(m.achievement);
-        const acts = m.totalActivities > 0 ? m.totalActivities : '-';
-        const prod = m.totalActivities > 0 ? `${m.avgProductivity}%` : '-';
+        const acts = m.totalActivities > 0 ? m.totalActivities : 0;
+        const prod = `${m.avgProductivity || 0}%`;
+        const rating = Number(m.rating || 0).toFixed(1);
         const hours = (m.totalActivities > 0 || m.activeSeconds > 0) ? (m.activeHoursFormatted || `${m.activeHours}h`) : '-';
+        const idle = (m.idleSeconds > 0 || m.totalActivities > 0 || m.activeSeconds > 0) ? (m.idleTimeFormatted || '0h 0m') : '-';
         const keys = m.totalKeystrokes > 0 ? m.totalKeystrokes : '-';
-        const mouse = m.totalActivities > 0 ? `${m.avgMouse}%` : '-';
+        const mouse = `${m.avgMouse || 0}%`;
         const eff = m.efficiency === 'No Activity' ? '-' : m.efficiency;
-        csv += `"${empId}","${name}","${dateDisplay}","${aim}","${blocker}","${achievement}",${acts},"${prod}","${hours}","${keys}","${mouse}","${eff}"\n`;
+        const combined = Number(m.combinedScore || 0).toFixed(4);
+        const group = cleanField(m.performanceGroup);
+        csv += `${m.rank},"${empId}","${name}","${dateDisplay}",${acts},"${prod}",${rating},"${hours}","${idle}","${keys}","${mouse}","${eff}","${aim}","${blocker}","${achievement}",${combined},"${group}"\n`;
       });
 
       const filename = `team_export_${Date.now()}.csv`;

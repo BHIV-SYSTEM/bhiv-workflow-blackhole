@@ -33,6 +33,14 @@ function parseLocalDateParam(dateStr) {
   return d;
 }
 
+function formatDurationHM(seconds) {
+  if (!seconds || seconds <= 0) return '0h 0m';
+  const totalMins = Math.round(seconds / 60);
+  const h = Math.floor(totalMins / 60);
+  const m = totalMins % 60;
+  return `${h}h ${m}m`;
+}
+
 function getEfficiencyLabel(score, hasActivity = true) {
   if (!hasActivity) return 'No Activity';
   if (score >= 50) return 'High Efficiency';
@@ -200,6 +208,7 @@ function summarizeActivitiesWithSession(activities = [], sessionInfo = null, eva
 
   const activeHours = `${Math.floor(activeSeconds / 3600)}h ${Math.floor((activeSeconds % 3600) / 60)}m`;
   const idleTime = `${Math.floor(totalIdleSeconds / 60)}m`;
+  const idleTimeFormatted = formatDurationHM(totalIdleSeconds);
 
   return {
     logCount: logs.length,
@@ -208,6 +217,7 @@ function summarizeActivitiesWithSession(activities = [], sessionInfo = null, eva
     mouseActivity: avgMouseActivity,
     totalIdleSeconds,
     idleTime,
+    idleTimeFormatted,
     activeSeconds,
     activeHours,
     telemetryActiveSeconds,
@@ -367,6 +377,7 @@ async function resolveSessionsMap(empIds, startDate, endDate, now = new Date()) 
 module.exports = {
   getLocalDateKey,
   parseLocalDateParam,
+  formatDurationHM,
   getEfficiencyLabel,
   normalizeIntervalSeconds,
   evaluateSample,
