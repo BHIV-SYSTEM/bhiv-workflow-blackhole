@@ -565,6 +565,7 @@ function Progress() {
       const userId = user?.id || user?._id || storedUser?.id || storedUser?._id;
 
       let targetTaskId = selectedTask._id;
+      let savedProgress = null;
 
       const numericProgress = Number(progressValue) || 0;
       const resolvedTaskStatus = (currentStatus) => {
@@ -623,14 +624,15 @@ function Progress() {
         });
 
         // Send with axios WITHOUT manually setting Content-Type so boundary is preserved!
-        await axios.post(`${API_URL}/progress`, formData, {
+        const savedProgressResponse = await axios.post(`${API_URL}/progress`, formData, {
           headers: {
             'x-auth-token': token
           }
         });
+        savedProgress = savedProgressResponse.data;
       } else {
         // Clean JSON payload when no images are attached
-        await axios.post(`${API_URL}/progress`, {
+        const savedProgressResponse = await axios.post(`${API_URL}/progress`, {
           user: userId,
           task: targetTaskId,
           progressPercentage: progressValue,
@@ -644,8 +646,32 @@ function Progress() {
             'x-auth-token': token
           }
         });
+        savedProgress = savedProgressResponse.data;
       }
-      
+
+      // Push the saved value to every open employee/admin screen immediately.
+      // The server also emits this over Socket.IO, but the local tab should not
+      // wait for a round-trip before the progress bar moves.
+      window.dispatchEvent(new CustomEvent('progress-updated', {
+        detail: {
+          task: targetTaskId,
+          progress: numericProgress,
+          user: userId,
+          ...(savedProgress || {})
+        }
+      }));
+
+      const currentTask = tasks.find(t => t._id === targetTaskId) || selectedTask;
+      window.dispatchEvent(new CustomEvent('task-updated', {
+        detail: {
+          ...(currentTask || {}),
+          _id: targetTaskId,
+          id: targetTaskId,
+          progress: numericProgress,
+          status: resolvedTaskStatus(currentTask?.status)
+        }
+      }));
+
       // Update the task in the local state
       setTasks(prevTasks => prevTasks.map(task => 
         task._id === targetTaskId 

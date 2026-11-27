@@ -332,14 +332,18 @@ router.post(
 
       // Notify via Socket.IO
       if (req.io) {
-        req.io.to(`task-${task}`).emit("progress-update", {
+        const progressPayload = {
           task,
           progress: Number(progressPercentage) || 0,
           user: targetUserId
-        });
+        };
+        // Client listens for `progress-updated`; keep the old event name too
+        // for older agent/web clients.
+        req.io.to(`task-${task}`).emit("progress-updated", progressPayload);
+        req.io.to(`task-${task}`).emit("progress-update", progressPayload);
 
         // Always broadcast task updates so MyTasks and Dashboard update their progress bars in real-time
-        req.io.emit("task-updated", taskDoc);
+        req.io.emit("task-updated", taskDoc.toObject ? taskDoc.toObject() : taskDoc);
         req.io.emit("task:updated", taskDoc);
 
         // Emit aim update if aim was updated
@@ -401,7 +405,9 @@ router.put("/:id", auth, async (req, res) => {
       progress.blockers = blockers.trim();
       progress.achievements = achievements.trim();
     }
-    if (progressPercentage) progress.progressPercentage = progressPercentage;
+    if (progressPercentage !== undefined && progressPercentage !== null) {
+      progress.progressPercentage = Number(progressPercentage) || 0;
+    }
     progress.updatedAt = Date.now();
 
     await progress.save();
@@ -413,16 +419,19 @@ router.put("/:id", auth, async (req, res) => {
 
       // Notify via Socket.IO
       if (req.io) {
-        req.io.to(`task-${task._id}`).emit("progress-update", {
+        const progressPayload = {
           task: task._id,
-          progress: progressPercentage,
-          user: req.user.id,
-        });
-        
+          progress: Number(progressPercentage) || 0,
+          user: req.user?.id || req.user?._id,
+        };
+        req.io.to(`task-${task._id}`).emit("progress-updated", progressPayload);
+        req.io.to(`task-${task._id}`).emit("progress-update", progressPayload);
+
         // Emit task status update if changed
         if (taskStatusChanged || task.status === 'In Progress' || task.status === 'Completed') {
-          req.io.emit("task-updated", task);
-          req.io.emit("task:updated", task);
+          const taskPayload = task.toObject ? task.toObject() : task;
+          req.io.emit("task-updated", taskPayload);
+          req.io.emit("task:updated", taskPayload);
         }
       }
     }
