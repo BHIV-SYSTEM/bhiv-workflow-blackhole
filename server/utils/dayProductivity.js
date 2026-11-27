@@ -1,38 +1,26 @@
 /**
  * Day Productivity Engine — red / yellow / green day score.
  *
- * A day score starts at 0 the moment the employee starts working and evolves
- * tick-by-tick (each telemetry sample ≈ 5 s) with an asymmetric rise/decay
- * recurrence:
+ * The day always starts at 0. Continuous, focused work lifts the score; long
+ * idle stretches pull it back. A strong final hour can no longer hide a weak
+ * day: the displayed score also reflects how much of the day was actually
+ * worked. Short pauses count as work; long gaps do not.
+ *
+ * Live work score, tick-by-tick (each telemetry sample ≈ 5 s):
  *
  *   P(0) = 0
  *   if target > P:  P ← P + α · (target − P) · Δt     (rise, α = 0.008 /s)
  *   else:           P ← P + β · (target − P) · Δt     (decay, β = 0.0008 /s)
  *
- * so continuous work lifts the score quickly (≈3 min → yellow, ≈5 min → green
- * at a solid target) while idle only shaves a few points a minute off — the
- * decrease is intentionally small (2 idle minutes from 90 keeps green, 5 idle
- * minutes tip into yellow). Δt is capped at 120 s so an agent/telemetry
- * gap can never nuke the score.
+ * Δt is capped at 120 s so a telemetry gap never destroys the live score.
+ * The per-tick `target` uses four criteria: input, mouse, keys and platform.
+ * Voice-command users are credited for engagement and platform instead of
+ * keystrokes they never produce, so they can still reach green.
  *
- * The per-tick `target` is built from exactly four criteria:
- *
- *   Standard mode (typing/mouse work), 25 points each:
- *     actions (any input this tick, graded by system-idle),
- *     mouse movement (normalized 0-100),
- *     keystrokes (cadence-normalized),
- *     platform (category of the active application).
- *
- *   Voice mode (voice-command users: no keyboard, near-zero mouse because the
- *   agent executes what they say), detected when the engaged time is dominated
- *   by voice/assistive platforms while the key rate stays negligible:
- *     platform 40, engagement 30, mouse 15 (down-weighted),
- *     input-substitute 15 (full credit while engaged on a voice platform —
- *     typing is simply not their input method).
- *
- * This substitution is what keeps voice-command users out of perpetual red:
- * they score on WHERE they work and WHETHER they are engaged, not on keystrokes
- * they will never produce.
+ * Day factor: active time / elapsed day. It is lenient — 70% active time earns
+ * full credit — but a 1-hour burst after hours of idle stays red. The hourly
+ * chart points use the same factor, so the last chart point always matches
+ * the daily card.
  *
  * Zones (employee-confirmed): red < 70, yellow 70-79, green ≥ 80.
  */
@@ -46,6 +34,13 @@ const ZONE_THRESHOLDS = { yellow: 70, green: 80 }; // red < 70, yellow 70-79, gr
 const RISE_RATE = 0.008;   // α — climb toward the tick target while working
 const DECAY_RATE = 0.0008; // β — gentle pull down while idle/distracted (a few points/minute)
 const MAX_TICK_GAP_SEC = 120;
+
+// Whole-day steadiness. Short breaks are forgiven; long idle time reduces the
+// displayed score so a final burst cannot outrank steady work all day.
+const FULL_CREDIT_COVERAGE = 0.70; // 70%+ of the elapsed day -> no reduction
+const MIN_CREDIT_COVERAGE = 0.20;  // below this -> strongest reduction
+const MIN_COVERAGE_FACTOR = 0.30;  // one good hour cannot become a green day
+const MAX_DAY_SPAN_SEC = 12 * 3600; // ignore absurd multi-day spans leniently
 
 // Unproductive platforms can never sustain a green target.
 const DISTRACTION_TARGET_CAP = 45;
@@ -172,6 +167,43 @@ function classifyZone(score, hasActivity) {
   return ZONE.RED;
 }
 
+/**
+ * Lenient day factor from active time / elapsed time.
+ * Returns 1 once the day is at least 70% active, and never returns 0 while
+ * there is real activity — a weak day should still be visible, just low.
+ */
+function dayCoverageFactor(activeSec, elapsedSec) {
+  if (!Number.isFinite(activeSec) || !Number.isFinite(elapsedSec) || elapsedSec <= 0) return 0;
+  const coverage = Math.max(0, Math.min(1, activeSec / elapsedSec));
+  if (coverage >= FULL_CREDIT_COVERAGE) return 1;
+  if (coverage <= MIN_CREDIT_COVERAGE) return MIN_COVERAGE_FACTOR;
+  return MIN_COVERAGE_FACTOR
+    + (1 - MIN_COVERAGE_FACTOR)
+      * ((coverage - MIN_CREDIT_COVERAGE) / (FULL_CREDIT_COVERAGE - MIN_CREDIT_COVERAGE));
+}
+
+// Efficiency is only a name for the day-score colour — never a second score.
+const EFFICIENCY_BY_ZONE = {
+  green: 'High Efficiency',
+  yellow: 'Moderate Efficiency',
+  red: 'Low Efficiency',
+};
+const EFFICIENCY_COLOR_BY_ZONE = {
+  green: '#10b981',
+  yellow: '#f59e0b',
+  red: '#ef4444',
+};
+
+function efficiencyLabelForDay(score, hasActivity = true) {
+  if (!hasActivity) return 'No Activity';
+  return EFFICIENCY_BY_ZONE[classifyZone(score, true)];
+}
+
+function efficiencyColorForDay(score, hasActivity = true) {
+  if (!hasActivity) return '#94a3b8';
+  return EFFICIENCY_COLOR_BY_ZONE[classifyZone(score, true)];
+}
+
 // ── Tick target ──────────────────────────────────────────────────────────────
 
 function standardTarget(act, ev, platform, rawIdle) {
@@ -235,7 +267,8 @@ function computeDayProductivity(activities = []) {
   };
   if (logs.length === 0) return base;
 
-  // Pass 1 — classify every tick and detect the input mode.
+  // Pass 1 — classify every tick, find the day's span and detect input mode.
+  let firstMs = null;
   const ticks = logs.map((act) => {
     const ev = evaluateSample(act);
     const platform = classifyPlatform(act);
@@ -244,7 +277,9 @@ function computeDayProductivity(activities = []) {
     let rawIdle = Number(act?.idle_duration || 0);
     if (!Number.isFinite(rawIdle) || rawIdle < 0) rawIdle = 0;
     if (rawIdle > 10000) rawIdle = Math.round(rawIdle / 1000);
-    return { act, ev, platform, rawIdle };
+    const ms = new Date(act.timestamp).getTime();
+    if (Number.isFinite(ms) && (firstMs === null || ms < firstMs)) firstMs = ms;
+    return { act, ev, platform, rawIdle, ms };
   });
 
   let engagedTicks = 0;
@@ -268,15 +303,18 @@ function computeDayProductivity(activities = []) {
     && keysPerMin < VOICE_MODE_MAX_KEYS_PER_MIN
   ) ? 'voice' : 'standard';
 
-  // Pass 2 — asymmetric rise/decay recurrence, P(0) = 0.
+  // Pass 2 — asymmetric rise/decay recurrence, P(0) = 0. The displayed score
+  // is the live score scaled by how much of the day so far was really worked.
   let score = 0;
   let prevMs = null;
-  const scoreTimeline = []; // {ms, score} for trend
-  const hourlyMap = new Map(); // hour -> last score seen in that hour
+  let activeSecSoFar = 0;
+  let displayedScore = 0;
+  const scoreTimeline = []; // {ms, score} for trend (displayed score)
+  const hourlyMap = new Map(); // hour -> last displayed score in that hour
   const criteriaSum = { actions: 0, mouse: 0, keys: 0, platform: 0 };
 
   for (const t of ticks) {
-    const ms = new Date(t.act.timestamp).getTime();
+    const ms = t.ms;
     const tickSec = t.ev.sampleSec;
     const dt = Number.isFinite(ms) && prevMs !== null
       ? Math.min(MAX_TICK_GAP_SEC, Math.max(0, (ms - prevMs) / 1000)) || tickSec
@@ -292,15 +330,22 @@ function computeDayProductivity(activities = []) {
     score += rate * (target - score) * dt;
     score = Math.max(0, Math.min(100, score));
 
+    activeSecSoFar += t.ev.activeSec;
+    const elapsedSpanSec = Number.isFinite(ms) && firstMs !== null
+      ? Math.min(MAX_DAY_SPAN_SEC, Math.max(tickSec, (ms - firstMs) / 1000 + tickSec))
+      : Math.max(tickSec, activeSecSoFar);
+    const factor = dayCoverageFactor(activeSecSoFar, elapsedSpanSec);
+    displayedScore = Math.round(score * factor);
+
     criteriaSum.actions += built.criteria.actions;
     criteriaSum.mouse += built.criteria.mouse;
     criteriaSum.keys += built.criteria.keys;
     criteriaSum.platform += built.criteria.platform;
 
     if (Number.isFinite(ms)) {
-      scoreTimeline.push({ ms, score });
+      scoreTimeline.push({ ms, score: displayedScore });
       const hour = new Date(ms).getHours();
-      hourlyMap.set(hour, { hour, score });
+      hourlyMap.set(hour, { hour, score: displayedScore });
     }
   }
 
@@ -312,17 +357,17 @@ function computeDayProductivity(activities = []) {
     platform: Math.round((criteriaSum.platform / n) * 10) / 10,
   };
 
-  // Trend: score now vs ~10 min ago (earliest point if the day is younger).
+  // Trend: displayed score now vs ~10 min ago (earliest point if day is young).
   let trend = 'none';
   if (scoreTimeline.length >= 2) {
     const nowMs = scoreTimeline[scoreTimeline.length - 1].ms;
     const reference = scoreTimeline.find((p) => p.ms >= nowMs - 10 * 60 * 1000)
       || scoreTimeline[0];
-    const delta = score - reference.score;
+    const delta = displayedScore - reference.score;
     trend = delta > 2 ? 'rising' : delta < -2 ? 'falling' : 'steady';
   }
 
-  const finalScore = Math.round(score);
+  const finalScore = displayedScore;
   return {
     score: finalScore,
     zone: classifyZone(finalScore, true),
@@ -342,4 +387,6 @@ module.exports = {
   classifyPlatform,
   classifyZone,
   computeDayProductivity,
+  efficiencyLabelForDay,
+  efficiencyColorForDay,
 };

@@ -18,7 +18,12 @@ const {
   summarizeActivitiesWithSession,
   resolveSessionsMap
 } = require('../utils/telemetryMetrics');
-const { computeDayProductivity, classifyZone } = require('../utils/dayProductivity');
+const {
+  computeDayProductivity,
+  classifyZone,
+  efficiencyLabelForDay,
+  efficiencyColorForDay,
+} = require('../utils/dayProductivity');
 
 /**
  * Canonical day score used by every productivity display (daily cards, detail
@@ -478,20 +483,8 @@ class ReportGenerator {
       const summary = summarizeActivitiesWithSession(dayLogs, daySession);
       const dayProductivity = dayProductivityFor(dayLogs);
 
-      let eff = 'No Activity';
-      let effColor = '#94a3b8';
-      if (summary.hasActivity) {
-        if (dayProductivity.score >= 80) {
-          eff = 'High Efficiency';
-          effColor = '#10b981';
-        } else if (dayProductivity.score >= 70) {
-          eff = 'Moderate';
-          effColor = '#f59e0b';
-        } else {
-          eff = 'Low Efficiency';
-          effColor = '#ef4444';
-        }
-      }
+      const eff = efficiencyLabelForDay(dayProductivity.score, summary.hasActivity);
+      const effColor = efficiencyColorForDay(dayProductivity.score, summary.hasActivity);
 
       rows.push({
         date: dStr,
@@ -753,7 +746,10 @@ class ReportGenerator {
 
     doc.moveDown(0.5);
 
-    const timeline = this.createActivityTimeline(reportData.activities);
+    const dayScoreByDate = new Map(
+      (reportData.dailyMetrics || []).map((d) => [d.date, d.avgProd])
+    );
+    const timeline = this.createActivityTimeline(reportData.activities, dayScoreByDate);
 
     if (timeline.length === 0) {
       doc.fontSize(9)
@@ -938,9 +934,7 @@ class ReportGenerator {
       productivityScore: avgProd,
       dayProductivity: { score: avgProd, zone },
       legacyAvgProductivityScore: prodDayCount > 0 ? Math.round(legacyProdDaySum / prodDayCount) : 0,
-      productivityEfficiency: zone === 'green'
-        ? 'High Efficiency'
-        : (zone === 'yellow' ? 'Moderate Efficiency' : 'Low Efficiency'),
+      productivityEfficiency: efficiencyLabelForDay(avgProd, prodDayCount > 0),
       activeHours,
       activeHoursFormatted,
       activeSeconds: totalActiveSec,
@@ -964,7 +958,7 @@ class ReportGenerator {
     return stats;
   }
 
-  createActivityTimeline(activities) {
+  createActivityTimeline(activities, dayScoreByDate = new Map()) {
     return (activities || []).slice(0, 15).map(act => {
       let appName = act.active_application?.name;
       if (!appName || appName === 'Unknown' || appName === 'null') {
@@ -972,7 +966,8 @@ class ReportGenerator {
         appName = isActive ? 'Active Desktop Workspace' : 'System Background';
       }
       const title = act.active_application?.title ? ` - ${act.active_application.title}` : '';
-      const prod = act.productivity_score ? ` (Score: ${act.productivity_score}%)` : '';
+      const canonicalScore = dayScoreByDate.get(getLocalDateKey(act.timestamp));
+      const prod = Number.isFinite(canonicalScore) ? ` (Day Score: ${canonicalScore}%)` : '';
       const timeStr = new Date(act.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       return {
         time: timeStr,
@@ -1126,14 +1121,17 @@ class ReportGenerator {
       csv += '\n';
 
       csv += 'DETAILED ACTIVITY LOGS\n';
-      csv += 'Employee ID,Timestamp,Application,Window Title,Productivity Score (%),Idle Duration (s),Keystrokes,Mouse Score (%)\n';
+      csv += 'Employee ID,Timestamp,Application,Window Title,Day Score (%),Idle Duration (s),Keystrokes,Mouse Score (%)\n';
 
       if (reportData.activities.length > 0) {
+        const dayScoreByDate = new Map(dailyRows.map((day) => [day.date, day.avgProd]));
         reportData.activities.forEach(act => {
           const ts = act.timestamp ? new Date(act.timestamp).toISOString() : '';
           const app = (act.active_application?.name || 'Workspace').replace(/"/g, '""');
           const title = (act.active_application?.title || '').replace(/"/g, '""');
-          csv += `"${empIdFormatted}","${ts}","${app}","${title}",${act.productivity_score || 0},${act.idle_duration || 0},${act.keystroke_count || 0},${act.mouse_activity_score || 0}\n`;
+          const canonicalScore = dayScoreByDate.get(getLocalDateKey(act.timestamp));
+          const dayScoreText = Number.isFinite(canonicalScore) ? canonicalScore : 0;
+          csv += `"${empIdFormatted}","${ts}","${app}","${title}",${dayScoreText},${act.idle_duration || 0},${act.keystroke_count || 0},${act.mouse_activity_score || 0}\n`;
         });
       } else {
         csv += 'No activity logs recorded in this period\n';
@@ -1637,21 +1635,10 @@ class ReportGenerator {
       const activeHoursFormatted = formatActiveTime(effectiveActiveSec);
       const avgMouse = activeMouseCount > 0 ? Math.round(activeMouseSum / activeMouseCount) : 0;
 
-      const avgZone = classifyZone(avgProd, workedDays > 0 || effectiveActiveSec > 0);
-      let efficiency = 'No Activity';
-      let effColor = '#94a3b8';
-      if (workedDays > 0 || effectiveActiveSec > 0) {
-        if (avgZone === 'green') {
-          efficiency = 'High Efficiency';
-          effColor = '#10b981';
-        } else if (avgZone === 'yellow') {
-          efficiency = 'Moderate';
-          effColor = '#f59e0b';
-        } else {
-          efficiency = 'Low';
-          effColor = '#ef4444';
-        }
-      }
+      const hasWork = workedDays > 0 || effectiveActiveSec > 0;
+      const avgZone = classifyZone(avgProd, hasWork);
+      const efficiency = efficiencyLabelForDay(avgProd, hasWork);
+      const effColor = efficiencyColorForDay(avgProd, hasWork);
 
       return {
         id: idStr,

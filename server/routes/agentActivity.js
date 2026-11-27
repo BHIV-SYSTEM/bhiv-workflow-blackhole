@@ -7,7 +7,10 @@ const {
   evaluateSample,
   normalizeIntervalSeconds,
 } = require('../utils/telemetryMetrics');
-const { computeDayProductivity } = require('../utils/dayProductivity');
+const {
+  computeDayProductivity,
+  efficiencyLabelForDay,
+} = require('../utils/dayProductivity');
 
 /**
  * Human-readable host for a URL (e.g. "github.com"). Falls back to the raw
@@ -506,7 +509,8 @@ router.get('/activity/summary/:userId', auth, async (req, res) => {
         mouseEvents: bucket.mouseEvents,
         activeSeconds: bucket.activeSeconds,
         idleSeconds: bucket.idleSeconds,
-        avgProductivity: bucket.scoreSamples > 0
+        avgProductivity: dayScoreByHour.get(bucket.hour) ?? 0,
+        legacyAvgProductivity: bucket.scoreSamples > 0
           ? Math.min(100, Math.round(bucket.scoreSum / bucket.scoreSamples))
           : 0,
         // End-of-hour value of the red/yellow/green day score (0 at day start).
@@ -524,10 +528,12 @@ router.get('/activity/summary/:userId', auth, async (req, res) => {
       activeSeconds: unified.activeSeconds,
       activeHours: unified.activeHours,
       idleTime: unified.idleTime,
-      avgProductivityScore: unified.avgProductivityScore,
-      productivityEfficiency: unified.productivityEfficiency,
-      // New day-productivity engine (kept additive: legacy fields above are
-      // untouched for the admin dashboard, reports, and detail modal).
+      avgProductivityScore: dayProd.score,
+      legacyAvgProductivityScore: unified.avgProductivityScore,
+      productivityEfficiency: efficiencyLabelForDay(dayProd.score, unified.hasActivity),
+      efficiencyLabel: efficiencyLabelForDay(dayProd.score, unified.hasActivity),
+      // New day-productivity engine. Legacy values stay additive under explicit
+      // `legacy*` keys so no consumer can mistake them for the day score.
       dayProductivity: {
         score: dayProd.score,
         zone: dayProd.zone,

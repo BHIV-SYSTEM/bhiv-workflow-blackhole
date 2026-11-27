@@ -184,7 +184,7 @@ async function refreshDailySummary() {
       const m = res.summary.metrics;
       dailySummaryState.baseActiveSeconds = Number(m.activeSeconds || 0);
       dailySummaryState.syncedAtMs = Date.now();
-      dailySummaryState.productivityScore = Number(m.productivityScore || 0);
+      dailySummaryState.productivityScore = Number(m.dayProductivity?.score ?? m.productivityScore ?? 0);
       dailySummaryState.latestSummary = res.summary;
       updateActiveTimeUI();
       renderDayEndSummaryCard(res.summary);
@@ -227,7 +227,7 @@ function renderDayEndSummaryCard(summary = dailySummaryState.latestSummary) {
   const noteLine = document.getElementById('summaryWorkNote');
 
   if (hoursEl) hoursEl.textContent = m.activeHoursFormatted || formatDurationSeconds(m.activeSeconds || 0);
-  if (prodEl) prodEl.textContent = `${Number(m.productivityScore || 0)}%`;
+  if (prodEl) prodEl.textContent = `${Number(m.dayProductivity?.score ?? m.productivityScore ?? 0)}%`;
   if (keysEl) keysEl.textContent = Number(m.keystrokes || 0).toLocaleString();
   if (mouseEl) mouseEl.textContent = Number(m.mouseEvents || 0).toLocaleString();
   if (effBadge) effBadge.textContent = m.efficiencyLabel && m.efficiencyLabel !== 'No Activity' ? m.efficiencyLabel : 'Day Ended';

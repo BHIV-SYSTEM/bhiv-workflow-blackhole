@@ -73,10 +73,22 @@ export function ActivityChart({ employee }) {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
 
-      const processedData = processActivityData(response.data.activities);
+      const processedData = processActivityData(
+        response.data.activities,
+        response.data.summary?.dayProductivity?.hourly,
+        response.data.dayScoresByDate
+      );
       setActivityData(processedData);
       
-      const summaryData = calculateSummary(response.data.activities, response.data.summary?.dayProductivity);
+      const rangeScores = Object.values(response.data.dayScoresByDate || {});
+      const canonicalSummary = rangeScores.length > 0
+        ? { score: Math.round(rangeScores.reduce((sum, s) => sum + s, 0) / rangeScores.length) }
+        : response.data.summary?.dayProductivity;
+      const summaryData = calculateSummary(
+        response.data.activities,
+        canonicalSummary,
+        response.data.summary?.dayProductivity?.hourly
+      );
       setSummary(summaryData);
     } catch (error) {
       console.error('Error fetching activity data:', error);
@@ -85,7 +97,7 @@ export function ActivityChart({ employee }) {
     }
   };
 
-  const processActivityData = (activities) => {
+  const processActivityData = (activities, canonicalHourly = null, canonicalByDate = null) => {
     if (!activities || activities.length === 0) return [];
 
     if (dateRange === 'today') {
@@ -117,11 +129,17 @@ export function ActivityChart({ employee }) {
         hourlyData[key].count++;
       });
 
+      const canonicalByHour = Array.isArray(canonicalHourly)
+        ? new Map(canonicalHourly.map((h) => [Number(h.hour), h.score]))
+        : null;
+
       return Object.values(hourlyData)
         .map(data => ({
           ...data,
           mouse_activity_score: data.mouse_samples > 0 ? Math.round(data.mouse_activity_score / data.mouse_samples) : 0,
-          productivity_score: Math.round(data.productivity_score / data.count),
+          productivity_score: canonicalByHour
+            ? (canonicalByHour.get(parseInt(data.time)) ?? 0)
+            : Math.round(data.productivity_score / data.count),
           idle_duration: Math.round(data.idle_duration / data.count / 60) // Convert to minutes
         }))
         .sort((a, b) => parseInt(a.time) - parseInt(b.time));
@@ -130,10 +148,12 @@ export function ActivityChart({ employee }) {
       const dailyData = {};
       activities.forEach(activity => {
         const date = format(new Date(activity.timestamp), 'MM/dd');
+        const dateKey = format(new Date(activity.timestamp), 'yyyy-MM-dd');
         
         if (!dailyData[date]) {
           dailyData[date] = {
             time: date,
+            dateKey,
             keystroke_count: 0,
             mouse_activity_score: 0,
             mouse_samples: 0,
@@ -157,14 +177,16 @@ export function ActivityChart({ employee }) {
         .map(data => ({
           ...data,
           mouse_activity_score: data.mouse_samples > 0 ? Math.round(data.mouse_activity_score / data.mouse_samples) : 0,
-          productivity_score: Math.round(data.productivity_score / data.count),
+          productivity_score: canonicalByDate && Number.isFinite(canonicalByDate[data.dateKey])
+            ? canonicalByDate[data.dateKey]
+            : Math.round(data.productivity_score / data.count),
           idle_duration: Math.round(data.idle_duration / data.count / 60)
         }))
         .sort((a, b) => new Date(a.time) - new Date(b.time));
     }
   };
 
-  const calculateSummary = (activities, dayProductivity = null) => {
+  const calculateSummary = (activities, dayProductivity = null, canonicalHourly = null) => {
     if (!activities || activities.length === 0) {
       return {
         totalKeystroke: 0,
@@ -184,26 +206,34 @@ export function ActivityChart({ employee }) {
       : 0;
     const totalIdleTime = activities.reduce((sum, a) => sum + (a.idle_duration || 0), 0);
 
-    // Find peak productivity hour
-    const hourlyProductivity = {};
-    activities.forEach(activity => {
-      const hour = new Date(activity.timestamp).getHours();
-      if (!hourlyProductivity[hour]) {
-        hourlyProductivity[hour] = { total: 0, count: 0 };
-      }
-      hourlyProductivity[hour].total += activity.productivity_score;
-      hourlyProductivity[hour].count++;
-    });
-
+    // Peak hour follows the same canonical day score the chart plots.
     let peakHour = 'N/A';
     let maxAvgProductivity = 0;
-    Object.entries(hourlyProductivity).forEach(([hour, data]) => {
-      const avg = data.total / data.count;
-      if (avg > maxAvgProductivity) {
-        maxAvgProductivity = avg;
-        peakHour = `${hour}:00`;
-      }
-    });
+    if (Array.isArray(canonicalHourly) && canonicalHourly.length > 0) {
+      canonicalHourly.forEach((h) => {
+        if (h.score > maxAvgProductivity) {
+          maxAvgProductivity = h.score;
+          peakHour = `${h.hour}:00`;
+        }
+      });
+    } else {
+      const hourlyProductivity = {};
+      activities.forEach(activity => {
+        const hour = new Date(activity.timestamp).getHours();
+        if (!hourlyProductivity[hour]) {
+          hourlyProductivity[hour] = { total: 0, count: 0 };
+        }
+        hourlyProductivity[hour].total += activity.productivity_score;
+        hourlyProductivity[hour].count++;
+      });
+      Object.entries(hourlyProductivity).forEach(([hour, data]) => {
+        const avg = data.total / data.count;
+        if (avg > maxAvgProductivity) {
+          maxAvgProductivity = avg;
+          peakHour = `${hour}:00`;
+        }
+      });
+    }
 
     return {
       totalKeystroke,

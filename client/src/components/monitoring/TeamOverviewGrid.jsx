@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { dayScore, dayScoreStyle, dayZoneStyle } from '@/lib/dayProductivity';
+import { dayScore, dayScoreStyle, dayZoneStyle, dayEfficiencyLabel } from '@/lib/dayProductivity';
 import {
   Users,
   Activity,
@@ -34,7 +34,6 @@ export function TeamOverviewGrid({
 }) {
   const teamDayScore = dayScore({
     dayProductivity: { score: summary.avgDayProductivity },
-    productivityScore: summary.avgTeamProductivity,
   });
   const teamDayStyle = dayZoneStyle(teamDayScore);
 
@@ -111,13 +110,14 @@ export function TeamOverviewGrid({
       );
     }
 
-    if (emp.productivityEfficiency === 'High Efficiency' || dayScore(emp) >= 80) {
+    const label = dayEfficiencyLabel(dayScore(emp));
+    if (label === 'High Efficiency') {
       return (
         <Badge className="bg-emerald-600 text-white font-bold text-[11px] px-2 py-0.5 shadow-sm border border-emerald-400/30">
           ⚡ High Efficiency
         </Badge>
       );
-    } else if (emp.productivityEfficiency === 'Moderate Efficiency' || dayScore(emp) >= 70) {
+    } else if (label === 'Moderate Efficiency') {
       return (
         <Badge className="bg-amber-600 text-white font-bold text-[11px] px-2 py-0.5 shadow-sm border border-amber-400/30">
           ⚖️ Moderate Efficiency

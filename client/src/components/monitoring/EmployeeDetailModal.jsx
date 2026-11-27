@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { dayScore, dayScoreStyle } from '@/lib/dayProductivity';
+import { dayScore, dayScoreStyle, dayZoneStyle, dayEfficiencyLabel } from '@/lib/dayProductivity';
 import {
   X,
   User,
@@ -154,13 +154,6 @@ export function EmployeeDetailModal({ employee, onClose }) {
         : (hasEmployeeSession ? (employee?.productivityScore || 50) : 0);
       const avgMouse = activeMouseCount > 0 ? Math.round(totalMouseScore / activeMouseCount) : 0;
 
-      let efficiency = employee.stillExist === 0 ? 'Exited' : 'No Telemetry Today';
-      if (logCount > 0 || hasEmployeeSession) {
-        if (avgProd >= 50) efficiency = 'High Efficiency';
-        else if (avgProd >= 30) efficiency = 'Moderate Efficiency';
-        else efficiency = 'Low Efficiency';
-      }
-
       const calculatedActiveHours = (hasEmployeeSession && employee?.totalActiveHours)
         ? employee.totalActiveHours
         : `${Math.floor(calculatedActiveSec / 3600)}h ${Math.floor((calculatedActiveSec % 3600) / 60)}m`;
@@ -184,12 +177,13 @@ export function EmployeeDetailModal({ employee, onClose }) {
       const finalMouse = Number(
         backendSummary?.mouseActivity ?? backendSummary?.avgMouseActivity ?? (logCount > 0 ? avgMouse : 0)
       );
-      const finalProd = Number(
-        backendSummary?.productivityScore ?? backendSummary?.avgProductivityScore ?? avgProd
-      );
-      const finalEfficiency = employee.stillExist === 0
-        ? 'Exited'
-        : (backendSummary?.productivityEfficiency || efficiency);
+      const canonicalScoreSource = backendSummary
+        ? backendSummary
+        : (employee?.dayProductivity ? employee : null);
+      const finalProd = canonicalScoreSource ? dayScore(canonicalScoreSource) : avgProd;
+      let finalEfficiency = 'No Telemetry Today';
+      if (employee.stillExist === 0) finalEfficiency = 'Exited';
+      else if (canonicalScoreSource) finalEfficiency = dayEfficiencyLabel(finalProd);
 
       const latest = dayLogs[0];
       const lastActiveDate = response.data.lastActiveTimestamp
@@ -231,14 +225,13 @@ export function EmployeeDetailModal({ employee, onClose }) {
     if (eff === 'Moderate Efficiency') return <Badge className="bg-amber-600 text-white font-bold text-[10px]">⚖️ Moderate Efficiency</Badge>;
     if (eff === 'Low Efficiency') return <Badge className="bg-rose-600 text-white font-bold text-[10px]">🔻 Low Efficiency</Badge>;
     if (eff === 'Exited') return <Badge variant="outline" className="text-rose-400 border-rose-500/30 bg-rose-500/10 font-bold text-[10px]">Exited</Badge>;
+    if (eff === 'No Activity') return <Badge className="bg-zinc-800 text-zinc-300 border border-zinc-700 font-semibold text-[10px]">⏸️ No Activity</Badge>;
     return <Badge className="bg-zinc-800 text-zinc-300 border border-zinc-700 font-semibold text-[10px]">⏸️ No Telemetry Today</Badge>;
   };
 
   if (!employee) return null;
 
-  const dayScoreSource = dayProductivity
-    ? { dayProductivity }
-    : { productivityScore: metrics.productivityScore };
+  const dayScoreSource = dayProductivity ? { dayProductivity } : null;
   const currentDayScore = dayScore(dayScoreSource);
   const currentDayStyle = dayScoreStyle(dayScoreSource);
 
@@ -331,9 +324,15 @@ export function EmployeeDetailModal({ employee, onClose }) {
 
             <Card className="p-3 bg-zinc-900/60 border-zinc-800">
               <p className="text-[11px] font-semibold text-zinc-400 flex items-center gap-1">
-                <Zap className="h-3 w-3 text-amber-400" /> Efficiency
+                <Zap className={`h-3 w-3 ${currentDayStyle.text}`} /> Efficiency
               </p>
-              <div className="mt-1">{getEfficiencyBadge(metrics.productivityEfficiency)}</div>
+              <div className="mt-1">
+                {getEfficiencyBadge(
+                  employee.stillExist === 0
+                    ? 'Exited'
+                    : (currentDayScore > 0 ? dayEfficiencyLabel(currentDayScore) : 'No Activity')
+                )}
+              </div>
             </Card>
           </div>
 
@@ -397,18 +396,24 @@ export function EmployeeDetailModal({ employee, onClose }) {
                 <CardContent>
                   <div className="space-y-2.5 max-h-56 overflow-y-auto pr-1">
                     {activityLogs.length > 0 ? (
-                      activityLogs.slice(0, 15).map((log, i) => (
+                      activityLogs.slice(0, 15).map((log, i) => {
+                        const hourKey = `${new Date(log.timestamp).getHours()}:00`;
+                        const hourStyle = dayZoneStyle(
+                          timelineData.find((h) => h.hour === hourKey)?.productivity ?? currentDayScore
+                        );
+                        return (
                         <div key={i} className="flex items-center justify-between p-2.5 rounded-xl bg-zinc-950 border border-zinc-800 text-xs">
                           <div>
                             <p className="font-bold text-white">{log.active_application?.name || 'Workspace'}</p>
                             <p className="text-zinc-400 truncate max-w-xs sm:max-w-md">{log.app_category || 'Work Activity'}</p>
                           </div>
                           <div className="text-right">
-                            <span className="font-bold text-emerald-400">{log.productivity_score}% prod</span>
+                            <span className={`font-bold ${hourStyle.text}`}>{hourStyle.label}</span>
                             <p className="text-[10px] text-zinc-500">{new Date(log.timestamp).toLocaleTimeString()}</p>
                           </div>
                         </div>
-                      ))
+                        );
+                      })
                     ) : (
                       <p className="text-xs text-zinc-400 text-center py-6">No recent desktop activity logs recorded today.</p>
                     )}

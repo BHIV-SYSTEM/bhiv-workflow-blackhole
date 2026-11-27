@@ -517,7 +517,7 @@ export function ProductionDashboard({ employee }) {
                           type="monotone" 
                           dataKey="productivity_metrics.productivity_score" 
                           stroke="#82ca9d" 
-                          name="Productivity Score"
+                          name="Raw Keystroke Score"
                         />
                       </LineChart>
                     </ResponsiveContainer>

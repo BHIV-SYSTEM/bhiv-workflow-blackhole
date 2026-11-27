@@ -53,7 +53,10 @@ export function MonitoringDashboard({ employee, monitoringStatus }) {
       );
 
       // Process activity data for charts
-      const processedData = processActivityData(activityResponse.data.activities);
+      const processedData = processActivityData(
+        activityResponse.data.activities,
+        activityResponse.data.summary?.dayProductivity?.hourly
+      );
       setActivityData(processedData);
 
       // Calculate daily metrics (prefer unified backend summary when available)
@@ -68,7 +71,7 @@ export function MonitoringDashboard({ employee, monitoringStatus }) {
     }
   };
 
-  const processActivityData = (activities) => {
+  const processActivityData = (activities, canonicalHourly = null) => {
     if (!activities || activities.length === 0) return [];
 
     // Group activities by hour
@@ -97,12 +100,19 @@ export function MonitoringDashboard({ employee, monitoringStatus }) {
       hourlyData[hour].count++;
     });
 
-    // Calculate averages and return sorted data
+    // Calculate averages and return sorted data. The productivity line uses
+    // the canonical day-score points so the chart ends on the KPI percentage.
+    const canonicalByHour = Array.isArray(canonicalHourly)
+      ? new Map(canonicalHourly.map((h) => [Number(h.hour), h.score]))
+      : null;
+
     return Object.values(hourlyData)
       .map(data => ({
         ...data,
         mouse_activity_score: data.mouse_samples > 0 ? Math.round(data.mouse_activity_score / data.mouse_samples) : 0,
-        productivity_score: Math.round(data.productivity_score / data.count),
+        productivity_score: canonicalByHour
+          ? (canonicalByHour.get(parseInt(data.hour)) ?? 0)
+          : Math.round(data.productivity_score / data.count),
         idle_duration: Math.round(data.idle_duration / data.count)
       }))
       .sort((a, b) => parseInt(a.hour) - parseInt(b.hour));
@@ -113,7 +123,7 @@ export function MonitoringDashboard({ employee, monitoringStatus }) {
       return {
         totalKeystroke: summary.totalKeystrokes || 0,
         avgMouseActivity: summary.mouseActivity || 0,
-        avgProductivityScore: summary.productivityScore || 0,
+        avgProductivityScore: summary.dayProductivity?.score ?? summary.productivityScore ?? 0,
         dayProductivity: summary.dayProductivity || null,
         totalIdleTime: Math.round((summary.idleSeconds || 0) / 60),
         activeHours: Math.round(((summary.activeSeconds || 0) / 3600) * 100) / 100,

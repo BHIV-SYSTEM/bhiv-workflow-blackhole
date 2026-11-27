@@ -7,7 +7,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
-import { dayScore, dayScoreStyle, dayZoneStyle } from '@/lib/dayProductivity';
+import { dayScore, dayScoreStyle, dayZoneStyle, dayEfficiencyLabel } from '@/lib/dayProductivity';
 import {
   FileText,
   Download,
@@ -325,7 +325,6 @@ export function ReportsGenerator({
 
   const teamAvgDayScore = dayScore({
     dayProductivity: { score: teamReportData?.teamSummary?.teamAvgDayProductivity },
-    productivityScore: teamReportData?.teamSummary?.teamAvgProductivity
   });
 
   // ==================== INDIVIDUAL EXPORTS ====================
@@ -375,9 +374,7 @@ export function ReportsGenerator({
       if (reportData?.dailyMetrics && reportData.dailyMetrics.length > 0) {
         reportData.dailyMetrics.forEach(day => {
           const score = dayScore(day);
-          let eff = 'Low Efficiency';
-          if (score >= 80) eff = 'High Efficiency';
-          else if (score >= 70) eff = 'Moderate Efficiency';
+          const eff = dayEfficiencyLabel(score);
 
           const activeText = (day.totalActivities > 0 || day.activeSeconds > 0 || day.activeHours > 0)
             ? (day.activeHoursFormatted || `${day.activeHours}h`)
@@ -637,7 +634,7 @@ export function ReportsGenerator({
         const hours = (m.totalActivities > 0 || m.activeSeconds > 0) ? (m.activeHoursFormatted || `${m.activeHours}h`) : '-';
         const keys = m.totalKeystrokes > 0 ? m.totalKeystrokes : '-';
         const mouse = m.totalActivities > 0 ? `${m.avgMouse}%` : '-';
-        const eff = m.efficiency === 'No Activity' ? '-' : m.efficiency;
+        const eff = m.totalActivities > 0 ? dayEfficiencyLabel(dayScore(m)) : '-';
         csv += `"${empId}","${name}","${dateDisplay}","${aim}","${blocker}","${achievement}",${acts},"${prod}","${hours}","${keys}","${mouse}","${eff}"\n`;
       });
 
@@ -1240,15 +1237,8 @@ export function ReportsGenerator({
                     <tbody className="divide-y divide-border">
                       {reportData.dailyMetrics.map((day) => {
                         const dayProgress = dayScore(day);
-                        let eff = 'Low Efficiency';
-                        let effColor = 'text-rose-400 bg-rose-500/10 border-rose-500/30';
-                        if (dayProgress >= 80) {
-                          eff = 'High Efficiency';
-                          effColor = 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30';
-                        } else if (dayProgress >= 70) {
-                          eff = 'Moderate Efficiency';
-                          effColor = 'text-amber-400 bg-amber-500/10 border-amber-500/30';
-                        }
+                        const eff = dayEfficiencyLabel(dayProgress);
+                        const effColor = dayZoneStyle(dayProgress).badge;
 
                         return (
                           <tr key={day.date} className="hover:bg-muted/30 transition-colors">
@@ -1433,6 +1423,7 @@ export function ReportsGenerator({
                         const eMonth = String(eDate.getMonth() + 1).padStart(2, '0');
                         const dateText = isSame ? `${sDay}/${sMonth}` : `${sDay}/${sMonth} - ${eDay}/${eMonth}`;
                         const empIdText = m.employeeId || formatEmployeeId(m.email);
+                        const teamEffLabel = dayEfficiencyLabel(dayScore(m));
 
                         return (
                           <tr key={m.id} className="hover:bg-muted/30 transition-colors">
@@ -1505,17 +1496,9 @@ export function ReportsGenerator({
                               {m.totalActivities > 0 ? (
                                 <Badge
                                   variant="outline"
-                                  className={`text-[10px] font-bold ${
-                                    m.efficiency === 'High Efficiency'
-                                      ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30'
-                                      : m.efficiency === 'Moderate'
-                                      ? 'text-amber-400 bg-amber-500/10 border-amber-500/30'
-                                      : m.efficiency === 'Low'
-                                      ? 'text-rose-400 bg-rose-500/10 border-rose-500/30'
-                                      : 'text-zinc-400 bg-zinc-500/10 border-zinc-500/30'
-                                  }`}
+                                  className={`text-[10px] font-bold ${dayZoneStyle(dayScore(m)).badge}`}
                                 >
-                                  {m.efficiency}
+                                  {teamEffLabel}
                                 </Badge>
                               ) : (
                                 <span className="text-muted-foreground">-</span>

@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
-import { dayScore, dayScoreStyle, dayZoneStyle } from '@/lib/dayProductivity';
+import { dayScore, dayScoreStyle, dayZoneStyle, dayEfficiencyLabel } from '@/lib/dayProductivity';
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -112,17 +112,19 @@ export function DailyMonitoringView({
     if (emp && emp.stillExist === 0) {
       return <Badge variant="outline" className="text-rose-400 border-rose-500/30 bg-rose-500/10 font-semibold text-[11px]">Exited</Badge>;
     }
+    const label = emp ? dayEfficiencyLabel(dayScore(emp)) : efficiency;
     if (
+      label === 'No Activity' ||
       efficiency === 'No Activity' ||
       efficiency === 'No Logs Today' ||
       efficiency === 'No Logs Recorded' ||
-      (emp && dayScore(emp) === 0 && (!emp.keystrokes || emp.keystrokes === 0))
+      (emp && dayScore(emp) === 0)
     ) {
       return <Badge variant="outline" className="text-zinc-400 border-zinc-700 bg-zinc-900/60 font-semibold text-[11px]">💤 No Activity</Badge>;
     }
-    if (efficiency === 'High Efficiency') {
+    if (label === 'High Efficiency') {
       return <Badge className="bg-emerald-500 text-white font-semibold text-[11px]">⚡ High Efficiency</Badge>;
-    } else if (efficiency === 'Moderate Efficiency') {
+    } else if (label === 'Moderate Efficiency') {
       return <Badge className="bg-amber-500 text-white font-semibold text-[11px]">⚖️ Moderate Efficiency</Badge>;
     }
     return <Badge className="bg-rose-500 text-white font-semibold text-[11px]">🔻 Low Efficiency</Badge>;
@@ -143,7 +145,6 @@ export function DailyMonitoringView({
 
   const teamDayScore = dayScore({
     dayProductivity: { score: dailyData.teamMetrics.avgDayProductivity },
-    productivityScore: dailyData.teamMetrics.avgProductivityScore,
   });
   const teamDayStyle = dayZoneStyle(teamDayScore);
 

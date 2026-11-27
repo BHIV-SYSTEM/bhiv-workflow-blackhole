@@ -28,7 +28,7 @@ import {
   Keyboard
 } from 'lucide-react';
 import { formatDate } from '@/lib/dateFormat';
-import { dayScore, dayZoneStyle } from '@/lib/dayProductivity';
+import { dayScore, dayZone, dayZoneStyle, dayEfficiencyLabel } from '@/lib/dayProductivity';
 
 /**
  * Generates an executive A4 printable HTML document.
@@ -44,8 +44,13 @@ function generatePrintableReportHtml(data) {
 
   const activeHours = metrics.activeHoursFormatted || "0h 0m";
   const productivity = dayScore(metrics);
-  const efficiency = metrics.efficiencyScore ?? 0;
-  const efficiencyLabel = metrics.efficiencyLabel || (efficiency >= 70 ? 'High' : efficiency >= 45 ? 'Moderate' : 'Low');
+  const productivityZone = dayZone(productivity);
+  const hasActivity = metrics.hasActivity ?? (productivity > 0);
+  const efficiency = productivity;
+  const efficiencyLabel = hasActivity ? dayEfficiencyLabel(productivity) : 'No Activity';
+  const pillClass = !hasActivity
+    ? ''
+    : (productivityZone === 'green' ? 'pill-green' : (productivityZone === 'yellow' ? 'pill-yellow' : 'pill-red'));
   const keystrokes = (metrics.keystrokes || 0).toLocaleString();
   const mouseEvents = (metrics.mouseEvents || 0).toLocaleString();
   const mouseScore = metrics.mouseScore ?? 0;
@@ -214,6 +219,8 @@ function generatePrintableReportHtml(data) {
       color: #334155;
     }
     .pill-green { background: #dcfce7; color: #166534; }
+    .pill-yellow { background: #fef3c7; color: #92400e; }
+    .pill-red { background: #ffe4e6; color: #9f1239; }
     .pill-blue { background: #dbeafe; color: #1e40af; }
     .aim-box {
       border: 1px solid #cbd5e1;
@@ -353,14 +360,14 @@ function generatePrintableReportHtml(data) {
         <div class="metric-val">${productivity}%</div>
         <div class="metric-sub">
           <span>Productivity Score</span>
-          <span class="pill">${productivity >= 60 ? 'Optimal' : 'Standard'}</span>
+          <span class="pill ${pillClass}">${dayZoneStyle(productivity).label}</span>
         </div>
       </div>
       <div class="metric-card">
         <div class="metric-val">${efficiency}%</div>
         <div class="metric-sub">
           <span>Efficiency</span>
-          <span class="pill pill-green">${efficiencyLabel}</span>
+          <span class="pill ${pillClass}">${efficiencyLabel}</span>
         </div>
       </div>
       <div class="metric-card">
@@ -480,6 +487,10 @@ export function DayEndReportDialog({ isOpen, onClose, reportData, isLoading, pro
   const workSummary = reportData?.workSummary || {};
   const metrics = reportData?.metrics || {};
   const taskCounts = reportData?.taskCounts || {};
+  const productivity = dayScore(metrics);
+  const hasActivity = metrics.hasActivity ?? (productivity > 0);
+  const efficiency = productivity;
+  const efficiencyLabel = hasActivity ? dayEfficiencyLabel(productivity) : 'No Activity';
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -607,12 +618,12 @@ export function DayEndReportDialog({ isOpen, onClose, reportData, isLoading, pro
                 </div>
 
                 {/* 3. Efficiency Score */}
-                <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-center">
-                  <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
-                    {metrics.efficiencyScore ?? 0}%
+                <div className={`p-3.5 rounded-xl ${dayZoneStyle(productivity).badge} text-center`}>
+                  <div className={`text-2xl font-black ${dayZoneStyle(productivity).text}`}>
+                    {efficiency}%
                   </div>
                   <div className="text-[11px] text-muted-foreground mt-1 flex items-center justify-center gap-1 font-medium">
-                    <Zap className="h-3.5 w-3.5 text-emerald-500" /> Efficiency ({metrics.efficiencyLabel || 'Good'})
+                    <Zap className={`h-3.5 w-3.5 ${dayZoneStyle(productivity).text}`} /> {efficiencyLabel}
                   </div>
                 </div>
 

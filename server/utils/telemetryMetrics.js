@@ -181,7 +181,17 @@ function summarizeActivitiesWithSession(activities = [], sessionInfo = null) {
     ? Math.round(totalMouseScore / activeMouseSamples)
     : 0;
 
-  const productivityEfficiency = getEfficiencyLabel(avgProductivityScore, hasActivity);
+  // Efficiency is the *name of the day-score colour*, never a second score.
+  // Loaded lazily to avoid a circular require with the day-productivity engine.
+  let productivityEfficiency = getEfficiencyLabel(avgProductivityScore, hasActivity);
+  let canonicalDay = null;
+  if (hasTelemetry) {
+    const { computeDayProductivity, efficiencyLabelForDay } = require('./dayProductivity');
+    canonicalDay = computeDayProductivity(
+      [...logs].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+    );
+    productivityEfficiency = efficiencyLabelForDay(canonicalDay.score, hasActivity);
+  }
 
   const appDetails = Object.entries(appUsageMap)
     .sort((a, b) => b[1] - a[1])
@@ -205,6 +215,9 @@ function summarizeActivitiesWithSession(activities = [], sessionInfo = null) {
     avgProductivityScore,
     productivityScore: avgProductivityScore,
     productivityEfficiency,
+    dayProductivity: canonicalDay
+      ? { score: canonicalDay.score, zone: canonicalDay.zone }
+      : null,
     hasActivity,
     hasStartedDay: Boolean(hasSession || hasTelemetry || activeSeconds > 0),
     startDayTime: sessionInfo?.startTime || null,

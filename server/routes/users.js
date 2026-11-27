@@ -8,7 +8,10 @@ const auth = require("../middleware/auth")
 const adminAuth = require("../middleware/adminAuth")
 const auditLogService = require('../services/auditLogService');
 const { computeUserTaskCounts } = require("../utils/taskStats");
-const { computeDayProductivity } = require("../utils/dayProductivity");
+const {
+  computeDayProductivity,
+  efficiencyLabelForDay,
+} = require("../utils/dayProductivity");
 
 // Helper to get branch filter from request
 const getBranchQuery = (req) => {
@@ -300,8 +303,8 @@ router.get("/:id/daily-summary", auth, async (req, res) => {
 
     const avgProductivity = unified.avgProductivityScore;
     const avgMouse = unified.avgMouseActivity;
-    let efficiencyScore = unified.avgProductivityScore;
-    let efficiencyLabel = unified.productivityEfficiency;
+    let efficiencyScore = 0;
+    let efficiencyLabel = efficiencyLabelForDay(0, false);
     const scopedActivities = todayActivities || [];
 
     // Canonical red/yellow/green day score — the same value shown in the
@@ -314,9 +317,7 @@ router.get("/:id/daily-summary", auth, async (req, res) => {
       );
       dayProductivity = { score: dayResult.score, zone: dayResult.zone };
       efficiencyScore = dayResult.score;
-      efficiencyLabel = dayResult.zone === 'green'
-        ? 'High'
-        : (dayResult.zone === 'yellow' ? 'Moderate' : 'Low');
+      efficiencyLabel = efficiencyLabelForDay(dayResult.score, true);
     }
 
     // Task counts
@@ -376,10 +377,12 @@ router.get("/:id/daily-summary", auth, async (req, res) => {
         activeHours: totalHours,
         activeHoursFormatted,
         sessionHoursFormatted,
-        productivityScore: avgProductivity,
+        productivityScore: dayProductivity.score,
+        legacyProductivityScore: avgProductivity,
         dayProductivity,
         efficiencyScore,
         efficiencyLabel,
+        hasActivity: unified.hasActivity || scopedActivities.length > 0,
         keystrokes: totalKeystrokes,
         mouseScore: avgMouse,
         mouseEvents: totalMouseEvents,

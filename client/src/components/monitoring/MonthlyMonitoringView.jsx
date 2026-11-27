@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
-import { dayScore, dayScoreStyle, dayZoneStyle } from '@/lib/dayProductivity';
+import { dayScore, dayScoreStyle, dayZoneStyle, dayEfficiencyLabel } from '@/lib/dayProductivity';
 import {
   Select,
   SelectContent,
@@ -326,14 +326,13 @@ export function MonthlyMonitoringView({
     if (emp && (emp.stillExist === 0 || emp.currentStatus === 'Exited')) {
       return <Badge className="bg-rose-500/15 text-rose-400 border border-rose-500/30 font-bold text-xs px-2.5 py-0.5">Account Exited</Badge>;
     }
-    if (
-      emp &&
-      ((!emp.avgProductivityScore || emp.avgProductivityScore === 0) && (!emp.totalKeystrokes || emp.totalKeystrokes === 0))
-    ) {
+    const score = emp ? dayScore(emp) : 0;
+    const label = emp && score > 0 ? dayEfficiencyLabel(score) : efficiency;
+    if (emp && score === 0) {
       return <Badge variant="outline" className="text-zinc-400 border-zinc-800 bg-zinc-900/40 font-medium text-xs px-2.5 py-0.5">💤 No Activity</Badge>;
     }
 
-    switch (efficiency) {
+    switch (label) {
       case 'High Efficiency':
         return <Badge className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold text-xs px-2.5 py-0.5">⚡ High Efficiency</Badge>;
       case 'Moderate Efficiency':
@@ -425,20 +424,15 @@ export function MonthlyMonitoringView({
   const verifiedEfficiency = calculatedMonthlyMetrics
     ? calculatedMonthlyMetrics.productivityEfficiency
     : (isEmployeeExited ? 'Exited' : (activeEmployeeObj?.productivityEfficiency || 'No Activity'));
-  const verifiedScore = calculatedMonthlyMetrics
-    ? calculatedMonthlyMetrics.avgProductivityScore
-    : (isEmployeeExited ? 0 : (activeEmployeeObj?.avgProductivityScore ?? 0));
   const verifiedWorkedDays = calculatedMonthlyMetrics
     ? calculatedMonthlyMetrics.workedDaysCount
     : (empMonthlyData.employee?.workedDaysCount ?? 0);
   const verifiedDayScore = dayScore({
     dayProductivity: activeEmployeeObj?.dayProductivity,
-    productivityScore: verifiedScore,
   });
   const verifiedDayStyle = dayZoneStyle(verifiedDayScore);
   const teamDayScore = dayScore({
     dayProductivity: { score: teamMonthlyData.overallSummary?.avgDayProductivity },
-    productivityScore: teamMonthlyData.overallSummary?.avgProductivityScore,
   });
   const teamDayStyle = dayZoneStyle(teamDayScore);
 
@@ -1095,7 +1089,7 @@ export function MonthlyMonitoringView({
                           </Badge>
                         </td>
                         <td className="p-3.5 text-right">
-                          {getEfficiencyBadge(dayItem.productivityEfficiency)}
+                          {getEfficiencyBadge(dayItem.productivityEfficiency, dayItem)}
                         </td>
                       </tr>
                     ))}

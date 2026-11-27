@@ -24,12 +24,15 @@ const { getViolationScreenshots, generateOptimizedScreenshotUrl } = require('../
 const {
   getLocalDateKey,
   parseLocalDateParam,
-  getEfficiencyLabel,
   evaluateSample,
   summarizeActivitiesWithSession,
   resolveSessionsMap
 } = require('../utils/telemetryMetrics');
-const { computeDayProductivity, classifyZone } = require('../utils/dayProductivity');
+const {
+  computeDayProductivity,
+  classifyZone,
+  efficiencyLabelForDay,
+} = require('../utils/dayProductivity');
 
 /**
  * Additive red/yellow/green day score for an employee's already-loaded samples.
@@ -308,6 +311,20 @@ router.get('/employees/:id/activity', async (req, res) => {
       productivity_score: evaluateSample(act).qualityScore
     }));
 
+    // Canonical day score for every date in the response, so range charts can
+    // plot the same numbers as the daily cards instead of raw sample averages.
+    const activitiesByDate = new Map();
+    normalizedActivities.forEach((act) => {
+      const key = getLocalDateKey(act.timestamp);
+      if (!key) return;
+      if (!activitiesByDate.has(key)) activitiesByDate.set(key, []);
+      activitiesByDate.get(key).push(act);
+    });
+    const dayScoresByDate = {};
+    activitiesByDate.forEach((dayLogs, key) => {
+      dayScoresByDate[key] = dayProductivityFor(dayLogs).score;
+    });
+
     let summary = null;
     if (targetDateObj) {
       const start = new Date(targetDateObj.getFullYear(), targetDateObj.getMonth(), targetDateObj.getDate(), 0, 0, 0, 0);
@@ -317,6 +334,10 @@ router.get('/employees/:id/activity', async (req, res) => {
       const sessionInfo = sessionsMap.get(`${employeeId}_${dateKey}`) || null;
       summary = summarizeActivitiesWithSession(normalizedActivities, sessionInfo);
       summary.dayProductivity = dayProductivityFor(normalizedActivities);
+      summary.productivityEfficiency = efficiencyLabelForDay(
+        summary.dayProductivity.score,
+        summary.hasActivity || summary.dayProductivity.score > 0
+      );
     }
 
     // Find the latest historical activity log to provide true last active timestamp
@@ -336,6 +357,7 @@ router.get('/employees/:id/activity', async (req, res) => {
     res.json({
       activities: normalizedActivities,
       summary,
+      dayScoresByDate,
       realtimeStatus,
       totalCount: normalizedActivities.length,
       lastActiveTimestamp: lastActiveLog?.timestamp || null,
@@ -597,12 +619,23 @@ router.get('/intelligent/stats', async (req, res) => {
       const activities = await EmployeeActivity.find(actFilter).limit(100);
 
       if (activities.length > 0) {
+        const activitiesByDate = new Map();
+        activities.forEach((act) => {
+          const key = getLocalDateKey(act.timestamp);
+          if (!key) return;
+          if (!activitiesByDate.has(key)) activitiesByDate.set(key, []);
+          activitiesByDate.get(key).push(act);
+        });
+        const canonicalScoreByDate = new Map(
+          [...activitiesByDate.entries()].map(([key, dayLogs]) => [key, dayProductivityFor(dayLogs).score])
+        );
+
         activities.forEach(act => {
           const appName = act.active_application?.name || 'Development / Work';
           stats.contentTypes[appName] = (stats.contentTypes[appName] || 0) + 1;
-          const score = act.productivity_score || 85;
+          const score = canonicalScoreByDate.get(getLocalDateKey(act.timestamp)) ?? 0;
           stats.taskRelevanceScores.push(score);
-          const isHighRisk = (act.productivity_score && act.productivity_score < 40);
+          const isHighRisk = score < 40;
           const riskLevel = isHighRisk ? 'high' : 'low';
           stats.riskLevels[riskLevel] = (stats.riskLevels[riskLevel] || 0) + 1;
         });
@@ -696,16 +729,15 @@ router.get('/productivity/:employeeId', async (req, res) => {
       timestamp: { $gte: start, $lte: end }
     }).select('timestamp keystroke_count mouse_activity_score mouse_event_count idle_duration interval_seconds app_category productivity_score active_application metadata').lean();
 
-    const avgProd = activities.length > 0
-      ? Math.round(activities.reduce((sum, a) => sum + (a.productivity_score || 0), 0) / activities.length)
-      : 80;
+    const dayProductivity = dayProductivityFor(activities);
+    const dayScore = dayProductivity.score;
 
     res.json({
       summary: {
-        overallScore: avgProd,
-        productivityScore: avgProd,
+        overallScore: dayScore,
+        productivityScore: dayScore,
         totalSamples: activities.length,
-        dayProductivity: dayProductivityFor(activities)
+        dayProductivity
       }
     });
   } catch (error) {
@@ -778,6 +810,7 @@ router.get('/reports/:employeeId', async (req, res) => {
       const dayLogs = activitiesByDate[dateKey] || [];
       const sessionInfo = sessionsMap.get(`${employeeId}_${dateKey}`) || null;
       const metrics = summarizeActivitiesWithSession(dayLogs, sessionInfo);
+      const dayProductivity = dayProductivityFor(dayLogs);
       const hNum = Math.floor(metrics.activeSeconds / 3600);
       const mNum = Math.floor((metrics.activeSeconds % 3600) / 60);
       dailyMetricsMap[dateKey] = {
@@ -786,8 +819,9 @@ router.get('/reports/:employeeId', async (req, res) => {
         blocker: blockerMap.get(dateKey) || '-',
         achievement: achievementMap.get(dateKey) || '-',
         totalActivities: metrics.logCount,
-        avgProductivityScore: metrics.avgProductivityScore,
-        dayProductivity: dayProductivityFor(dayLogs),
+        avgProductivityScore: dayProductivity.score,
+        legacyAvgProductivityScore: metrics.avgProductivityScore,
+        dayProductivity,
         activeHours: Math.round((metrics.activeSeconds / 3600) * 10) / 10,
         activeHoursFormatted: `${hNum}h ${mNum}m`,
         activeSeconds: metrics.activeSeconds,
@@ -822,7 +856,7 @@ router.get('/reports/:employeeId', async (req, res) => {
     // Overall summary
     const daysWithActivities = dailyMetrics.filter(d => d.totalActivities > 0);
     const avgScore = daysWithActivities.length > 0
-      ? Math.round(daysWithActivities.reduce((acc, d) => acc + d.avgProductivityScore, 0) / daysWithActivities.length)
+      ? Math.round(daysWithActivities.reduce((acc, d) => acc + d.dayProductivity.score, 0) / daysWithActivities.length)
       : 0;
 
     res.json({
@@ -1560,6 +1594,7 @@ router.get('/team-summary', async (req, res) => {
       const activeHoursFormatted = `${Math.floor(metrics.activeSeconds / 3600)}h ${Math.floor((metrics.activeSeconds % 3600) / 60)}m`;
       const idleTimeFormatted = `${Math.floor(metrics.totalIdleSeconds / 60)}m`;
       const historicalLastLog = latestHistoricalLogByEmp.get(empIdStr);
+      const dayProductivity = dayProductivityFor(activities);
 
       return {
         _id: emp._id,
@@ -1570,8 +1605,9 @@ router.get('/team-summary', async (req, res) => {
         currentStatus,
         hasStartedDay: metrics.hasStartedDay,
         startDayTime: metrics.startDayTime,
-        productivityScore: metrics.avgProductivityScore,
-        dayProductivity: dayProductivityFor(activities),
+        productivityScore: dayProductivity.score,
+        legacyProductivityScore: metrics.avgProductivityScore,
+        dayProductivity,
         activeHours: activeHoursFormatted,
         activeSeconds: metrics.activeSeconds,
         idleTime: idleTimeFormatted,
@@ -1583,7 +1619,10 @@ router.get('/team-summary', async (req, res) => {
           windowTitle: latestLog?.active_application?.title || (metrics.hasStartedDay ? 'Attendance active (unmonitored)' : 'Away / Offline'),
           url: latestLog?.active_application?.url || ''
         },
-        productivityEfficiency: metrics.productivityEfficiency,
+        productivityEfficiency: efficiencyLabelForDay(
+          dayProductivity.score,
+          metrics.hasActivity || dayProductivity.score > 0
+        ),
         lastActiveTimestamp: latestLog?.timestamp || historicalLastLog?.timestamp || null
       };
     });
@@ -1731,7 +1770,7 @@ router.get('/daily-summary', async (req, res) => {
         totalTeamKeystrokes += metrics.totalKeystrokes;
         totalTeamActiveSeconds += metrics.activeSeconds;
         totalTeamIdleSeconds += metrics.totalIdleSeconds;
-        teamProductivitySum += metrics.avgProductivityScore;
+        teamProductivitySum += dayProductivity.score;
         dayProductivitySum += dayProductivity.score;
         activeEmployeeCount++;
       }
@@ -1748,12 +1787,16 @@ router.get('/daily-summary', async (req, res) => {
         activeSeconds: metrics.activeSeconds,
         totalIdleTime: `${Math.floor(metrics.totalIdleSeconds / 60)}m`,
         idleSeconds: metrics.totalIdleSeconds,
-        productivityScore: metrics.avgProductivityScore,
+        productivityScore: dayProductivity.score,
+        legacyProductivityScore: metrics.avgProductivityScore,
         dayProductivity,
         keystrokes: metrics.totalKeystrokes,
         mouseActivity: metrics.avgMouseActivity,
         activityDetails: metrics.appDetails.length > 0 ? metrics.appDetails : [{ name: 'Workspace Active', count: 1 }],
-        productivityEfficiency: metrics.productivityEfficiency
+        productivityEfficiency: efficiencyLabelForDay(
+          dayProductivity.score,
+          metrics.hasActivity || dayProductivity.score > 0
+        )
       };
     });
 
@@ -1777,7 +1820,7 @@ router.get('/daily-summary', async (req, res) => {
       ? Math.round(dayProductivitySum / activeEmployeeCount)
       : 0;
 
-    const overallEfficiency = getEfficiencyLabel(avgTeamProductivity, activeEmployeeCount > 0);
+    const overallEfficiency = efficiencyLabelForDay(avgDayProductivity, activeEmployeeCount > 0);
 
     const responseDateStr = date || `${startOfDay.getFullYear()}-${String(startOfDay.getMonth() + 1).padStart(2, '0')}-${String(startOfDay.getDate()).padStart(2, '0')}`;
     res.json({
@@ -1911,16 +1954,15 @@ router.get('/monthly-summary', async (req, res) => {
         }
       }
 
+      const avgDayScore = dayActiveEmpCount > 0 ? Math.round(dayProdDayScoreSum / dayActiveEmpCount) : 0;
       dayByDayBreakdown.push({
         date: dateStr,
         day: d,
         activeHours: Math.round((dayActiveSec / 3600) * 10) / 10,
         idleHours: Math.round((dayIdleSec / 3600) * 10) / 10,
-        avgProductivityScore: dayActiveEmpCount > 0 ? Math.round(dayProdSum / dayActiveEmpCount) : 0,
-        dayProductivity: (() => {
-          const avg = dayActiveEmpCount > 0 ? Math.round(dayProdDayScoreSum / dayActiveEmpCount) : 0;
-          return { score: avg, zone: classifyZone(avg, dayActiveEmpCount > 0) };
-        })(),
+        avgProductivityScore: avgDayScore,
+        legacyAvgProductivityScore: dayActiveEmpCount > 0 ? Math.round(dayProdSum / dayActiveEmpCount) : 0,
+        dayProductivity: { score: avgDayScore, zone: classifyZone(avgDayScore, dayActiveEmpCount > 0) },
         keystrokes: dayKeystrokes
       });
     }
@@ -2002,7 +2044,7 @@ router.get('/monthly-summary', async (req, res) => {
         activeEmpCount++;
       }
 
-      const efficiency = getEfficiencyLabel(avgProd, empWorkedDays > 0);
+      const efficiency = efficiencyLabelForDay(avgDayProd, empWorkedDays > 0);
       const hasStartedToday = Boolean(empStartedTodayMap.get(empIdStr));
 
       return {
@@ -2015,7 +2057,8 @@ router.get('/monthly-summary', async (req, res) => {
         activeSeconds: empActiveSec,
         totalIdleHours: `${Math.floor(empIdleSec / 3600)}h ${Math.floor((empIdleSec % 3600) / 60)}m`,
         idleSeconds: empIdleSec,
-        avgProductivityScore: avgProd,
+        avgProductivityScore: avgDayProd,
+        legacyAvgProductivityScore: avgProd,
         dayProductivity: { score: avgDayProd, zone: classifyZone(avgDayProd, empWorkedDays > 0) },
         totalKeystrokes: empKeystrokes,
         avgMouseActivity: avgMouse,
@@ -2039,7 +2082,7 @@ router.get('/monthly-summary', async (req, res) => {
 
     const overallAvgProductivity = activeEmpCount > 0 ? Math.round(totalTeamProdSum / activeEmpCount) : 0;
     const overallAvgDayProductivity = activeEmpCount > 0 ? Math.round(totalTeamDayProdSum / activeEmpCount) : 0;
-    const overallProductivityEfficiency = getEfficiencyLabel(overallAvgProductivity, activeEmpCount > 0);
+    const overallProductivityEfficiency = efficiencyLabelForDay(overallAvgDayProductivity, activeEmpCount > 0);
 
     res.json({
       success: true,
@@ -2047,7 +2090,8 @@ router.get('/monthly-summary', async (req, res) => {
       overallSummary: {
         totalActiveHours: `${Math.floor(totalTeamActiveSec / 3600)}h ${Math.floor((totalTeamActiveSec % 3600) / 60)}m`,
         totalIdleHours: `${Math.floor(totalTeamIdleSec / 3600)}h ${Math.floor((totalTeamIdleSec % 3600) / 60)}m`,
-        avgProductivityScore: overallAvgProductivity,
+        avgProductivityScore: overallAvgDayProductivity,
+        legacyAvgProductivityScore: overallAvgProductivity,
         avgDayProductivity: overallAvgDayProductivity,
         totalKeystrokes: totalTeamKeystrokes,
         totalMouseActivity: activeEmpCount > 0 ? Math.round(totalTeamMouseScore / activeEmpCount) : 0,
@@ -2231,12 +2275,16 @@ router.get('/monthly-employee-breakdown', async (req, res) => {
         activeSeconds: metrics.activeSeconds,
         idleTime: `${Math.floor(metrics.totalIdleSeconds / 60)}m`,
         idleSeconds: metrics.totalIdleSeconds,
-        productivityScore: metrics.avgProductivityScore,
+        productivityScore: dayProductivity.score,
+        legacyProductivityScore: metrics.avgProductivityScore,
         dayProductivity,
         keystrokes: metrics.totalKeystrokes,
         mouseActivity: metrics.avgMouseActivity,
         topApp,
-        productivityEfficiency: metrics.productivityEfficiency
+        productivityEfficiency: efficiencyLabelForDay(
+          dayProductivity.score,
+          metrics.hasActivity || dayProductivity.score > 0
+        )
       });
     }
 
@@ -2246,7 +2294,7 @@ router.get('/monthly-employee-breakdown', async (req, res) => {
 
     let overallEfficiency = 'No Activity';
     if (isExited) overallEfficiency = 'Exited';
-    else overallEfficiency = getEfficiencyLabel(avgMonthlyProd, workedDaysCount > 0);
+    else overallEfficiency = efficiencyLabelForDay(avgMonthlyDayProd, workedDaysCount > 0);
 
     res.json({
       success: true,
@@ -2263,7 +2311,8 @@ router.get('/monthly-employee-breakdown', async (req, res) => {
         totalActiveSeconds: totalMonthlyActiveSec,
         totalIdleHours: `${Math.floor(totalMonthlyIdleSec / 3600)}h ${Math.floor((totalMonthlyIdleSec % 3600) / 60)}m`,
         totalIdleSeconds: totalMonthlyIdleSec,
-        avgProductivityScore: isExited ? 0 : avgMonthlyProd,
+        avgProductivityScore: isExited ? 0 : avgMonthlyDayProd,
+        legacyAvgProductivityScore: isExited ? 0 : avgMonthlyProd,
         dayProductivity: {
           score: isExited ? 0 : avgMonthlyDayProd,
           zone: classifyZone(avgMonthlyDayProd, !isExited && workedDaysCount > 0),

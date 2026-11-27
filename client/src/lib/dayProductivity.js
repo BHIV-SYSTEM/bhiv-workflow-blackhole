@@ -43,17 +43,22 @@ export function dayZoneStyle(score) {
   return DAY_ZONE_STYLES[dayZone(score)];
 }
 
+/** Efficiency is the day-score colour, written as a label. */
+export function dayEfficiencyLabel(score) {
+  const zone = dayZone(score);
+  if (zone === 'green') return 'High Efficiency';
+  if (zone === 'yellow') return 'Moderate Efficiency';
+  return 'Low Efficiency';
+}
+
 /**
- * Read the day score from any progress payload that carries it.
- * Legacy score fields are used only when a payload has no day score yet.
+ * Read the canonical day score from a payload. Legacy averages are never used
+ * as a display fallback — a missing score is shown as 0, not random data.
  */
 export function dayScore(source) {
   const value = source?.dayProductivity?.score;
-  if (value !== undefined && value !== null && !Number.isNaN(Number(value))) {
-    return Number(value);
-  }
-  const legacy = source?.productivityScore ?? source?.avgProductivityScore ?? source?.avgProductivity ?? 0;
-  return Number(legacy) || 0;
+  if (value === undefined || value === null || Number.isNaN(Number(value))) return 0;
+  return Number(value);
 }
 
 /** Zone styles for a progress payload (employee / team summary row). */
