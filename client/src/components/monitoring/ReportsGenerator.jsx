@@ -314,7 +314,7 @@ export function ReportsGenerator({
 
   // Calculate true average productivity based strictly on days where activities occurred
   const workedDaysList = useMemo(() => {
-    return (reportData?.dailyMetrics || []).filter(d => (d.totalActivities > 0 || d.activeHours > 0) && d.avgProductivityScore > 0);
+    return (reportData?.dailyMetrics || []).filter(d => (d.totalActivities > 0 || d.activeHours > 0) && dayScore(d) > 0);
   }, [reportData?.dailyMetrics]);
 
   const avgProductivityWorkedDays = useMemo(() => {
@@ -322,6 +322,11 @@ export function ReportsGenerator({
     const sum = workedDaysList.reduce((acc, d) => acc + dayScore(d), 0);
     return Math.round(sum / workedDaysList.length);
   }, [workedDaysList]);
+
+  const teamAvgDayScore = dayScore({
+    dayProductivity: { score: teamReportData?.teamSummary?.teamAvgDayProductivity },
+    productivityScore: teamReportData?.teamSummary?.teamAvgProductivity
+  });
 
   // ==================== INDIVIDUAL EXPORTS ====================
   const exportToExcelCSV = async () => {
@@ -369,9 +374,10 @@ export function ReportsGenerator({
 
       if (reportData?.dailyMetrics && reportData.dailyMetrics.length > 0) {
         reportData.dailyMetrics.forEach(day => {
+          const score = dayScore(day);
           let eff = 'Low Efficiency';
-          if (day.avgProductivityScore >= 50) eff = 'High Efficiency';
-          else if (day.avgProductivityScore >= 30) eff = 'Moderate Efficiency';
+          if (score >= 80) eff = 'High Efficiency';
+          else if (score >= 70) eff = 'Moderate Efficiency';
 
           const activeText = (day.totalActivities > 0 || day.activeSeconds > 0 || day.activeHours > 0)
             ? (day.activeHoursFormatted || `${day.activeHours}h`)
@@ -379,7 +385,7 @@ export function ReportsGenerator({
           const aim = cleanIndividualField(day.aim || day.aims || day.todayAim);
           const blocker = cleanIndividualField(day.blocker || day.blockers);
           const achievement = cleanIndividualField(day.achievement || day.achievements);
-          csv += `"${empIdFormatted}","${day.date}","${aim}","${blocker}","${achievement}",${day.totalActivities > 0 ? day.totalActivities : '-'},"${day.totalActivities > 0 ? `${day.avgProductivityScore}%` : '-'}","${activeText}",${day.totalKeystroke > 0 ? day.totalKeystroke : '-'},"${day.totalActivities > 0 ? `${day.avgMouseActivity}%` : '-'}","${day.totalActivities > 0 ? eff : '-'}"\n`;
+          csv += `"${empIdFormatted}","${day.date}","${aim}","${blocker}","${achievement}",${day.totalActivities > 0 ? day.totalActivities : '-'},"${day.totalActivities > 0 ? `${score}%` : '-'}","${activeText}",${day.totalKeystroke > 0 ? day.totalKeystroke : '-'},"${day.totalActivities > 0 ? `${day.avgMouseActivity}%` : '-'}","${day.totalActivities > 0 ? eff : '-'}"\n`;
         });
       } else {
         csv += 'No daily activity logs recorded for this period\n';
@@ -627,7 +633,7 @@ export function ReportsGenerator({
         const blocker = cleanTeamField(m.blocker || m.blockers);
         const achievement = cleanTeamField(m.achievement || m.achievements);
         const acts = m.totalActivities > 0 ? m.totalActivities : '-';
-        const prod = m.totalActivities > 0 ? `${m.avgProductivity}%` : '-';
+        const prod = m.totalActivities > 0 ? `${dayScore(m)}%` : '-';
         const hours = (m.totalActivities > 0 || m.activeSeconds > 0) ? (m.activeHoursFormatted || `${m.activeHours}h`) : '-';
         const keys = m.totalKeystrokes > 0 ? m.totalKeystrokes : '-';
         const mouse = m.totalActivities > 0 ? `${m.avgMouse}%` : '-';
@@ -1233,12 +1239,13 @@ export function ReportsGenerator({
                     </thead>
                     <tbody className="divide-y divide-border">
                       {reportData.dailyMetrics.map((day) => {
+                        const dayProgress = dayScore(day);
                         let eff = 'Low Efficiency';
                         let effColor = 'text-rose-400 bg-rose-500/10 border-rose-500/30';
-                        if (day.avgProductivityScore >= 50) {
+                        if (dayProgress >= 80) {
                           eff = 'High Efficiency';
                           effColor = 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30';
-                        } else if (day.avgProductivityScore >= 30) {
+                        } else if (dayProgress >= 70) {
                           eff = 'Moderate Efficiency';
                           effColor = 'text-amber-400 bg-amber-500/10 border-amber-500/30';
                         }
@@ -1317,12 +1324,12 @@ export function ReportsGenerator({
 
                   <div className="text-center p-3 rounded-2xl bg-primary/5 border border-primary/10">
                     <TrendingUp className="h-6 w-6 text-primary mx-auto mb-1.5" />
-                    <p className={`text-2xl font-black flex items-center justify-center gap-1.5 ${getProductivityColor(teamReportData.teamSummary?.teamAvgProductivity || 0)}`}>
-                      {teamReportData.teamSummary?.teamAvgProductivity || 0}%
-                      <span className={`h-2.5 w-2.5 rounded-full ${dayZoneStyle(teamReportData.teamSummary?.teamAvgProductivity || 0).dot}`} />
+                    <p className={`text-2xl font-black flex items-center justify-center gap-1.5 ${getProductivityColor(teamAvgDayScore)}`}>
+                      {teamAvgDayScore}%
+                      <span className={`h-2.5 w-2.5 rounded-full ${dayZoneStyle(teamAvgDayScore).dot}`} />
                     </p>
                     <p className="text-[11px] text-muted-foreground font-semibold uppercase tracking-wider mt-0.5">
-                      Team Avg Productivity
+                      Team Avg Productivity · {dayZoneStyle(teamAvgDayScore).label}
                     </p>
                   </div>
 
@@ -1468,12 +1475,12 @@ export function ReportsGenerator({
                             </td>
 
                             {/* 4. Productivity */}
-                            <td className={`p-3.5 text-center font-bold ${dayScoreStyle({ productivityScore: m.avgProductivity }).text}`}>
+                            <td className={`p-3.5 text-center font-bold ${dayScoreStyle(m).text}`}>
                               {m.totalActivities > 0 ? (
                                 <div className="flex items-center justify-center gap-1.5">
-                                  {m.avgProductivity}%
-                                  <span className={`h-2 w-2 rounded-full ${dayScoreStyle({ productivityScore: m.avgProductivity }).dot}`} />
-                                  <span className="text-[10px] font-semibold">{dayScoreStyle({ productivityScore: m.avgProductivity }).label}</span>
+                                  {dayScore(m)}%
+                                  <span className={`h-2 w-2 rounded-full ${dayScoreStyle(m).dot}`} />
+                                  <span className="text-[10px] font-semibold">{dayScoreStyle(m).label}</span>
                                 </div>
                               ) : '-'}
                             </td>

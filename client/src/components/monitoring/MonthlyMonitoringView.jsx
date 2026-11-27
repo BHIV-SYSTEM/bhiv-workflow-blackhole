@@ -395,7 +395,7 @@ export function MonthlyMonitoringView({
       d.status === 'Completed Workday' ||
       (d.activeSeconds || 0) > 0 ||
       (d.logCount || 0) > 0 ||
-      (d.productivityScore || 0) > 0
+      dayScore(d) > 0
     );
 
     if (workedDays.length === 0) {
@@ -406,12 +406,12 @@ export function MonthlyMonitoringView({
       };
     }
 
-    const sumProd = workedDays.reduce((acc, d) => acc + (d.productivityScore || 0), 0);
+    const sumProd = workedDays.reduce((acc, d) => acc + dayScore(d), 0);
     const avgProd = Math.round(sumProd / workedDays.length);
 
     let efficiency = 'Low Efficiency';
-    if (avgProd >= 50) efficiency = 'High Efficiency';
-    else if (avgProd >= 30) efficiency = 'Moderate Efficiency';
+    if (avgProd >= 80) efficiency = 'High Efficiency';
+    else if (avgProd >= 70) efficiency = 'Moderate Efficiency';
 
     return {
       avgProductivityScore: avgProd,
@@ -948,8 +948,8 @@ export function MonthlyMonitoringView({
                     />
                     <Area
                       type="monotone"
-                      dataKey="productivityScore"
-                      name="Productivity %"
+                      dataKey="dayProductivity.score"
+                      name="Day Score %"
                       stroke="#10b981"
                       strokeWidth={2}
                       fillOpacity={1}

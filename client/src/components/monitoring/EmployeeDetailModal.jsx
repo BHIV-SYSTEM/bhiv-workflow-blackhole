@@ -126,11 +126,21 @@ export function EmployeeDetailModal({ employee, onClose }) {
         hourlyMap[hourLabel].count++;
       });
 
-      const processedTimeline = Object.values(hourlyMap).map((h) => ({
-        hour: h.hour,
-        keystrokes: h.keystrokes,
-        productivity: Math.round(h.productivity / (h.count || 1))
-      }));
+      // Plot the canonical red/yellow/green day score so the chart ends on the
+      // exact same percentage as the KPI card. Legacy per-sample averages are
+      // kept only as a fallback for payloads that predate the day score.
+      const backendHourly = backendSummary?.dayProductivity?.hourly;
+      const processedTimeline = Array.isArray(backendHourly) && backendHourly.length > 0
+        ? backendHourly.map((h) => ({
+            hour: `${h.hour}:00`,
+            keystrokes: hourlyMap[`${h.hour}:00`]?.keystrokes || 0,
+            productivity: h.score
+          }))
+        : Object.values(hourlyMap).map((h) => ({
+            hour: h.hour,
+            keystrokes: h.keystrokes,
+            productivity: Math.round(h.productivity / (h.count || 1))
+          }));
       setTimelineData(processedTimeline);
 
       const logCount = dayLogs.length;

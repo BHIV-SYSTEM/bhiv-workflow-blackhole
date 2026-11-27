@@ -8,6 +8,7 @@ const auth = require("../middleware/auth")
 const adminAuth = require("../middleware/adminAuth")
 const auditLogService = require('../services/auditLogService');
 const { computeUserTaskCounts } = require("../utils/taskStats");
+const { computeDayProductivity } = require("../utils/dayProductivity");
 
 // Helper to get branch filter from request
 const getBranchQuery = (req) => {
@@ -299,9 +300,24 @@ router.get("/:id/daily-summary", auth, async (req, res) => {
 
     const avgProductivity = unified.avgProductivityScore;
     const avgMouse = unified.avgMouseActivity;
-    const efficiencyScore = unified.avgProductivityScore;
-    const efficiencyLabel = unified.productivityEfficiency;
+    let efficiencyScore = unified.avgProductivityScore;
+    let efficiencyLabel = unified.productivityEfficiency;
     const scopedActivities = todayActivities || [];
+
+    // Canonical red/yellow/green day score — the same value shown in the
+    // employee's live progress and the admin daily view. Legacy fields above
+    // stay intact for existing consumers.
+    let dayProductivity = { score: 0, zone: 'red' };
+    if (scopedActivities.length > 0) {
+      const dayResult = computeDayProductivity(
+        [...scopedActivities].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+      );
+      dayProductivity = { score: dayResult.score, zone: dayResult.zone };
+      efficiencyScore = dayResult.score;
+      efficiencyLabel = dayResult.zone === 'green'
+        ? 'High'
+        : (dayResult.zone === 'yellow' ? 'Moderate' : 'Low');
+    }
 
     // Task counts
     const taskCounts = computeUserTaskCounts(userTasks);
@@ -361,6 +377,7 @@ router.get("/:id/daily-summary", auth, async (req, res) => {
         activeHoursFormatted,
         sessionHoursFormatted,
         productivityScore: avgProductivity,
+        dayProductivity,
         efficiencyScore,
         efficiencyLabel,
         keystrokes: totalKeystrokes,

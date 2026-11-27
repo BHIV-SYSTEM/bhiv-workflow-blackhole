@@ -15,10 +15,27 @@ const Progress = require('../models/Progress');
 const { formatEmployeeId } = require('../utils/employeeId');
 const {
   getLocalDateKey,
-  getEfficiencyLabel,
   summarizeActivitiesWithSession,
   resolveSessionsMap
 } = require('../utils/telemetryMetrics');
+const { computeDayProductivity, classifyZone } = require('../utils/dayProductivity');
+
+/**
+ * Canonical day score used by every productivity display (daily cards, detail
+ * chart, and reports). Samples are ordered oldest-first before the recurrence
+ * runs, so a report can never disagree with the live monitoring surface.
+ */
+function dayProductivityFor(activities) {
+  try {
+    const chronological = Array.isArray(activities)
+      ? [...activities].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+      : [];
+    const result = computeDayProductivity(chronological);
+    return { score: result.score, zone: result.zone };
+  } catch (error) {
+    return { score: 0, zone: 'red' };
+  }
+}
 
 function formatActiveTime(seconds) {
   if (!seconds || seconds <= 0) return '0h 0m';
@@ -459,14 +476,15 @@ class ReportGenerator {
       const dayLogs = activitiesByDay.get(dStr) || [];
       const daySession = sessionByDay.get(dStr) || null;
       const summary = summarizeActivitiesWithSession(dayLogs, daySession);
+      const dayProductivity = dayProductivityFor(dayLogs);
 
       let eff = 'No Activity';
       let effColor = '#94a3b8';
       if (summary.hasActivity) {
-        if (summary.avgProductivityScore >= 50) {
+        if (dayProductivity.score >= 80) {
           eff = 'High Efficiency';
           effColor = '#10b981';
-        } else if (summary.avgProductivityScore >= 30) {
+        } else if (dayProductivity.score >= 70) {
           eff = 'Moderate';
           effColor = '#f59e0b';
         } else {
@@ -481,7 +499,9 @@ class ReportGenerator {
         blocker: blockerMap.get(dStr) || '-',
         achievement: achievementMap.get(dStr) || '-',
         activitiesCount: summary.logCount,
-        avgProd: summary.avgProductivityScore,
+        avgProd: dayProductivity.score,
+        dayProductivity,
+        legacyAvgProd: summary.avgProductivityScore,
         activeSeconds: summary.activeSeconds,
         activeHoursFormatted: summary.hasActivity ? formatActiveTime(summary.activeSeconds) : '-',
         keystrokes: summary.totalKeystrokes,
@@ -891,6 +911,7 @@ class ReportGenerator {
     let totalKeys = 0;
     let totalActiveSec = 0;
     let prodDaySum = 0;
+    let legacyProdDaySum = 0;
     let prodDayCount = 0;
 
     allDays.forEach((dKey) => {
@@ -900,20 +921,26 @@ class ReportGenerator {
       totalKeys += summary.totalKeystrokes;
       totalActiveSec += summary.activeSeconds;
       if (summary.hasActivity) {
-        prodDaySum += summary.avgProductivityScore;
+        prodDaySum += dayProductivityFor(dayLogs).score;
+        legacyProdDaySum += summary.avgProductivityScore;
         prodDayCount++;
       }
     });
 
     const overallSummary = summarizeActivitiesWithSession(activities, null);
     const avgProd = prodDayCount > 0 ? Math.round(prodDaySum / prodDayCount) : 0;
+    const zone = classifyZone(avgProd, prodDayCount > 0);
     const activeHours = Math.round((totalActiveSec / 3600) * 10) / 10;
     const activeHoursFormatted = formatActiveTime(totalActiveSec);
     const avgMouse = overallSummary.avgMouseActivity;
 
     return {
       productivityScore: avgProd,
-      productivityEfficiency: getEfficiencyLabel(avgProd, prodDayCount > 0),
+      dayProductivity: { score: avgProd, zone },
+      legacyAvgProductivityScore: prodDayCount > 0 ? Math.round(legacyProdDaySum / prodDayCount) : 0,
+      productivityEfficiency: zone === 'green'
+        ? 'High Efficiency'
+        : (zone === 'yellow' ? 'Moderate Efficiency' : 'Low Efficiency'),
       activeHours,
       activeHoursFormatted,
       activeSeconds: totalActiveSec,
@@ -1325,7 +1352,16 @@ class ReportGenerator {
       ]
     };
 
-    const [empDailyStats, topAppsData, alertTypesData, empAlertsData, sessionsMap, aimsData, progressesData] = await Promise.all([
+    const [
+      empDailyStats,
+      topAppsData,
+      alertTypesData,
+      empAlertsData,
+      sessionsMap,
+      aimsData,
+      progressesData,
+      rawDayActivities
+    ] = await Promise.all([
       // 1. Employee per-day telemetry buckets (duration-weighted & interval-normalized)
       EmployeeActivity.aggregate([
         {
@@ -1453,7 +1489,13 @@ class ReportGenerator {
       Progress.find({
         user: { $in: empIds },
         date: { $gte: start, $lte: end }
-      }).select('user date notes blockers achievements progressPercentage').sort({ date: -1 }).lean()
+      }).select('user date notes blockers achievements progressPercentage').sort({ date: -1 }).lean(),
+
+      // 8. Raw samples for the canonical day-score engine (same input as live monitoring)
+      EmployeeActivity.find({
+        employee: { $in: empIds },
+        timestamp: { $gte: start, $lte: end }
+      }).select('employee timestamp keystroke_count mouse_activity_score mouse_event_count idle_duration interval_seconds app_category active_application').sort({ timestamp: 1 }).lean()
     ]);
 
     const {
@@ -1502,6 +1544,23 @@ class ReportGenerator {
       dailyByEmpMap.get(empIdStr).set(dKey, row);
     });
 
+    // Canonical day score per employee/day, computed from the same raw samples
+    // used by live monitoring. This prevents report percentages from drifting
+    // away from the daily card and detail chart.
+    const dayScoreByEmpDate = new Map();
+    (rawDayActivities || []).forEach(act => {
+      const empIdStr = act?.employee ? act.employee.toString() : null;
+      const dKey = getLocalDateKey(act.timestamp);
+      if (!empIdStr || !dKey) return;
+      if (!dayScoreByEmpDate.has(empIdStr)) dayScoreByEmpDate.set(empIdStr, new Map());
+      const byDate = dayScoreByEmpDate.get(empIdStr);
+      if (!byDate.has(dKey)) byDate.set(dKey, []);
+      byDate.get(dKey).push(act);
+    });
+    dayScoreByEmpDate.forEach((byDate) => {
+      byDate.forEach((logs, dKey) => byDate.set(dKey, dayProductivityFor(logs).score));
+    });
+
     const sessionByEmpMap = new Map();
     if (sessionsMap instanceof Map) {
       sessionsMap.forEach((val) => {
@@ -1524,6 +1583,7 @@ class ReportGenerator {
       let activeMouseCount = 0;
       let effectiveActiveSec = 0;
       let prodDaySum = 0;
+      let legacyProdDaySum = 0;
       let workedDays = 0;
 
       allDayKeys.forEach(dKey => {
@@ -1542,15 +1602,19 @@ class ReportGenerator {
         effectiveActiveSec += dayActiveSec;
 
         let dayProd = 0;
+        let legacyDayProd = 0;
         if (hasTelemetry && dayTelemetry.totalTelemetrySec > 0) {
           const useNonBg = (dayTelemetry.desktopSampleCount || 0) > 0 && (dayTelemetry.nonBgTelemetrySec || 0) > 0;
           const denom = useNonBg ? dayTelemetry.nonBgTelemetrySec : dayTelemetry.totalTelemetrySec;
           const numer = useNonBg ? dayTelemetry.nonBgWeightedSum : dayTelemetry.weightedQualitySum;
-          dayProd = Math.min(100, Math.round(numer / denom));
+          legacyDayProd = Math.min(100, Math.round(numer / denom));
         } else if (sessionSec > 0) {
-          dayProd = 50;
+          legacyDayProd = 50;
         }
+        const canonicalDayProd = dayScoreByEmpDate.get(idStr)?.get(dKey);
+        dayProd = canonicalDayProd !== undefined ? canonicalDayProd : legacyDayProd;
         prodDaySum += dayProd;
+        legacyProdDaySum += legacyDayProd;
 
         if (hasTelemetry) {
           totalActivities += dayTelemetry.totalActivities;
@@ -1573,13 +1637,14 @@ class ReportGenerator {
       const activeHoursFormatted = formatActiveTime(effectiveActiveSec);
       const avgMouse = activeMouseCount > 0 ? Math.round(activeMouseSum / activeMouseCount) : 0;
 
+      const avgZone = classifyZone(avgProd, workedDays > 0 || effectiveActiveSec > 0);
       let efficiency = 'No Activity';
       let effColor = '#94a3b8';
       if (workedDays > 0 || effectiveActiveSec > 0) {
-        if (avgProd >= 50) {
+        if (avgZone === 'green') {
           efficiency = 'High Efficiency';
           effColor = '#10b981';
-        } else if (avgProd >= 30) {
+        } else if (avgZone === 'yellow') {
           efficiency = 'Moderate';
           effColor = '#f59e0b';
         } else {
@@ -1598,6 +1663,8 @@ class ReportGenerator {
         totalActivities,
         workedDays,
         avgProductivity: avgProd,
+        dayProductivity: { score: avgProd, zone: avgZone },
+        legacyAvgProductivity: workedDays > 0 ? Math.round(legacyProdDaySum / workedDays) : 0,
         activeHours: activeHoursDecimal,
         activeHoursFormatted,
         activeSeconds: effectiveActiveSec,
@@ -1632,6 +1699,11 @@ class ReportGenerator {
       activeMembersCount: activeMembers.length,
       teamSummary: {
         teamAvgProductivity: teamAvgProd,
+        teamAvgDayProductivity: teamAvgProd,
+        teamAvgDayProductivityZone: classifyZone(teamAvgProd, activeMembers.length > 0),
+        legacyTeamAvgProductivity: activeMembers.length > 0
+          ? Math.round(activeMembers.reduce((sum, m) => sum + (m.legacyAvgProductivity || 0), 0) / activeMembers.length)
+          : 0,
         teamTotalHours,
         teamTotalHoursFormatted: formatActiveTime(members.reduce((sum, m) => sum + m.activeSeconds, 0)),
         teamTotalKeystrokes,

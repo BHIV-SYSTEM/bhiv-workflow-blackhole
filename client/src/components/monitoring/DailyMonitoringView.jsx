@@ -116,7 +116,7 @@ export function DailyMonitoringView({
       efficiency === 'No Activity' ||
       efficiency === 'No Logs Today' ||
       efficiency === 'No Logs Recorded' ||
-      (emp && (!emp.productivityScore || emp.productivityScore === 0) && (!emp.keystrokes || emp.keystrokes === 0))
+      (emp && dayScore(emp) === 0 && (!emp.keystrokes || emp.keystrokes === 0))
     ) {
       return <Badge variant="outline" className="text-zinc-400 border-zinc-700 bg-zinc-900/60 font-semibold text-[11px]">💤 No Activity</Badge>;
     }

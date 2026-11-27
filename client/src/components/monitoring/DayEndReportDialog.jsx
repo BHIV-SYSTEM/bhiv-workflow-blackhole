@@ -28,6 +28,7 @@ import {
   Keyboard
 } from 'lucide-react';
 import { formatDate } from '@/lib/dateFormat';
+import { dayScore, dayZoneStyle } from '@/lib/dayProductivity';
 
 /**
  * Generates an executive A4 printable HTML document.
@@ -42,7 +43,7 @@ function generatePrintableReportHtml(data) {
   const nowStr = `${new Date().toLocaleDateString('en-GB')} ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
 
   const activeHours = metrics.activeHoursFormatted || "0h 0m";
-  const productivity = metrics.productivityScore ?? 0;
+  const productivity = dayScore(metrics);
   const efficiency = metrics.efficiencyScore ?? 0;
   const efficiencyLabel = metrics.efficiencyLabel || (efficiency >= 70 ? 'High' : efficiency >= 45 ? 'Moderate' : 'Low');
   const keystrokes = (metrics.keystrokes || 0).toLocaleString();
@@ -596,11 +597,12 @@ export function DayEndReportDialog({ isOpen, onClose, reportData, isLoading, pro
 
                 {/* 2. Productivity Score */}
                 <div className="p-3.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-center">
-                  <div className="text-2xl font-black text-purple-600 dark:text-purple-400">
-                    {metrics.productivityScore ?? 0}%
+                  <div className={`text-2xl font-black flex items-center justify-center gap-1.5 ${dayZoneStyle(dayScore(metrics)).text}`}>
+                    {dayScore(metrics)}%
+                    <span className={`h-2.5 w-2.5 rounded-full ${dayZoneStyle(dayScore(metrics)).dot}`} />
                   </div>
                   <div className="text-[11px] text-muted-foreground mt-1 flex items-center justify-center gap-1 font-medium">
-                    <Activity className="h-3.5 w-3.5 text-purple-500" /> Productivity Score
+                    <Activity className="h-3.5 w-3.5 text-purple-500" /> Productivity · {dayZoneStyle(dayScore(metrics)).label}
                   </div>
                 </div>
 

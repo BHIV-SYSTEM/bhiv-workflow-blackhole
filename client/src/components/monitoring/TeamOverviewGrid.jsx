@@ -102,7 +102,7 @@ export function TeamOverviewGrid({
       emp.productivityEfficiency === 'No Logs Today' ||
       emp.productivityEfficiency === 'No Logs Recorded' ||
       ((!emp.activeSeconds || emp.activeSeconds === 0) && (!emp.keystrokesToday || emp.keystrokesToday === 0)) ||
-      (!emp.productivityScore || emp.productivityScore === 0)
+      dayScore(emp) === 0
     ) {
       return (
         <Badge className="bg-zinc-800 text-zinc-300 border border-zinc-700 font-medium text-[11px] px-2 py-0.5 shadow-sm">
@@ -111,13 +111,13 @@ export function TeamOverviewGrid({
       );
     }
 
-    if (emp.productivityEfficiency === 'High Efficiency' || emp.productivityScore >= 50) {
+    if (emp.productivityEfficiency === 'High Efficiency' || dayScore(emp) >= 80) {
       return (
         <Badge className="bg-emerald-600 text-white font-bold text-[11px] px-2 py-0.5 shadow-sm border border-emerald-400/30">
           ⚡ High Efficiency
         </Badge>
       );
-    } else if (emp.productivityEfficiency === 'Moderate Efficiency' || emp.productivityScore >= 30) {
+    } else if (emp.productivityEfficiency === 'Moderate Efficiency' || dayScore(emp) >= 70) {
       return (
         <Badge className="bg-amber-600 text-white font-bold text-[11px] px-2 py-0.5 shadow-sm border border-amber-400/30">
           ⚖️ Moderate Efficiency

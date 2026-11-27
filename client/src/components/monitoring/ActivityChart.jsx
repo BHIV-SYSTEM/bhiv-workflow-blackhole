@@ -76,7 +76,7 @@ export function ActivityChart({ employee }) {
       const processedData = processActivityData(response.data.activities);
       setActivityData(processedData);
       
-      const summaryData = calculateSummary(response.data.activities);
+      const summaryData = calculateSummary(response.data.activities, response.data.summary?.dayProductivity);
       setSummary(summaryData);
     } catch (error) {
       console.error('Error fetching activity data:', error);
@@ -164,7 +164,7 @@ export function ActivityChart({ employee }) {
     }
   };
 
-  const calculateSummary = (activities) => {
+  const calculateSummary = (activities, dayProductivity = null) => {
     if (!activities || activities.length === 0) {
       return {
         totalKeystroke: 0,
@@ -207,7 +207,9 @@ export function ActivityChart({ employee }) {
 
     return {
       totalKeystroke,
-      avgProductivity: Math.round(avgProductivity),
+      avgProductivity: dayProductivity?.score !== undefined && dayProductivity?.score !== null
+        ? dayProductivity.score
+        : Math.round(avgProductivity),
       avgMouseActivity: Math.round(avgMouseActivity),
       totalIdleTime: Math.round(totalIdleTime / 60), // Convert to minutes
       peakHour,

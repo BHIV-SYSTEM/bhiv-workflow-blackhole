@@ -42,7 +42,11 @@ function dayProductivityFor(activities) {
       ? [...activities].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
       : [];
     const result = computeDayProductivity(chronological);
-    return { score: result.score, zone: result.zone };
+    return {
+      score: result.score,
+      zone: result.zone,
+      hourly: (result.hourly || []).map((h) => ({ hour: h.hour, score: Math.round(h.score) }))
+    };
   } catch (error) {
     return { score: 0, zone: 'red' };
   }
