@@ -7,6 +7,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
+import { dayScore, dayScoreStyle, dayZoneStyle } from '@/lib/dayProductivity';
 import {
   FileText,
   Download,
@@ -318,7 +319,7 @@ export function ReportsGenerator({
 
   const avgProductivityWorkedDays = useMemo(() => {
     if (workedDaysList.length === 0) return 0;
-    const sum = workedDaysList.reduce((acc, d) => acc + (d.avgProductivityScore || 0), 0);
+    const sum = workedDaysList.reduce((acc, d) => acc + dayScore(d), 0);
     return Math.round(sum / workedDaysList.length);
   }, [workedDaysList]);
 
@@ -668,11 +669,7 @@ export function ReportsGenerator({
     }
   };
 
-  const getProductivityColor = (score) => {
-    if (score >= 60) return 'text-emerald-500';
-    if (score >= 40) return 'text-amber-500';
-    return 'text-rose-500';
-  };
+  const getProductivityColor = (score) => dayZoneStyle(score).text;
 
   return (
     <div className="space-y-6">
@@ -1184,10 +1181,11 @@ export function ReportsGenerator({
 
                   <div className="text-center p-3 rounded-2xl bg-accent/5 border border-accent/10">
                     <TrendingUp className="h-7 w-7 text-accent mx-auto mb-1.5" />
-                    <p className={`text-2xl font-black ${getProductivityColor(avgProductivityWorkedDays)}`}>
+                    <p className={`text-2xl font-black flex items-center justify-center gap-1.5 ${getProductivityColor(avgProductivityWorkedDays)}`}>
                       {avgProductivityWorkedDays}%
+                      <span className={`h-2.5 w-2.5 rounded-full ${dayZoneStyle(avgProductivityWorkedDays).dot}`} />
                     </p>
-                    <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider mt-0.5">Avg Productivity</p>
+                    <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider mt-0.5">Avg Productivity · {dayZoneStyle(avgProductivityWorkedDays).label}</p>
                   </div>
 
                   <div className="text-center p-3 rounded-2xl bg-emerald-500/5 border border-emerald-500/10">
@@ -1249,8 +1247,12 @@ export function ReportsGenerator({
                           <tr key={day.date} className="hover:bg-muted/30 transition-colors">
                             <td className="p-3.5 font-bold text-foreground">{day.date}</td>
                             <td className="p-3.5 text-center text-muted-foreground font-semibold">{day.totalActivities}</td>
-                            <td className={`p-3.5 text-center font-bold ${getProductivityColor(day.avgProductivityScore)}`}>
-                              {day.avgProductivityScore}%
+                            <td className={`p-3.5 text-center font-bold ${dayScoreStyle(day).text}`}>
+                              <div className="flex items-center justify-center gap-1.5">
+                                {dayScore(day)}%
+                                <span className={`h-2 w-2 rounded-full ${dayScoreStyle(day).dot}`} />
+                                <span className="text-[10px] font-semibold">{dayScoreStyle(day).label}</span>
+                              </div>
                             </td>
                             <td className="p-3.5 text-center text-foreground font-bold">{(day.totalActivities > 0 || day.activeSeconds > 0) ? (day.activeHoursFormatted || `${day.activeHours}h`) : '-'}</td>
                             <td className="p-3.5 text-center text-muted-foreground font-medium">
@@ -1315,8 +1317,9 @@ export function ReportsGenerator({
 
                   <div className="text-center p-3 rounded-2xl bg-primary/5 border border-primary/10">
                     <TrendingUp className="h-6 w-6 text-primary mx-auto mb-1.5" />
-                    <p className={`text-2xl font-black ${getProductivityColor(teamReportData.teamSummary?.teamAvgProductivity || 0)}`}>
+                    <p className={`text-2xl font-black flex items-center justify-center gap-1.5 ${getProductivityColor(teamReportData.teamSummary?.teamAvgProductivity || 0)}`}>
                       {teamReportData.teamSummary?.teamAvgProductivity || 0}%
+                      <span className={`h-2.5 w-2.5 rounded-full ${dayZoneStyle(teamReportData.teamSummary?.teamAvgProductivity || 0).dot}`} />
                     </p>
                     <p className="text-[11px] text-muted-foreground font-semibold uppercase tracking-wider mt-0.5">
                       Team Avg Productivity
@@ -1465,8 +1468,14 @@ export function ReportsGenerator({
                             </td>
 
                             {/* 4. Productivity */}
-                            <td className={`p-3.5 text-center font-bold ${getProductivityColor(m.avgProductivity)}`}>
-                              {m.totalActivities > 0 ? `${m.avgProductivity}%` : '-'}
+                            <td className={`p-3.5 text-center font-bold ${dayScoreStyle({ productivityScore: m.avgProductivity }).text}`}>
+                              {m.totalActivities > 0 ? (
+                                <div className="flex items-center justify-center gap-1.5">
+                                  {m.avgProductivity}%
+                                  <span className={`h-2 w-2 rounded-full ${dayScoreStyle({ productivityScore: m.avgProductivity }).dot}`} />
+                                  <span className="text-[10px] font-semibold">{dayScoreStyle({ productivityScore: m.avgProductivity }).label}</span>
+                                </div>
+                              ) : '-'}
                             </td>
 
                             {/* 5. Active Hour */}

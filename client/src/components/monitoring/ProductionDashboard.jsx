@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { dayScore, dayScoreStyle, dayZoneStyle } from '@/lib/dayProductivity';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Brain,
@@ -213,20 +214,8 @@ export function ProductionDashboard({ employee }) {
     }
   };
 
-  const getProductivityColor = (score) => {
-    if (score >= 80) return 'text-green-500';
-    if (score >= 60) return 'text-yellow-500';
-    return 'text-red-500';
-  };
-
-  const getEfficiencyBadgeColor = (rating) => {
-    switch (rating) {
-      case 'high': return 'bg-green-500';
-      case 'medium': return 'bg-yellow-500';
-      case 'low': return 'bg-red-500';
-      default: return 'bg-gray-500';
-    }
-  };
+  const prodDayScore = dayScore(productivitySummary);
+  const prodDayStyle = dayZoneStyle(prodDayScore);
 
   if (loading) {
     return (
@@ -339,10 +328,11 @@ export function ProductionDashboard({ employee }) {
         <Card className="neo-card border-green-500/20">
           <CardContent className="p-4 text-center">
             <TrendingUp className="h-6 w-6 text-green-500 mx-auto mb-2" />
-            <p className={`text-2xl font-bold ${getProductivityColor(productivitySummary?.avgProductivityScore || 0)}`}>
-              {Math.round(productivitySummary?.avgProductivityScore || 0)}%
+            <p className={`text-2xl font-bold flex items-center justify-center gap-1.5 ${prodDayStyle.text}`}>
+              {prodDayScore}%
+              <span className={`h-2.5 w-2.5 rounded-full ${prodDayStyle.dot}`} />
             </p>
-            <p className="text-xs text-muted-foreground">Productivity Score</p>
+            <p className="text-xs text-muted-foreground">Productivity Score · {prodDayStyle.label}</p>
           </CardContent>
         </Card>
 
@@ -400,20 +390,20 @@ export function ProductionDashboard({ employee }) {
                 <div className="space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="space-y-2">
-                      <label className="text-sm font-medium text-foreground">Focus Score</label>
-                      <Progress value={productivitySummary.avgFocusScore || 0} className="h-3" />
-                      <p className="text-xs text-muted-foreground">
-                        {Math.round(productivitySummary.avgFocusScore || 0)}% - Application focus consistency
+                      <label className="text-sm font-medium text-foreground">Day Score</label>
+                      <Progress value={prodDayScore} className={`h-3 ${prodDayStyle.bar}`} />
+                      <p className={`text-xs font-semibold ${prodDayStyle.text}`}>
+                        {prodDayScore}% · {prodDayStyle.label}
                       </p>
                     </div>
                     
                     <div className="space-y-2">
-                      <label className="text-sm font-medium text-foreground">Efficiency Rating</label>
+                      <label className="text-sm font-medium text-foreground">Zone</label>
                       <div className="flex items-center gap-2">
-                        <Badge className={getEfficiencyBadgeColor('medium')}>
-                          Medium
+                        <Badge className={prodDayStyle.badge}>
+                          <span className={`h-2 w-2 rounded-full mr-1.5 ${prodDayStyle.dot}`} />
+                          {prodDayStyle.label}
                         </Badge>
-                        <span className="text-sm text-muted-foreground">Based on typing patterns</span>
                       </div>
                     </div>
                     
@@ -469,8 +459,10 @@ export function ProductionDashboard({ employee }) {
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-sm text-muted-foreground">Overall Score</span>
-                          <span className={`text-sm font-medium ${getProductivityColor(productivitySummary.avgProductivityScore || 0)}`}>
-                            {Math.round(productivitySummary.avgProductivityScore || 0)}%
+                          <span className={`text-sm font-medium flex items-center gap-1.5 ${prodDayStyle.text}`}>
+                            {prodDayScore}%
+                            <span className={`h-2 w-2 rounded-full ${prodDayStyle.dot}`} />
+                            {prodDayStyle.label}
                           </span>
                         </div>
                       </div>

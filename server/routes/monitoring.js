@@ -29,6 +29,24 @@ const {
   summarizeActivitiesWithSession,
   resolveSessionsMap
 } = require('../utils/telemetryMetrics');
+const { computeDayProductivity, classifyZone } = require('../utils/dayProductivity');
+
+/**
+ * Additive red/yellow/green day score for an employee's already-loaded samples.
+ * Legacy productivity fields stay untouched; consumers that don't read
+ * `dayProductivity` keep exactly the same data as before.
+ */
+function dayProductivityFor(activities) {
+  try {
+    const chronological = Array.isArray(activities)
+      ? [...activities].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+      : [];
+    const result = computeDayProductivity(chronological);
+    return { score: result.score, zone: result.zone };
+  } catch (error) {
+    return { score: 0, zone: 'red' };
+  }
+}
 
 // Helper to get branch filter from request
 const getBranchQuery = (req) => {
@@ -294,6 +312,7 @@ router.get('/employees/:id/activity', async (req, res) => {
       const sessionsMap = await resolveSessionsMap([employeeId], start, end);
       const sessionInfo = sessionsMap.get(`${employeeId}_${dateKey}`) || null;
       summary = summarizeActivitiesWithSession(normalizedActivities, sessionInfo);
+      summary.dayProductivity = dayProductivityFor(normalizedActivities);
     }
 
     // Find the latest historical activity log to provide true last active timestamp
@@ -671,7 +690,7 @@ router.get('/productivity/:employeeId', async (req, res) => {
     const activities = await EmployeeActivity.find({
       employee: employeeId,
       timestamp: { $gte: start, $lte: end }
-    }).select('productivity_score app_category interval_seconds').lean();
+    }).select('timestamp keystroke_count mouse_activity_score mouse_event_count idle_duration interval_seconds app_category productivity_score active_application metadata').lean();
 
     const avgProd = activities.length > 0
       ? Math.round(activities.reduce((sum, a) => sum + (a.productivity_score || 0), 0) / activities.length)
@@ -681,7 +700,8 @@ router.get('/productivity/:employeeId', async (req, res) => {
       summary: {
         overallScore: avgProd,
         productivityScore: avgProd,
-        totalSamples: activities.length
+        totalSamples: activities.length,
+        dayProductivity: dayProductivityFor(activities)
       }
     });
   } catch (error) {
@@ -763,6 +783,7 @@ router.get('/reports/:employeeId', async (req, res) => {
         achievement: achievementMap.get(dateKey) || '-',
         totalActivities: metrics.logCount,
         avgProductivityScore: metrics.avgProductivityScore,
+        dayProductivity: dayProductivityFor(dayLogs),
         activeHours: Math.round((metrics.activeSeconds / 3600) * 10) / 10,
         activeHoursFormatted: `${hNum}h ${mNum}m`,
         activeSeconds: metrics.activeSeconds,
@@ -1498,6 +1519,7 @@ router.get('/team-summary', async (req, res) => {
           hasStartedDay: false,
           startDayTime: null,
           productivityScore: 0,
+          dayProductivity: { score: 0, zone: 'red' },
           activeHours: '0h 0m',
           activeSeconds: 0,
           idleTime: '0m',
@@ -1545,6 +1567,7 @@ router.get('/team-summary', async (req, res) => {
         hasStartedDay: metrics.hasStartedDay,
         startDayTime: metrics.startDayTime,
         productivityScore: metrics.avgProductivityScore,
+        dayProductivity: dayProductivityFor(activities),
         activeHours: activeHoursFormatted,
         activeSeconds: metrics.activeSeconds,
         idleTime: idleTimeFormatted,
@@ -1584,6 +1607,10 @@ router.get('/team-summary', async (req, res) => {
     const avgTeamProductivity = validScores.length > 0 
       ? Math.round(validScores.reduce((acc, curr) => acc + curr.productivityScore, 0) / validScores.length)
       : 0;
+    const validDayScores = teamData.filter(d => (d.dayProductivity?.score || 0) > 0);
+    const avgDayProductivity = validDayScores.length > 0
+      ? Math.round(validDayScores.reduce((acc, curr) => acc + curr.dayProductivity.score, 0) / validDayScores.length)
+      : 0;
 
     res.json({
       success: true,
@@ -1598,7 +1625,8 @@ router.get('/team-summary', async (req, res) => {
         idleCount: totalIdleCount,
         disconnectedCount: totalDisconnectedCount,
         awayCount: totalAwayCount,
-        avgTeamProductivity
+        avgTeamProductivity,
+        avgDayProductivity
       },
       employees: teamData
     });
@@ -1663,6 +1691,7 @@ router.get('/daily-summary', async (req, res) => {
     let totalTeamActiveSeconds = 0;
     let totalTeamIdleSeconds = 0;
     let teamProductivitySum = 0;
+    let dayProductivitySum = 0;
     let activeEmployeeCount = 0;
 
     const employeeDailyData = employees.map((emp) => {
@@ -1680,6 +1709,7 @@ router.get('/daily-summary', async (req, res) => {
           totalIdleTime: '0m',
           idleSeconds: 0,
           productivityScore: 0,
+          dayProductivity: { score: 0, zone: 'red' },
           keystrokes: 0,
           mouseActivity: 0,
           activityDetails: [{ name: 'Account Inactive (Exited)', count: 0 }],
@@ -1691,12 +1721,14 @@ router.get('/daily-summary', async (req, res) => {
       const activities = activitiesByEmp.get(empIdStr) || [];
       const sessionInfo = sessionsMap.get(`${empIdStr}_${targetDateKey}`) || null;
       const metrics = summarizeActivitiesWithSession(activities, sessionInfo);
+      const dayProductivity = dayProductivityFor(activities);
 
       if (metrics.hasActivity) {
         totalTeamKeystrokes += metrics.totalKeystrokes;
         totalTeamActiveSeconds += metrics.activeSeconds;
         totalTeamIdleSeconds += metrics.totalIdleSeconds;
         teamProductivitySum += metrics.avgProductivityScore;
+        dayProductivitySum += dayProductivity.score;
         activeEmployeeCount++;
       }
 
@@ -1713,6 +1745,7 @@ router.get('/daily-summary', async (req, res) => {
         totalIdleTime: `${Math.floor(metrics.totalIdleSeconds / 60)}m`,
         idleSeconds: metrics.totalIdleSeconds,
         productivityScore: metrics.avgProductivityScore,
+        dayProductivity,
         keystrokes: metrics.totalKeystrokes,
         mouseActivity: metrics.avgMouseActivity,
         activityDetails: metrics.appDetails.length > 0 ? metrics.appDetails : [{ name: 'Workspace Active', count: 1 }],
@@ -1736,6 +1769,9 @@ router.get('/daily-summary', async (req, res) => {
     const avgTeamProductivity = activeEmployeeCount > 0
       ? Math.round(teamProductivitySum / activeEmployeeCount)
       : 0;
+    const avgDayProductivity = activeEmployeeCount > 0
+      ? Math.round(dayProductivitySum / activeEmployeeCount)
+      : 0;
 
     const overallEfficiency = getEfficiencyLabel(avgTeamProductivity, activeEmployeeCount > 0);
 
@@ -1747,6 +1783,7 @@ router.get('/daily-summary', async (req, res) => {
         totalActiveHours: `${Math.floor(totalTeamActiveSeconds / 3600)}h ${Math.floor((totalTeamActiveSeconds % 3600) / 60)}m`,
         totalIdleTime: `${Math.floor(totalTeamIdleSeconds / 3600)}h ${Math.floor((totalTeamIdleSeconds % 3600) / 60)}m`,
         avgProductivityScore: avgTeamProductivity,
+        avgDayProductivity,
         totalKeystrokes: totalTeamKeystrokes,
         overallProductivityEfficiency: overallEfficiency
       },
@@ -1849,6 +1886,7 @@ router.get('/monthly-summary', async (req, res) => {
       let dayIdleSec = 0;
       let dayKeystrokes = 0;
       let dayProdSum = 0;
+      let dayProdDayScoreSum = 0;
       let dayActiveEmpCount = 0;
 
       for (const emp of employees) {
@@ -1863,6 +1901,7 @@ router.get('/monthly-summary', async (req, res) => {
             dayIdleSec += metrics.totalIdleSeconds;
             dayKeystrokes += metrics.totalKeystrokes;
             dayProdSum += metrics.avgProductivityScore;
+            dayProdDayScoreSum += dayProductivityFor(dayLogs).score;
             dayActiveEmpCount++;
           }
         }
@@ -1874,6 +1913,10 @@ router.get('/monthly-summary', async (req, res) => {
         activeHours: Math.round((dayActiveSec / 3600) * 10) / 10,
         idleHours: Math.round((dayIdleSec / 3600) * 10) / 10,
         avgProductivityScore: dayActiveEmpCount > 0 ? Math.round(dayProdSum / dayActiveEmpCount) : 0,
+        dayProductivity: (() => {
+          const avg = dayActiveEmpCount > 0 ? Math.round(dayProdDayScoreSum / dayActiveEmpCount) : 0;
+          return { score: avg, zone: classifyZone(avg, dayActiveEmpCount > 0) };
+        })(),
         keystrokes: dayKeystrokes
       });
     }
@@ -1884,6 +1927,7 @@ router.get('/monthly-summary', async (req, res) => {
     let totalTeamKeystrokes = 0;
     let totalTeamMouseScore = 0;
     let totalTeamProdSum = 0;
+    let totalTeamDayProdSum = 0;
     let activeEmpCount = 0;
 
     const employeePerformance = employees.map(emp => {
@@ -1902,6 +1946,7 @@ router.get('/monthly-summary', async (req, res) => {
           totalIdleHours: '0h 0m',
           idleSeconds: 0,
           avgProductivityScore: 0,
+          dayProductivity: { score: 0, zone: 'red' },
           totalKeystrokes: 0,
           avgMouseActivity: 0,
           productivityEfficiency: 'Exited',
@@ -1915,6 +1960,7 @@ router.get('/monthly-summary', async (req, res) => {
       let empMouseSum = 0;
       let empMouseDays = 0;
       let empProdSum = 0;
+      let empDayProdSum = 0;
       let empWorkedDays = 0;
 
       for (let d = 1; d <= daysInMonth; d++) {
@@ -1928,6 +1974,7 @@ router.get('/monthly-summary', async (req, res) => {
             empIdleSec += metrics.totalIdleSeconds;
             empKeystrokes += metrics.totalKeystrokes;
             empProdSum += metrics.avgProductivityScore;
+            empDayProdSum += dayProductivityFor(dayLogs).score;
             empWorkedDays++;
             if (metrics.avgMouseActivity > 0) {
               empMouseSum += metrics.avgMouseActivity;
@@ -1938,6 +1985,7 @@ router.get('/monthly-summary', async (req, res) => {
       }
 
       const avgProd = empWorkedDays > 0 ? Math.round(empProdSum / empWorkedDays) : 0;
+      const avgDayProd = empWorkedDays > 0 ? Math.round(empDayProdSum / empWorkedDays) : 0;
       const avgMouse = empMouseDays > 0 ? Math.round(empMouseSum / empMouseDays) : 0;
 
       if (empWorkedDays > 0) {
@@ -1946,6 +1994,7 @@ router.get('/monthly-summary', async (req, res) => {
         totalTeamKeystrokes += empKeystrokes;
         totalTeamMouseScore += avgMouse;
         totalTeamProdSum += avgProd;
+        totalTeamDayProdSum += avgDayProd;
         activeEmpCount++;
       }
 
@@ -1963,6 +2012,7 @@ router.get('/monthly-summary', async (req, res) => {
         totalIdleHours: `${Math.floor(empIdleSec / 3600)}h ${Math.floor((empIdleSec % 3600) / 60)}m`,
         idleSeconds: empIdleSec,
         avgProductivityScore: avgProd,
+        dayProductivity: { score: avgDayProd, zone: classifyZone(avgDayProd, empWorkedDays > 0) },
         totalKeystrokes: empKeystrokes,
         avgMouseActivity: avgMouse,
         productivityEfficiency: efficiency,
@@ -1984,6 +2034,7 @@ router.get('/monthly-summary', async (req, res) => {
     });
 
     const overallAvgProductivity = activeEmpCount > 0 ? Math.round(totalTeamProdSum / activeEmpCount) : 0;
+    const overallAvgDayProductivity = activeEmpCount > 0 ? Math.round(totalTeamDayProdSum / activeEmpCount) : 0;
     const overallProductivityEfficiency = getEfficiencyLabel(overallAvgProductivity, activeEmpCount > 0);
 
     res.json({
@@ -1993,6 +2044,7 @@ router.get('/monthly-summary', async (req, res) => {
         totalActiveHours: `${Math.floor(totalTeamActiveSec / 3600)}h ${Math.floor((totalTeamActiveSec % 3600) / 60)}m`,
         totalIdleHours: `${Math.floor(totalTeamIdleSec / 3600)}h ${Math.floor((totalTeamIdleSec % 3600) / 60)}m`,
         avgProductivityScore: overallAvgProductivity,
+        avgDayProductivity: overallAvgDayProductivity,
         totalKeystrokes: totalTeamKeystrokes,
         totalMouseActivity: activeEmpCount > 0 ? Math.round(totalTeamMouseScore / activeEmpCount) : 0,
         overallProductivityEfficiency
@@ -2067,6 +2119,7 @@ router.get('/monthly-employee-breakdown', async (req, res) => {
     let totalMonthlyMouseSum = 0;
     let mouseDaysCount = 0;
     let totalMonthlyProdSum = 0;
+    let totalMonthlyDayProdSum = 0;
     let workedDaysCount = 0;
 
     const todayDate = new Date();
@@ -2093,6 +2146,7 @@ router.get('/monthly-employee-breakdown', async (req, res) => {
           idleTime: '0m',
           idleSeconds: 0,
           productivityScore: 0,
+          dayProductivity: { score: 0, zone: 'red' },
           keystrokes: 0,
           mouseActivity: 0,
           topApp: 'Account Inactive (Exited)',
@@ -2113,6 +2167,7 @@ router.get('/monthly-employee-breakdown', async (req, res) => {
           idleTime: '0m',
           idleSeconds: 0,
           productivityScore: 0,
+          dayProductivity: { score: 0, zone: 'red' },
           keystrokes: 0,
           mouseActivity: 0,
           topApp: 'Weekend Off',
@@ -2133,6 +2188,7 @@ router.get('/monthly-employee-breakdown', async (req, res) => {
           idleTime: '0m',
           idleSeconds: 0,
           productivityScore: 0,
+          dayProductivity: { score: 0, zone: 'red' },
           keystrokes: 0,
           mouseActivity: 0,
           topApp: 'Shift Not Started',
@@ -2142,6 +2198,7 @@ router.get('/monthly-employee-breakdown', async (req, res) => {
       }
 
       const metrics = summarizeActivitiesWithSession(dayLogs, sessionInfo);
+      const dayProductivity = dayProductivityFor(dayLogs);
       let status = 'No Activity';
       let topApp = 'No Activity Logged';
 
@@ -2152,6 +2209,7 @@ router.get('/monthly-employee-breakdown', async (req, res) => {
         totalMonthlyIdleSec += metrics.totalIdleSeconds;
         totalMonthlyKeystrokes += metrics.totalKeystrokes;
         totalMonthlyProdSum += metrics.avgProductivityScore;
+        totalMonthlyDayProdSum += dayProductivity.score;
         workedDaysCount++;
         if (metrics.avgMouseActivity > 0) {
           totalMonthlyMouseSum += metrics.avgMouseActivity;
@@ -2170,6 +2228,7 @@ router.get('/monthly-employee-breakdown', async (req, res) => {
         idleTime: `${Math.floor(metrics.totalIdleSeconds / 60)}m`,
         idleSeconds: metrics.totalIdleSeconds,
         productivityScore: metrics.avgProductivityScore,
+        dayProductivity,
         keystrokes: metrics.totalKeystrokes,
         mouseActivity: metrics.avgMouseActivity,
         topApp,
@@ -2178,6 +2237,7 @@ router.get('/monthly-employee-breakdown', async (req, res) => {
     }
 
     const avgMonthlyProd = workedDaysCount > 0 ? Math.round(totalMonthlyProdSum / workedDaysCount) : 0;
+    const avgMonthlyDayProd = workedDaysCount > 0 ? Math.round(totalMonthlyDayProdSum / workedDaysCount) : 0;
     const avgMonthlyMouse = mouseDaysCount > 0 ? Math.round(totalMonthlyMouseSum / mouseDaysCount) : 0;
 
     let overallEfficiency = 'No Activity';
@@ -2200,6 +2260,10 @@ router.get('/monthly-employee-breakdown', async (req, res) => {
         totalIdleHours: `${Math.floor(totalMonthlyIdleSec / 3600)}h ${Math.floor((totalMonthlyIdleSec % 3600) / 60)}m`,
         totalIdleSeconds: totalMonthlyIdleSec,
         avgProductivityScore: isExited ? 0 : avgMonthlyProd,
+        dayProductivity: {
+          score: isExited ? 0 : avgMonthlyDayProd,
+          zone: classifyZone(avgMonthlyDayProd, !isExited && workedDaysCount > 0),
+        },
         totalKeystrokes: totalMonthlyKeystrokes,
         avgMouseActivity: isExited ? 0 : avgMonthlyMouse,
         productivityEfficiency: overallEfficiency,

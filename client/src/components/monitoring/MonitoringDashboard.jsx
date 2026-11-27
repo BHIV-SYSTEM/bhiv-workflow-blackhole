@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { dayScore, dayScoreStyle } from '@/lib/dayProductivity';
 import {
   Activity,
   Clock,
@@ -113,6 +114,7 @@ export function MonitoringDashboard({ employee, monitoringStatus }) {
         totalKeystroke: summary.totalKeystrokes || 0,
         avgMouseActivity: summary.mouseActivity || 0,
         avgProductivityScore: summary.productivityScore || 0,
+        dayProductivity: summary.dayProductivity || null,
         totalIdleTime: Math.round((summary.idleSeconds || 0) / 60),
         activeHours: Math.round(((summary.activeSeconds || 0) / 3600) * 100) / 100,
         totalActivities: summary.logCount || (activities?.length || 0)
@@ -152,12 +154,6 @@ export function MonitoringDashboard({ employee, monitoringStatus }) {
     };
   };
 
-  const getProductivityColor = (score) => {
-    if (score >= 80) return 'text-green-500';
-    if (score >= 60) return 'text-yellow-500';
-    return 'text-red-500';
-  };
-
   const getActivityStatus = () => {
     if (monitoringStatus?.activity) {
       if (monitoringStatus.activity.isIdle) {
@@ -190,6 +186,7 @@ export function MonitoringDashboard({ employee, monitoringStatus }) {
   }
 
   const activityStatus = getActivityStatus();
+  const currentDayStyle = dayScoreStyle(dailyMetrics);
 
   return (
     <div className="space-y-6">
@@ -272,8 +269,10 @@ export function MonitoringDashboard({ employee, monitoringStatus }) {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Productivity Score</p>
-                <p className={`text-2xl font-bold ${getProductivityColor(dailyMetrics?.avgProductivityScore || 0)}`}>
-                  {dailyMetrics?.avgProductivityScore || 0}%
+                <p className={`text-2xl font-bold flex items-center gap-1.5 ${currentDayStyle.text}`}>
+                  {dayScore(dailyMetrics)}%
+                  <span className={`h-2.5 w-2.5 rounded-full ${currentDayStyle.dot}`} />
+                  <span className="text-xs font-semibold">{currentDayStyle.label}</span>
                 </p>
               </div>
               <TrendingUp className="h-8 w-8 text-accent" />

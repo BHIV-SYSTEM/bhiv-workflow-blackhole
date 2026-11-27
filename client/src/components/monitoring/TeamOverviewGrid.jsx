@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { dayScore, dayScoreStyle, dayZoneStyle } from '@/lib/dayProductivity';
 import {
   Users,
   Activity,
@@ -31,6 +32,12 @@ export function TeamOverviewGrid({
   onDepartmentChange,
   departments = []
 }) {
+  const teamDayScore = dayScore({
+    dayProductivity: { score: summary.avgDayProductivity },
+    productivityScore: summary.avgTeamProductivity,
+  });
+  const teamDayStyle = dayZoneStyle(teamDayScore);
+
   const sortedEmployees = useMemo(() => {
     return [...employees].sort((a, b) => {
       const aExited = a.stillExist === 0 || a.currentStatus === 'Exited';
@@ -124,13 +131,6 @@ export function TeamOverviewGrid({
     );
   };
 
-  const getScoreColor = (score, keystrokes) => {
-    if (!score && !keystrokes) return 'text-zinc-400';
-    if (score >= 50) return 'text-emerald-400';
-    if (score >= 30) return 'text-amber-400';
-    return 'text-rose-400';
-  };
-
   if (loading) {
     return (
       <div className="space-y-6">
@@ -197,10 +197,11 @@ export function TeamOverviewGrid({
           <CardContent className="p-4 flex items-center justify-between">
             <div>
               <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Team Avg Score</p>
-              <h3 className="text-2xl font-extrabold text-purple-400 mt-1">
-                {summary.avgTeamProductivity || 0}%
-              </h3>
-              <p className="text-xs text-zinc-400 mt-0.5">Overall Efficiency</p>
+              <h3 className={`text-2xl font-extrabold mt-1 ${teamDayStyle.text}`}>{teamDayScore}%</h3>
+              <div className="flex items-center gap-1.5 mt-0.5 text-xs text-zinc-400">
+                <span className={`h-2 w-2 rounded-full ${teamDayStyle.dot}`} />
+                <span>{teamDayStyle.label}</span>
+              </div>
             </div>
             <div className="h-12 w-12 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 shadow-inner">
               <TrendingUp className="h-6 w-6" />
@@ -294,11 +295,13 @@ export function TeamOverviewGrid({
                         <TrendingUp className="h-3.5 w-3.5 text-emerald-400" />
                         Productivity Score
                       </span>
-                      <span className={`font-extrabold text-sm ${getScoreColor(emp.productivityScore, emp.keystrokesToday)}`}>
-                        {emp.productivityScore || 0}%
+                      <span className={`font-extrabold text-sm flex items-center gap-1.5 ${dayScoreStyle(emp).text}`}>
+                        {dayScore(emp)}%
+                        <span className={`h-2 w-2 rounded-full ${dayScoreStyle(emp).dot}`} />
+                        <span className="font-semibold text-[10px]">{dayScoreStyle(emp).label}</span>
                       </span>
                     </div>
-                    <Progress value={emp.productivityScore || 0} className="h-2 bg-zinc-800" />
+                    <Progress value={dayScore(emp)} className={`h-2 bg-zinc-800 ${dayScoreStyle(emp).bar}`} />
                     <div className="flex items-center justify-between pt-1">
                       {getEfficiencyBadge(emp)}
                       <span className="text-[11px] text-zinc-400 font-medium">

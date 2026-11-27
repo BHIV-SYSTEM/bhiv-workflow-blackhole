@@ -216,7 +216,7 @@ function voiceTarget(act, ev, platform, rawIdle) {
  *   score: number, zone: 'red'|'yellow'|'green', mode: 'standard'|'voice',
  *   hasActivity: boolean, criteria: {actions:number, mouse:number, keys:number, platform:number},
  *   trend: 'rising'|'steady'|'falling'|'none', engagedSeconds: number,
- *   voiceShare: number, formula: string, hourly: Array<{hour:number, score:number}>
+ *   voiceShare: number, hourly: Array<{hour:number, score:number}>
  * }}
  */
 function computeDayProductivity(activities = []) {
@@ -231,11 +231,6 @@ function computeDayProductivity(activities = []) {
     trend: 'none',
     engagedSeconds: 0,
     voiceShare: 0,
-    formula:
-      'P(0)=0; per 5s tick: target = actions + mouse + keystrokes + platform '
-      + '(voice mode: platform 40 + engagement 30 + mouse 15 + input-substitute 15); '
-      + 'rise P += 0.008·(target−P)·Δt, decay P += 0.0008·(target−P)·Δt; '
-      + 'green ≥80, yellow 70–79, red <70.',
     hourly: [],
   };
   if (logs.length === 0) return base;
@@ -337,7 +332,6 @@ function computeDayProductivity(activities = []) {
     trend,
     engagedSeconds,
     voiceShare: Math.round(voiceShare * 100) / 100,
-    formula: base.formula,
     hourly: [...hourlyMap.values()].sort((a, b) => a.hour - b.hour),
   };
 }

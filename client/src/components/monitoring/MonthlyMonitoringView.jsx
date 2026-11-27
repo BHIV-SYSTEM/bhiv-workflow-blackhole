@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
+import { dayScore, dayScoreStyle, dayZoneStyle } from '@/lib/dayProductivity';
 import {
   Select,
   SelectContent,
@@ -430,6 +431,16 @@ export function MonthlyMonitoringView({
   const verifiedWorkedDays = calculatedMonthlyMetrics
     ? calculatedMonthlyMetrics.workedDaysCount
     : (empMonthlyData.employee?.workedDaysCount ?? 0);
+  const verifiedDayScore = dayScore({
+    dayProductivity: activeEmployeeObj?.dayProductivity,
+    productivityScore: verifiedScore,
+  });
+  const verifiedDayStyle = dayZoneStyle(verifiedDayScore);
+  const teamDayScore = dayScore({
+    dayProductivity: { score: teamMonthlyData.overallSummary?.avgDayProductivity },
+    productivityScore: teamMonthlyData.overallSummary?.avgProductivityScore,
+  });
+  const teamDayStyle = dayZoneStyle(teamDayScore);
 
   return (
     <div className="space-y-6">
@@ -801,12 +812,16 @@ export function MonthlyMonitoringView({
                 <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Avg Productivity</p>
                 <TrendingUp className="h-4 w-4 text-blue-400" />
               </div>
-              <h3 className="text-2xl font-extrabold mt-1 text-blue-500">
-                {verifiedScore}%
+              <h3 className={`text-2xl font-extrabold mt-1 ${verifiedDayStyle.text}`}>
+                {verifiedDayScore}%
               </h3>
+              <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-muted-foreground">
+                <span className={`h-2 w-2 rounded-full ${verifiedDayStyle.dot}`} />
+                <span>{verifiedDayStyle.label}</span>
+              </div>
               <Progress
-                value={verifiedScore}
-                className="h-1.5 mt-2 bg-muted"
+                value={verifiedDayScore}
+                className={`h-1.5 mt-2 bg-muted ${verifiedDayStyle.bar}`}
               />
             </Card>
 
@@ -901,9 +916,13 @@ export function MonthlyMonitoringView({
                                 <span>Status:</span>
                                 <span className="font-bold text-white">{data.status}</span>
                               </div>
-                              <div className="flex items-center justify-between gap-4 text-emerald-400">
+                              <div className={`flex items-center justify-between gap-4 ${dayScoreStyle(data).text}`}>
                                 <span>Productivity:</span>
-                                <span className="font-bold">{data.productivityScore}%</span>
+                                <span className="font-bold flex items-center gap-1.5">
+                                  {dayScore(data)}%
+                                  <span className={`h-2 w-2 rounded-full ${dayScoreStyle(data).dot}`} />
+                                  {dayScoreStyle(data).label}
+                                </span>
                               </div>
                               <div className="flex items-center justify-between gap-4 text-blue-400">
                                 <span>Active Hours:</span>
@@ -1054,11 +1073,13 @@ export function MonthlyMonitoringView({
                         </td>
                         <td className="p-3.5">
                           <div className="flex items-center gap-2">
-                            <span className="w-8 font-bold text-xs">{dayItem.productivityScore}%</span>
+                            <span className={`w-8 font-bold text-xs ${dayScoreStyle(dayItem).text}`}>{dayScore(dayItem)}%</span>
                             <Progress
-                              value={dayItem.productivityScore}
-                              className="h-1.5 w-16 bg-muted"
+                              value={dayScore(dayItem)}
+                              className={`h-1.5 w-16 bg-muted ${dayScoreStyle(dayItem).bar}`}
                             />
+                            <span className={`h-2 w-2 rounded-full ${dayScoreStyle(dayItem).dot}`} />
+                            <span className={`text-[10px] font-semibold ${dayScoreStyle(dayItem).text}`}>{dayScoreStyle(dayItem).label}</span>
                           </div>
                         </td>
                         <td className="p-3.5 text-xs font-medium">
@@ -1111,10 +1132,12 @@ export function MonthlyMonitoringView({
 
             <Card className="p-4 bg-gradient-to-br from-blue-500/5 to-background border-blue-500/20">
               <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Avg Productivity</p>
-              <h3 className="text-xl font-bold mt-1 text-blue-600 dark:text-blue-400">
-                {teamMonthlyData.overallSummary.avgProductivityScore || 0}%
-              </h3>
-              <p className="text-[11px] text-muted-foreground mt-0.5">Team Average</p>
+              <h3 className={`text-xl font-bold mt-1 ${teamDayStyle.text}`}>{teamDayScore}%</h3>
+              <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-muted-foreground">
+                <span className={`h-2 w-2 rounded-full ${teamDayStyle.dot}`} />
+                <span>{teamDayStyle.label}</span>
+                <span>· Team Average</span>
+              </div>
             </Card>
 
             <Card className="p-4 bg-gradient-to-br from-purple-500/5 to-background border-purple-500/20">
@@ -1171,8 +1194,30 @@ export function MonthlyMonitoringView({
                     <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
                     <XAxis dataKey="day" stroke="#888888" fontSize={12} tickFormatter={(val) => `Day ${val}`} />
                     <YAxis stroke="#888888" fontSize={12} />
-                    <Tooltip />
-                    <Area type="monotone" dataKey="avgProductivityScore" name="Avg Productivity %" stroke="#10b981" fillOpacity={1} fill="url(#colorProd)" />
+                    <Tooltip
+                      content={({ active, payload }) => {
+                        if (!active || !payload || !payload.length) return null;
+                        const data = payload[0].payload;
+                        return (
+                          <div className="bg-zinc-950/95 border border-zinc-800 p-3 rounded-xl shadow-2xl text-xs space-y-1 z-50">
+                            <p className="font-extrabold text-white">Day {data.day}</p>
+                            <div className={`flex items-center justify-between gap-4 ${dayScoreStyle(data).text}`}>
+                              <span>Productivity:</span>
+                              <span className="font-bold flex items-center gap-1.5">
+                                {dayScore(data)}%
+                                <span className={`h-2 w-2 rounded-full ${dayScoreStyle(data).dot}`} />
+                                {dayScoreStyle(data).label}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-4 text-blue-400">
+                              <span>Active Hours:</span>
+                              <span className="font-bold">{data.activeHours}</span>
+                            </div>
+                          </div>
+                        );
+                      }}
+                    />
+                    <Area type="monotone" dataKey="dayProductivity.score" name="Day Score %" stroke="#10b981" fillOpacity={1} fill="url(#colorProd)" />
                     <Area type="monotone" dataKey="activeHours" name="Active Hours" stroke="#3b82f6" fillOpacity={1} fill="url(#colorHours)" />
                   </AreaChart>
                 </ResponsiveContainer>
@@ -1263,8 +1308,10 @@ export function MonthlyMonitoringView({
                         </td>
                         <td className="p-4 font-bold">
                           <div className="flex items-center gap-2">
-                            <span className="w-8">{emp.avgProductivityScore}%</span>
-                            <Progress value={emp.avgProductivityScore} className="h-1.5 w-16" />
+                            <span className={`w-8 ${dayScoreStyle(emp).text}`}>{dayScore(emp)}%</span>
+                            <Progress value={dayScore(emp)} className={`h-1.5 w-16 ${dayScoreStyle(emp).bar}`} />
+                            <span className={`h-2 w-2 rounded-full ${dayScoreStyle(emp).dot}`} />
+                            <span className={`text-[10px] font-semibold ${dayScoreStyle(emp).text}`}>{dayScoreStyle(emp).label}</span>
                           </div>
                         </td>
                         <td className="p-4">

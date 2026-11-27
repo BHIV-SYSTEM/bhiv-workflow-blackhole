@@ -50,15 +50,11 @@ const fmtTime = (iso) => {
 };
 
 const productivityTone = (score) =>
-  score >= 50 ? 'text-emerald-600 dark:text-emerald-400'
-    : score >= 30 ? 'text-amber-600 dark:text-amber-400'
-      : 'text-rose-600 dark:text-rose-400';
+  ZONE_META[zoneOf(score)].tone;
 
 /**
- * Day-productivity zones (employee-confirmed): red <70, yellow 70–79, green ≥80.
- * The day score starts at 0 and climbs with continuous work; idle only shaves
- * a little off. Voice-command users are scored on platform + engagement
- * instead of keystrokes (mode: 'voice').
+ * Day-productivity zones: red, yellow, green. No explanation or coaching text
+ * is shown to employees — only the colored zone and the percentage.
  */
 const ZONE_META = {
   green: {
@@ -84,12 +80,6 @@ const ZONE_META = {
 const zoneOf = (score) =>
   score >= 80 ? 'green' : score >= 70 ? 'yellow' : 'red';
 
-const CRITERIA_LABELS = [
-  ['actions', 'Actions'],
-  ['mouse', 'Mouse movement'],
-  ['keys', 'Keystrokes'],
-  ['platform', 'Platform'],
-];
 
 export const WorkSessionPage = () => {
   const { user } = useAuth();
@@ -180,11 +170,6 @@ export const WorkSessionPage = () => {
     : zoneOf(summary?.avgProductivityScore || 0);
   const dayScore = dayProd ? (dayProd.score || 0) : productivityScore;
   const zoneMeta = ZONE_META[dayZone] || ZONE_META.red;
-  const criteria = dayProd?.criteria || null;
-  const voiceMode = dayProd?.mode === 'voice';
-  const trendLabel = dayProd?.trend === 'rising' ? 'Rising'
-    : dayProd?.trend === 'falling' ? 'Falling'
-      : dayProd?.trend === 'steady' ? 'Steady' : '';
 
   return (
     <div className="space-y-6 pb-8">
@@ -401,10 +386,6 @@ export const WorkSessionPage = () => {
                   {dayScore}%
                 </div>
                 <Progress value={dayScore} className="h-1.5" />
-                <p className="text-[11px] text-muted-foreground">
-                  {voiceMode ? 'Voice-driven work' : 'Standard tracking'}
-                  {trendLabel ? ` · ${trendLabel}` : ''}
-                </p>
               </CardContent>
             </Card>
 
@@ -421,57 +402,6 @@ export const WorkSessionPage = () => {
               </CardContent>
             </Card>
           </div>
-
-          {/* Productivity criteria: the four inputs behind the day score */}
-          <Card className="neo-card shadow-lg">
-            <CardHeader className="border-b">
-              <CardTitle className="text-base flex items-center gap-2 flex-wrap">
-                <TrendingUp className="h-4 w-4 text-primary" /> How Productivity Is Calculated
-                {voiceMode && (
-                  <Badge variant="outline" className="text-[10px]">Voice mode · no keyboard needed</Badge>
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-4 space-y-3">
-              <p className="text-[11px] text-muted-foreground">
-                Starts at 0% when your day begins. Continuous work raises it (about 5 minutes of solid
-                work reaches green); a few idle minutes only take a little off. Scored on four criteria:
-                {voiceMode
-                  ? ' platform 40, engagement 30, mouse 15, voice input 15 — voice work counts without keystrokes.'
-                  : ' actions, mouse movement, keystrokes, and the platform you are using.'}
-              </p>
-              {criteria ? (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {CRITERIA_LABELS.map(([key, label]) => {
-                    const raw = Number(criteria[key] || 0);
-                    const max = voiceMode && (key === 'platform') ? 40
-                      : voiceMode && (key === 'actions') ? 30
-                        : voiceMode ? 15 : 25;
-                    const pct = Math.max(0, Math.min(100, Math.round((raw / max) * 100)));
-                    return (
-                      <div key={key} className="space-y-1">
-                        <div className="flex items-center justify-between text-[11px]">
-                          <span className="text-muted-foreground">{label}</span>
-                          <span className="font-mono">{Math.round(raw)}/{max}</span>
-                        </div>
-                        <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                          <div className={`h-full rounded-full ${zoneOf(pct) === 'green' ? 'bg-emerald-500' : zoneOf(pct) === 'yellow' ? 'bg-amber-500' : 'bg-rose-400'}`}
-                            style={{ width: `${pct}%` }} />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-[11px] text-muted-foreground">No telemetry yet — the score appears once your agent starts sending activity.</p>
-              )}
-              <p className="text-[10px] text-muted-foreground">
-                Zones: <span className="text-rose-600 dark:text-rose-400 font-medium">Red &lt;70</span> ·{' '}
-                <span className="text-amber-600 dark:text-amber-400 font-medium">Yellow 70–79</span> ·{' '}
-                <span className="text-emerald-600 dark:text-emerald-400 font-medium">Green ≥80</span>
-              </p>
-            </CardContent>
-          </Card>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
             {/* Hour-by-hour activity */}
@@ -516,9 +446,9 @@ export const WorkSessionPage = () => {
                   </div>
                 )}
                 <div className="flex flex-wrap items-center gap-4 pt-3 text-[11px] text-muted-foreground">
-                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Green ≥80</span>
-                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> Yellow 70–79</span>
-                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-rose-400" /> Red &lt;70</span>
+                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Green</span>
+                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> Yellow</span>
+                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-rose-400" /> Red</span>
                 </div>
               </CardContent>
             </Card>

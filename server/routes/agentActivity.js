@@ -536,8 +536,6 @@ router.get('/activity/summary/:userId', auth, async (req, res) => {
         trend: dayProd.trend,
         engagedSeconds: dayProd.engagedSeconds,
         voiceShare: dayProd.voiceShare,
-        formula: dayProd.formula,
-        thresholds: { red: '<70', yellow: '70-79', green: '>=80' },
       },
       hasActivity: unified.hasActivity,
       appDetails: unified.appDetails,

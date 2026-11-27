@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
+import { dayScore, dayScoreStyle, dayZoneStyle } from '@/lib/dayProductivity';
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -140,6 +141,12 @@ export function DailyMonitoringView({
     }
   };
 
+  const teamDayScore = dayScore({
+    dayProductivity: { score: dailyData.teamMetrics.avgDayProductivity },
+    productivityScore: dailyData.teamMetrics.avgProductivityScore,
+  });
+  const teamDayStyle = dayZoneStyle(teamDayScore);
+
   return (
     <div className="space-y-6">
       {/* Header & Date Picker Bar */}
@@ -204,10 +211,12 @@ export function DailyMonitoringView({
 
         <Card className="p-4 bg-gradient-to-br from-blue-500/5 to-background border-blue-500/20">
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Avg Productivity</p>
-          <h3 className="text-2xl font-bold mt-1 text-blue-600 dark:text-blue-400">
-            {dailyData.teamMetrics.avgProductivityScore || 0}%
-          </h3>
-          <p className="text-xs text-muted-foreground mt-0.5">Team Score Average</p>
+          <h3 className={`text-2xl font-bold mt-1 ${teamDayStyle.text}`}>{teamDayScore}%</h3>
+          <div className="flex items-center gap-1.5 mt-0.5 text-xs text-muted-foreground">
+            <span className={`h-2 w-2 rounded-full ${teamDayStyle.dot}`} />
+            <span>{teamDayStyle.label}</span>
+            <span>· Team Score Average</span>
+          </div>
         </Card>
 
         <Card className="p-4 bg-gradient-to-br from-purple-500/5 to-background border-purple-500/20">
@@ -275,8 +284,10 @@ export function DailyMonitoringView({
                     <td className="p-4 font-semibold text-amber-600 dark:text-amber-400">{emp.totalIdleTime}</td>
                     <td className="p-4 font-bold">
                       <div className="flex items-center gap-2">
-                        <span className="w-8">{emp.productivityScore}%</span>
-                        <Progress value={emp.productivityScore} className="h-1.5 w-16" />
+                        <span className={`w-8 ${dayScoreStyle(emp).text}`}>{dayScore(emp)}%</span>
+                        <Progress value={dayScore(emp)} className={`h-1.5 w-16 ${dayScoreStyle(emp).bar}`} />
+                        <span className={`h-2 w-2 rounded-full ${dayScoreStyle(emp).dot}`} />
+                        <span className={`text-[10px] font-semibold ${dayScoreStyle(emp).text}`}>{dayScoreStyle(emp).label}</span>
                       </div>
                     </td>
                     <td className="p-4">{emp.keystrokes ? emp.keystrokes.toLocaleString() : 0}</td>

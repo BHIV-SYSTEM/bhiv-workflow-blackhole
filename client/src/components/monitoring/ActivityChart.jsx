@@ -5,6 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Badge } from '@/components/ui/badge';
+import { dayZoneStyle } from '@/lib/dayProductivity';
 import {
   LineChart,
   Line,
@@ -390,8 +391,11 @@ export function ActivityChart({ employee }) {
           <Card className="neo-card border-accent/20">
             <CardContent className="p-4 text-center">
               <TrendingUp className="h-6 w-6 text-accent mx-auto mb-2" />
-              <p className="text-2xl font-bold text-foreground">{summary.avgProductivity}%</p>
-              <p className="text-xs text-muted-foreground">Avg Productivity</p>
+              <p className={`text-2xl font-bold flex items-center justify-center gap-1.5 ${dayZoneStyle(summary.avgProductivity).text}`}>
+                {summary.avgProductivity}%
+                <span className={`h-2.5 w-2.5 rounded-full ${dayZoneStyle(summary.avgProductivity).dot}`} />
+              </p>
+              <p className="text-xs text-muted-foreground">Avg Productivity · {dayZoneStyle(summary.avgProductivity).label}</p>
             </CardContent>
           </Card>
 

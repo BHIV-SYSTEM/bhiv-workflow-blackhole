@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { dayScore, dayScoreStyle } from '@/lib/dayProductivity';
 import {
   X,
   User,
@@ -39,6 +40,7 @@ export function EmployeeDetailModal({ employee, onClose }) {
     currentActivity: employee?.currentActivity || { appName: 'Workspace', windowTitle: 'Active Session' }
   });
   const [timelineData, setTimelineData] = useState([]);
+  const [dayProductivity, setDayProductivity] = useState(employee?.dayProductivity || null);
 
   useEffect(() => {
     if (employee) {
@@ -75,6 +77,7 @@ export function EmployeeDetailModal({ employee, onClose }) {
       const logs = response.data.activities || [];
       const backendSummary = response.data.summary || null;
       setActivityLogs(logs);
+      setDayProductivity(backendSummary?.dayProductivity || null);
 
       // Only count logs matching target date for active hours and timeline graph
       const dayLogs = logs.filter((log) => {
@@ -223,6 +226,12 @@ export function EmployeeDetailModal({ employee, onClose }) {
 
   if (!employee) return null;
 
+  const dayScoreSource = dayProductivity
+    ? { dayProductivity }
+    : { productivityScore: metrics.productivityScore };
+  const currentDayScore = dayScore(dayScoreSource);
+  const currentDayStyle = dayScoreStyle(dayScoreSource);
+
   return (
     <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
       <div className="bg-zinc-950 border border-zinc-800 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[92vh] flex flex-col overflow-hidden text-white">
@@ -301,9 +310,13 @@ export function EmployeeDetailModal({ employee, onClose }) {
 
             <Card className="p-3 bg-zinc-900/60 border-zinc-800">
               <p className="text-[11px] font-semibold text-zinc-400 flex items-center gap-1">
-                <TrendingUp className="h-3 w-3 text-emerald-400" /> Productivity
+                <TrendingUp className={`h-3 w-3 ${currentDayStyle.text}`} /> Productivity
               </p>
-              <p className="font-extrabold text-base mt-1 text-white">{metrics.productivityScore}%</p>
+              <p className={`font-extrabold text-base mt-1 flex items-center gap-1.5 ${currentDayStyle.text}`}>
+                {currentDayScore}%
+                <span className={`h-2 w-2 rounded-full ${currentDayStyle.dot}`} />
+                <span className="text-[10px] font-semibold">{currentDayStyle.label}</span>
+              </p>
             </Card>
 
             <Card className="p-3 bg-zinc-900/60 border-zinc-800">
@@ -322,11 +335,11 @@ export function EmployeeDetailModal({ employee, onClose }) {
             <CardContent className="space-y-2">
               <div className="flex items-center justify-between text-xs sm:text-sm">
                 <span className="font-semibold text-zinc-300">
-                  Productivity Status: <span className="text-emerald-400 font-bold">{metrics.productivityEfficiency}</span>
+                  Productivity Status: <span className={`font-bold ${currentDayStyle.text}`}>{currentDayStyle.label}</span>
                 </span>
-                <span className="font-extrabold text-white">{metrics.productivityScore}%</span>
+                <span className={`font-extrabold ${currentDayStyle.text}`}>{currentDayScore}%</span>
               </div>
-              <Progress value={metrics.productivityScore} className="h-3 bg-zinc-800" />
+              <Progress value={currentDayScore} className={`h-3 bg-zinc-800 ${currentDayStyle.bar}`} />
             </CardContent>
           </Card>
 
