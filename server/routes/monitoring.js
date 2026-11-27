@@ -39,12 +39,25 @@ const {
  * Legacy productivity fields stay untouched; consumers that don't read
  * `dayProductivity` keep exactly the same data as before.
  */
-function dayProductivityFor(activities) {
+function dayProductivityFor(activities, options = {}) {
   try {
-    const chronological = Array.isArray(activities)
-      ? [...activities].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
-      : [];
-    const result = computeDayProductivity(chronological);
+    const opts = typeof options === 'boolean' ? { alreadySorted: options } : (options || {});
+    let chronological;
+    if (!Array.isArray(activities)) {
+      chronological = [];
+    } else if (opts.reverseInput) {
+      // Mongo returns newest-first for the live grid; reversing is O(n) while
+      // sorting would be O(n log n).
+      chronological = [...activities].reverse();
+    } else if (opts.alreadySorted) {
+      chronological = activities;
+    } else {
+      chronological = [...activities].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    }
+    const result = computeDayProductivity(chronological, {
+      evalCache: opts.evalCache,
+      details: opts.details !== false
+    });
     return {
       score: result.score,
       zone: result.zone,
@@ -1504,7 +1517,7 @@ router.get('/team-summary', async (req, res) => {
       timestamp: { $gte: startOfDay, $lte: endOfDay }
     })
     .select('employee keystroke_count mouse_activity_score mouse_event_count idle_duration interval_seconds app_category productivity_score active_application metadata timestamp')
-    .sort({ timestamp: -1 })
+    .sort({ timestamp: 1 })
     .lean();
 
     // Group today's activities by employee string ID
@@ -1545,7 +1558,9 @@ router.get('/team-summary', async (req, res) => {
     const teamData = employees.map((emp) => {
       const empIdStr = emp._id.toString();
       const activities = todayActivitiesByEmp.get(empIdStr) || [];
-      let latestLog = activities[0] || latestHistoricalLogByEmp.get(empIdStr) || null;
+      // Activities are sorted oldest-first for the day-score engine; the last
+      // sample is the latest one used for live status/app display.
+      const latestLog = activities[activities.length - 1] || latestHistoricalLogByEmp.get(empIdStr) || null;
       const sessionInfo = sessionsMap.get(`${empIdStr}_${todayDateKey}`) || null;
 
       if (emp.stillExist === 0) {
@@ -1576,7 +1591,8 @@ router.get('/team-summary', async (req, res) => {
         };
       }
 
-      const metrics = summarizeActivitiesWithSession(activities, sessionInfo);
+      const evalCache = new Map();
+      const metrics = summarizeActivitiesWithSession(activities, sessionInfo, evalCache);
 
       // Current status calculation
       let currentStatus = 'Away';
@@ -1596,7 +1612,11 @@ router.get('/team-summary', async (req, res) => {
       const activeHoursFormatted = `${Math.floor(metrics.activeSeconds / 3600)}h ${Math.floor((metrics.activeSeconds % 3600) / 60)}m`;
       const idleTimeFormatted = `${Math.floor(metrics.totalIdleSeconds / 60)}m`;
       const historicalLastLog = latestHistoricalLogByEmp.get(empIdStr);
-      const dayProductivity = dayProductivityFor(activities);
+      const dayProductivity = dayProductivityFor(activities, {
+        alreadySorted: true,
+        evalCache,
+        details: false
+      });
 
       return {
         _id: emp._id,
@@ -1765,8 +1785,13 @@ router.get('/daily-summary', async (req, res) => {
       const empIdStr = emp._id.toString();
       const activities = activitiesByEmp.get(empIdStr) || [];
       const sessionInfo = sessionsMap.get(`${empIdStr}_${targetDateKey}`) || null;
-      const metrics = summarizeActivitiesWithSession(activities, sessionInfo);
-      const dayProductivity = dayProductivityFor(activities);
+      const evalCache = new Map();
+      const metrics = summarizeActivitiesWithSession(activities, sessionInfo, evalCache);
+      const dayProductivity = dayProductivityFor(activities, {
+        alreadySorted: true,
+        evalCache,
+        details: false
+      });
 
       if (metrics.hasActivity) {
         totalTeamKeystrokes += metrics.totalKeystrokes;
@@ -1926,6 +1951,23 @@ router.get('/monthly-summary', async (req, res) => {
       }
     });
 
+    // Evaluate each employee/day only once. Monthly charts used to run the
+    // same telemetry pass twice (day breakdown + employee performance), which
+    // made the full monitoring page slow when many employees were active.
+    const evaluationsByEmpDate = new Map();
+    const evaluationKeys = new Set([...logsByEmpDate.keys(), ...sessionsMap.keys()]);
+    for (const key of evaluationKeys) {
+      const dayLogs = logsByEmpDate.get(key) || [];
+      const sessionInfo = sessionsMap.get(key) || null;
+      if (dayLogs.length === 0 && !sessionInfo) continue;
+      const evalCache = new Map();
+      const metrics = summarizeActivitiesWithSession(dayLogs, sessionInfo, evalCache);
+      const dayScore = metrics.hasActivity
+        ? dayProductivityFor(dayLogs, { alreadySorted: true, evalCache, details: false }).score
+        : 0;
+      evaluationsByEmpDate.set(key, { metrics, dayScore });
+    }
+
     const daysInMonth = endOfMonth.getDate();
     const dayByDayBreakdown = [];
 
@@ -1941,18 +1983,15 @@ router.get('/monthly-summary', async (req, res) => {
       for (const emp of employees) {
         if (emp.stillExist === 0) continue;
         const empIdStr = emp._id.toString();
-        const dayLogs = logsByEmpDate.get(`${empIdStr}_${dateStr}`) || [];
-        const sessionInfo = sessionsMap.get(`${empIdStr}_${dateStr}`) || null;
-        if (dayLogs.length > 0 || sessionInfo) {
-          const metrics = summarizeActivitiesWithSession(dayLogs, sessionInfo);
-          if (metrics.hasActivity) {
-            dayActiveSec += metrics.activeSeconds;
-            dayIdleSec += metrics.totalIdleSeconds;
-            dayKeystrokes += metrics.totalKeystrokes;
-            dayProdSum += metrics.avgProductivityScore;
-            dayProdDayScoreSum += dayProductivityFor(dayLogs).score;
-            dayActiveEmpCount++;
-          }
+        const evaluation = evaluationsByEmpDate.get(`${empIdStr}_${dateStr}`);
+        if (evaluation && evaluation.metrics.hasActivity) {
+          const { metrics, dayScore } = evaluation;
+          dayActiveSec += metrics.activeSeconds;
+          dayIdleSec += metrics.totalIdleSeconds;
+          dayKeystrokes += metrics.totalKeystrokes;
+          dayProdSum += metrics.avgProductivityScore;
+          dayProdDayScoreSum += dayScore;
+          dayActiveEmpCount++;
         }
       }
 
@@ -2013,21 +2052,18 @@ router.get('/monthly-summary', async (req, res) => {
 
       for (let d = 1; d <= daysInMonth; d++) {
         const dateStr = `${year}-${String(monthIdx + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-        const dayLogs = logsByEmpDate.get(`${empIdStr}_${dateStr}`) || [];
-        const sessionInfo = sessionsMap.get(`${empIdStr}_${dateStr}`) || null;
-        if (dayLogs.length > 0 || sessionInfo) {
-          const metrics = summarizeActivitiesWithSession(dayLogs, sessionInfo);
-          if (metrics.hasActivity) {
-            empActiveSec += metrics.activeSeconds;
-            empIdleSec += metrics.totalIdleSeconds;
-            empKeystrokes += metrics.totalKeystrokes;
-            empProdSum += metrics.avgProductivityScore;
-            empDayProdSum += dayProductivityFor(dayLogs).score;
-            empWorkedDays++;
-            if (metrics.avgMouseActivity > 0) {
-              empMouseSum += metrics.avgMouseActivity;
-              empMouseDays++;
-            }
+        const evaluation = evaluationsByEmpDate.get(`${empIdStr}_${dateStr}`);
+        if (evaluation && evaluation.metrics.hasActivity) {
+          const { metrics, dayScore } = evaluation;
+          empActiveSec += metrics.activeSeconds;
+          empIdleSec += metrics.totalIdleSeconds;
+          empKeystrokes += metrics.totalKeystrokes;
+          empProdSum += metrics.avgProductivityScore;
+          empDayProdSum += dayScore;
+          empWorkedDays++;
+          if (metrics.avgMouseActivity > 0) {
+            empMouseSum += metrics.avgMouseActivity;
+            empMouseDays++;
           }
         }
       }
@@ -2247,8 +2283,13 @@ router.get('/monthly-employee-breakdown', async (req, res) => {
         continue;
       }
 
-      const metrics = summarizeActivitiesWithSession(dayLogs, sessionInfo);
-      const dayProductivity = dayProductivityFor(dayLogs);
+      const evalCache = new Map();
+      const metrics = summarizeActivitiesWithSession(dayLogs, sessionInfo, evalCache);
+      const dayProductivity = dayProductivityFor(dayLogs, {
+        alreadySorted: true,
+        evalCache,
+        details: false
+      });
       let status = 'No Activity';
       let topApp = 'No Activity Logged';
 

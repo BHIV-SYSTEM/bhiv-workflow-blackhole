@@ -132,6 +132,23 @@ function classifyPlatform(act) {
   return 'neutral';
 }
 
+// Same app/window pair appears in thousands of 5-second samples. Cache the
+// regex classification so summary endpoints do not repeat that work per tick.
+const CLASSIFICATION_CACHE_LIMIT = 5000;
+const classificationCache = new Map();
+function classifyPlatformCached(act) {
+  const category = String(act?.app_category || '').toUpperCase();
+  const name = String(act?.active_application?.name || '');
+  const title = String(act?.active_application?.title || '');
+  const key = `${category}\u0000${name}\u0000${title}`;
+  const cached = classificationCache.get(key);
+  if (cached !== undefined) return cached;
+  if (classificationCache.size >= CLASSIFICATION_CACHE_LIMIT) classificationCache.clear();
+  const value = classifyPlatform(act);
+  classificationCache.set(key, value);
+  return value;
+}
+
 // ── Per-criterion helpers ────────────────────────────────────────────────────
 
 /** Graded engagement from system idle (reading/thinking credit, 5-min cliff). */
@@ -251,8 +268,13 @@ function voiceTarget(act, ev, platform, rawIdle) {
  *   voiceShare: number, hourly: Array<{hour:number, score:number}>
  * }}
  */
-function computeDayProductivity(activities = []) {
+function computeDayProductivity(activities = [], options = {}) {
   const logs = Array.isArray(activities) ? activities : [];
+  const opts = options || {};
+  const evalCache = opts.evalCache || null;
+  // Summary cards only need the score. Charts pass details: true to keep the
+  // hourly timeline and trend, which are not needed by team/monthly tables.
+  const includeDetails = opts.details !== false;
 
   const base = {
     score: 0,
@@ -270,8 +292,8 @@ function computeDayProductivity(activities = []) {
   // Pass 1 — classify every tick, find the day's span and detect input mode.
   let firstMs = null;
   const ticks = logs.map((act) => {
-    const ev = evaluateSample(act);
-    const platform = classifyPlatform(act);
+    const ev = (evalCache && evalCache.get(act)) || evaluateSample(act);
+    const platform = classifyPlatformCached(act);
     // evaluateSample normalizes idle internally; re-derive the raw value the
     // same way so engagement grading matches the shared source of truth.
     let rawIdle = Number(act?.idle_duration || 0);
@@ -312,6 +334,7 @@ function computeDayProductivity(activities = []) {
   const scoreTimeline = []; // {ms, score} for trend (displayed score)
   const hourlyMap = new Map(); // hour -> last displayed score in that hour
   const criteriaSum = { actions: 0, mouse: 0, keys: 0, platform: 0 };
+  const collectDetails = includeDetails;
 
   for (const t of ticks) {
     const ms = t.ms;
@@ -337,29 +360,31 @@ function computeDayProductivity(activities = []) {
     const factor = dayCoverageFactor(activeSecSoFar, elapsedSpanSec);
     displayedScore = Math.round(score * factor);
 
-    criteriaSum.actions += built.criteria.actions;
-    criteriaSum.mouse += built.criteria.mouse;
-    criteriaSum.keys += built.criteria.keys;
-    criteriaSum.platform += built.criteria.platform;
+    if (collectDetails) {
+      criteriaSum.actions += built.criteria.actions;
+      criteriaSum.mouse += built.criteria.mouse;
+      criteriaSum.keys += built.criteria.keys;
+      criteriaSum.platform += built.criteria.platform;
 
-    if (Number.isFinite(ms)) {
-      scoreTimeline.push({ ms, score: displayedScore });
-      const hour = new Date(ms).getHours();
-      hourlyMap.set(hour, { hour, score: displayedScore });
+      if (Number.isFinite(ms)) {
+        scoreTimeline.push({ ms, score: displayedScore });
+        const hour = new Date(ms).getHours();
+        hourlyMap.set(hour, { hour, score: displayedScore });
+      }
     }
   }
 
   const n = ticks.length;
-  const criteria = {
+  const criteria = collectDetails ? {
     actions: Math.round((criteriaSum.actions / n) * 10) / 10,
     mouse: Math.round((criteriaSum.mouse / n) * 10) / 10,
     keys: Math.round((criteriaSum.keys / n) * 10) / 10,
     platform: Math.round((criteriaSum.platform / n) * 10) / 10,
-  };
+  } : { actions: 0, mouse: 0, keys: 0, platform: 0 };
 
   // Trend: displayed score now vs ~10 min ago (earliest point if day is young).
   let trend = 'none';
-  if (scoreTimeline.length >= 2) {
+  if (collectDetails && scoreTimeline.length >= 2) {
     const nowMs = scoreTimeline[scoreTimeline.length - 1].ms;
     const reference = scoreTimeline.find((p) => p.ms >= nowMs - 10 * 60 * 1000)
       || scoreTimeline[0];

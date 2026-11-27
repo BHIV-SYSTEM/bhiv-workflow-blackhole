@@ -122,8 +122,18 @@ function evaluateSample(act) {
 /**
  * Aggregate a list of EmployeeActivity docs alongside authoritative Attendance/WorkSession seconds.
  */
-function summarizeActivitiesWithSession(activities = [], sessionInfo = null) {
+function summarizeActivitiesWithSession(activities = [], sessionInfo = null, evalCache = null) {
   const logs = Array.isArray(activities) ? activities : [];
+  // Shared with the day-score engine: one evaluateSample() per telemetry row.
+  const evaluate = (act) => {
+    if (!evalCache) return evaluateSample(act);
+    let ev = evalCache.get(act);
+    if (!ev) {
+      ev = evaluateSample(act);
+      evalCache.set(act, ev);
+    }
+    return ev;
+  };
   let totalKeystrokes = 0;
   let totalMouseScore = 0;
   let activeMouseSamples = 0;
@@ -136,7 +146,7 @@ function summarizeActivitiesWithSession(activities = [], sessionInfo = null) {
   const appUsageMap = {};
 
   for (const act of logs) {
-    const ev = evaluateSample(act);
+    const ev = evaluate(act);
     totalKeystrokes += ev.keys;
     totalMouseScore += ev.mouseScore;
     if (ev.mouseScore > 0) {
