@@ -67,18 +67,13 @@ const upload = multer({
 // @access  Private
 router.get("/task/:taskId", auth, async (req, res) => {
   try {
+    // Own task history must always show saved progress, even if the user
+    // record is inactive or missing. The user filter is only for admin-wide views.
     const progress = await Progress.find({ task: req.params.taskId })
-      .sort({ date: -1 })
-      .populate({
-        path: "user",
-        select: "name email stillExist",
-        match: { stillExist: 1 } // Only populate active users
-      });
+      .sort({ updatedAt: -1, createdAt: -1, date: -1 })
+      .populate("user", "name email stillExist");
 
-    // Filter out progress entries where user didn't populate (inactive users)
-    const activeProgress = progress.filter(p => p.user);
-
-    res.json(activeProgress);
+    res.json(progress);
   } catch (err) {
     console.error(err.message);
     res.status(500).send("Server Error");
@@ -337,10 +332,10 @@ router.post(
           progress: Number(progressPercentage) || 0,
           user: targetUserId
         };
-        // Client listens for `progress-updated`; keep the old event name too
-        // for older agent/web clients.
-        req.io.to(`task-${task}`).emit("progress-updated", progressPayload);
-        req.io.to(`task-${task}`).emit("progress-update", progressPayload);
+        // Clients listen globally, not from a task room they never joined.
+        // Keep the old event name too for older agent/web clients.
+        req.io.emit("progress-updated", progressPayload);
+        req.io.emit("progress-update", progressPayload);
 
         // Always broadcast task updates so MyTasks and Dashboard update their progress bars in real-time
         req.io.emit("task-updated", taskDoc.toObject ? taskDoc.toObject() : taskDoc);
@@ -424,8 +419,8 @@ router.put("/:id", auth, async (req, res) => {
           progress: Number(progressPercentage) || 0,
           user: req.user?.id || req.user?._id,
         };
-        req.io.to(`task-${task._id}`).emit("progress-updated", progressPayload);
-        req.io.to(`task-${task._id}`).emit("progress-update", progressPayload);
+        req.io.emit("progress-updated", progressPayload);
+        req.io.emit("progress-update", progressPayload);
 
         // Emit task status update if changed
         if (taskStatusChanged || task.status === 'In Progress' || task.status === 'Completed') {

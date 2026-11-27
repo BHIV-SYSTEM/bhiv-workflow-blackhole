@@ -169,7 +169,7 @@ router.get("/:id/daily-summary", auth, async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    const { getIstDayBounds } = require("../utils/progressValidation");
+    const { getDailyProgressWindow } = require("../utils/progressValidation");
     const {
       getLocalDateKey,
       summarizeActivitiesWithSession,
@@ -182,7 +182,7 @@ router.get("/:id/daily-summary", auth, async (req, res) => {
     const localDay = String(istNow.getUTCDate()).padStart(2, '0');
     const localDateStr = `${localYear}-${localMonth}-${localDay}`;
 
-    const { start: today, end: tomorrow } = getIstDayBounds(now);
+    const { start: today, end: tomorrow } = getDailyProgressWindow([], now);
 
     const Aim = require("../models/Aim");
     const Progress = require("../models/Progress");
@@ -199,8 +199,11 @@ router.get("/:id/daily-summary", auth, async (req, res) => {
 
       Progress.find({
         user: userId,
-        date: { $gte: today, $lt: tomorrow }
-      }).populate('task', 'title status priority').sort({ date: -1 }).lean(),
+        $or: [
+          { date: { $gte: today, $lt: tomorrow } },
+          { createdAt: { $gte: today, $lt: tomorrow } }
+        ]
+      }).populate('task', 'title status priority').sort({ updatedAt: -1, createdAt: -1, date: -1 }).lean(),
 
       EmployeeActivity.find({
         employee: userId,

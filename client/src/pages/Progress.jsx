@@ -407,7 +407,7 @@ function Progress() {
         const userTasks = Array.isArray(response.data) ? response.data : [];
         
         const filteredTasks = userTasks.filter(task =>
-          ["Pending", "In Progress", "Approved", "Submitted for Review", "Returned", "Pending Validation"].includes(task.status)
+          ["Pending", "In Progress", "Approved", "Submitted for Review", "Returned", "Pending Validation", "Completed", "Closed"].includes(task.status)
         );
   
         setTasks(filteredTasks);
@@ -461,6 +461,47 @@ function Progress() {
       toast.error("Failed to load progress history");
     }
   };
+
+  // Saved progress from another tab or the desktop agent should refresh this
+  // screen too. Local saves carry `local: true` and are already refreshed above.
+  useEffect(() => {
+    const handleProgressUpdate = (event) => {
+      if (event.detail?.local) return;
+      const changedTaskId = event.detail?.task || event.detail?.taskId || event.detail?._id;
+      const selectedId = selectedTaskIdRef.current;
+      if (!selectedId || (changedTaskId && String(changedTaskId) !== String(selectedId))) return;
+
+      fetchProgressHistory(selectedId);
+      const value = Number(event.detail?.progress ?? event.detail?.progressPercentage);
+      if (!Number.isNaN(value)) setProgressValue(value);
+    };
+
+    const handleTaskUpdate = (event) => {
+      if (event.detail?.local) return;
+      const updated = event.detail || {};
+      const changedTaskId = updated._id || updated.id || updated.task || updated.taskId;
+
+      setTasks(prevTasks => prevTasks.map(task => {
+        const taskId = task._id || task.id;
+        return taskId && changedTaskId && String(taskId) === String(changedTaskId)
+          ? { ...task, ...updated }
+          : task;
+      }));
+
+      if (changedTaskId && selectedTaskIdRef.current && String(changedTaskId) === String(selectedTaskIdRef.current)) {
+        const value = Number(updated.progress);
+        if (!Number.isNaN(value)) setProgressValue(value);
+        setSelectedTask(prev => (prev ? { ...prev, ...updated } : prev));
+      }
+    };
+
+    window.addEventListener('progress-updated', handleProgressUpdate);
+    window.addEventListener('task-updated', handleTaskUpdate);
+    return () => {
+      window.removeEventListener('progress-updated', handleProgressUpdate);
+      window.removeEventListener('task-updated', handleTaskUpdate);
+    };
+  }, []);
 
   const handleTaskChange = (taskId) => {
     if (taskId === "whatsapp_task") {
@@ -657,7 +698,8 @@ function Progress() {
           task: targetTaskId,
           progress: numericProgress,
           user: userId,
-          ...(savedProgress || {})
+          ...(savedProgress || {}),
+          local: true
         }
       }));
 
@@ -668,7 +710,8 @@ function Progress() {
           _id: targetTaskId,
           id: targetTaskId,
           progress: numericProgress,
-          status: resolvedTaskStatus(currentTask?.status)
+          status: resolvedTaskStatus(currentTask?.status),
+          local: true
         }
       }));
 
