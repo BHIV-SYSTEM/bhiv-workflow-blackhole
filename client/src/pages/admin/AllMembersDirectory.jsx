@@ -16,6 +16,12 @@ import { toast } from '@/hooks/use-toast';
 const AllMembersDirectory = () => {
   const { user } = useAuth();
   const { socket } = useSocket();
+  const role = (user?.role || '').trim().toLowerCase();
+  const email = (user?.email || '').trim().toLowerCase();
+  const employeeId = (user?.canonicalEmployeeId || user?.employeeId || user?.userId || user?.id || '').trim().toUpperCase();
+  const canManageDirectory = ['admin', 'manager', 'governor'].includes(role) ||
+    ['EMP-BHIV-GOV-01', 'USR-GOV-001'].includes(employeeId) ||
+    ['akash@blackhole.ai', 'akash@blackholeinfiverse.com', 'ansh@blackhole.ai', 'governor@blackhole.ai'].includes(email);
   const [users, setUsers] = useState([]);
   const [contexts, setContexts] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -33,12 +39,13 @@ const AllMembersDirectory = () => {
   };
 
   const fetchData = useCallback(async () => {
+    if (!canManageDirectory) return;
     setLoading(true);
     try {
       const headers = getAuthHeaders();
       const [usersRes, ctxRes] = await Promise.all([
         axios.get(`${API_URL}/admin/users`, { headers }),
-        axios.get(`${API_URL}/knowledge/contexts?limit=1000`, { headers })
+        axios.get(`${API_URL}/knowledge/contexts?limit=0`, { headers })
       ]);
       setUsers(usersRes.data || []);
       setContexts(ctxRes.data?.items || []);
@@ -48,7 +55,7 @@ const AllMembersDirectory = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [canManageDirectory]);
 
   useEffect(() => {
     fetchData();
@@ -69,7 +76,8 @@ const AllMembersDirectory = () => {
   }, [socket, fetchData]);
 
   const openAddModal = (user) => {
-    setEditingContext({ employeeId: user.effectiveEmployeeId, userId: user._id });
+    const employeeId = user.canonicalEmployeeId || user.employeeId || `USR-${user._id}`;
+    setEditingContext({ employeeId, userId: user._id });
     setFormProductId('BHIV');
     setFormProductName('');
     setFormContent('');
@@ -102,11 +110,12 @@ const AllMembersDirectory = () => {
     try {
       if (editingContext && editingContext._id) {
         // Update existing context
-        await axios.put(`${API_URL}/contexts/${editingContext._id}`, payload, { headers });
+        await axios.put(`${API_URL}/knowledge/contexts/${editingContext._id}`, payload, { headers });
       } else {
-        // New context – include employeeId from user
+        // Resolve both identifiers so the server can target the selected employee.
         payload.employeeId = editingContext.employeeId;
-        await axios.post(`${API_URL}/contexts`, payload, { headers });
+        payload.targetUserId = editingContext.userId;
+        await axios.post(`${API_URL}/knowledge/contexts`, payload, { headers });
       }
       toast({ title: 'Context saved', variant: 'success' });
       setModalOpen(false);
@@ -123,7 +132,7 @@ const AllMembersDirectory = () => {
     if (!window.confirm('Delete this context?')) return;
     const headers = getAuthHeaders();
     try {
-      await axios.delete(`${API_URL}/contexts/${ctx._id}`, { headers });
+      await axios.delete(`${API_URL}/knowledge/contexts/${ctx._id}`, { headers });
       toast({ title: 'Deleted', variant: 'success' });
       fetchData();
     } catch (err) {
@@ -132,7 +141,30 @@ const AllMembersDirectory = () => {
     }
   };
 
-  const employeeContexts = (empId) => contexts.filter(c => (c.employeeId || '').toUpperCase() === empId.toUpperCase());
+  const employeeContexts = (employee) => {
+    const ids = [
+      employee.canonicalEmployeeId,
+      employee.employeeId,
+      `USR-${employee._id}`
+    ].filter(Boolean).map(id => String(id).trim().toUpperCase());
+    const userId = String(employee._id);
+    return contexts.filter((context) => {
+      const contextUserId = context.user?._id || context.user;
+      return ids.includes(String(context.employeeId || '').trim().toUpperCase()) ||
+        String(contextUserId || '') === userId;
+    });
+  };
+
+  if (!canManageDirectory) {
+    return (
+      <Card className="m-4">
+        <CardHeader>
+          <CardTitle>Admin access required</CardTitle>
+        </CardHeader>
+        <CardContent>Only administrators can view the All Members Directory.</CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className="m-4">
@@ -155,8 +187,8 @@ const AllMembersDirectory = () => {
             </thead>
             <tbody>
               {users.map(u => {
-                const empId = (u.canonicalEmployeeId || u.employeeId || '').toUpperCase();
-                const ctxs = employeeContexts(empId);
+                const empId = (u.canonicalEmployeeId || u.employeeId || `USR-${u._id}`).toUpperCase();
+                const ctxs = employeeContexts(u);
                 const productList = ctxs.map(c => c.productId).join(', ');
                 return (
                   <tr key={u._id} className="border-b">

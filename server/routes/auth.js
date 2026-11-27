@@ -464,6 +464,11 @@ router.post("/register", async (req, res) => {
       )
     }
 
+    const resolvedCanonical = (newUser.canonicalEmployeeId && newUser.canonicalEmployeeId !== "N/A")
+      ? newUser.canonicalEmployeeId
+      : (newUser.employeeId && newUser.employeeId !== "N/A" ? newUser.employeeId : null);
+    const resolvedEmpId = (newUser.employeeId && newUser.employeeId !== "N/A" ? newUser.employeeId : null) || resolvedCanonical;
+
     // JWT payload
     const payload = {
       id: newUser.id,
@@ -472,6 +477,10 @@ router.post("/register", async (req, res) => {
       role: newUser.role,
       department: newUser.department,
       branch: newUser.branch,
+      employeeId: resolvedEmpId,
+      canonicalEmployeeId: resolvedCanonical,
+      tenantId: newUser.tenantId || "ten-bhiv-core",
+      organization: newUser.organization || "BHIV",
     }
 
     // Generate JWT token
@@ -547,6 +556,10 @@ router.post("/login", async (req, res) => {
       return res.status(400).json({ error: "Invalid credentials" })
     }
 
+    const fallbackFormatted = (user.formattedEmployeeId && user.formattedEmployeeId !== "N/A") ? user.formattedEmployeeId : null;
+    const resolvedCanonical = (user.canonicalEmployeeId && user.canonicalEmployeeId !== "N/A" ? user.canonicalEmployeeId : null) || fallbackFormatted;
+    const resolvedEmpId = (user.employeeId && user.employeeId !== "N/A" ? user.employeeId : null) || resolvedCanonical;
+
     // Create JWT payload
     const payload = {
       id: user.id,
@@ -555,6 +568,10 @@ router.post("/login", async (req, res) => {
       role: user.role,
       department: user.department,
       branch: user.branch || 'blackhole_mumbai',
+      employeeId: resolvedEmpId,
+      canonicalEmployeeId: resolvedCanonical,
+      tenantId: user.tenantId || 'ten-bhiv-core',
+      organization: user.organization || 'BHIV',
     }
 
     // Generate JWT token
@@ -641,7 +658,20 @@ router.get("/me", authMiddleware, async (req, res) => {
       signalSessionResume(String(user._id)).catch(() => {});
     }
 
-    res.json(user)
+    const userObj = user.toObject ? user.toObject() : { ...user };
+    const fallbackFormatted = (user.formattedEmployeeId && user.formattedEmployeeId !== "N/A") ? user.formattedEmployeeId : null;
+    const resolvedCanonical = (userObj.canonicalEmployeeId && userObj.canonicalEmployeeId !== "N/A" ? userObj.canonicalEmployeeId : null) || fallbackFormatted;
+    const resolvedEmpId = (userObj.employeeId && userObj.employeeId !== "N/A" ? userObj.employeeId : null) || resolvedCanonical;
+
+    res.json({
+      ...userObj,
+      id: String(user._id),
+      employeeId: resolvedEmpId,
+      canonicalEmployeeId: resolvedCanonical,
+      tenantId: userObj.tenantId || "ten-bhiv-core",
+      organization: userObj.organization || "BHIV",
+      branch: userObj.branch || "blackhole_mumbai",
+    })
   } catch (error) {
     console.error("Error fetching user:", error)
     res.status(500).json({ error: "Server error" })

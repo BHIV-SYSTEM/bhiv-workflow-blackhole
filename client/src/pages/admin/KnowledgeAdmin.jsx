@@ -185,9 +185,11 @@ const KnowledgeAdmin = () => {
         };
     };
 
-    // Navigation Tabs: 'MY_PRODUCTS' | 'GOVERNOR_QUEUE' | 'DIRECTORY'
-    const [activeTab, setActiveTab] = useState(isGovernor ? 'GOVERNOR_QUEUE' : 'MY_PRODUCTS');
+    // Navigation Tabs: 'MY_PRODUCTS' | 'DIRECTORY'
+    const [activeTab, setActiveTab] = useState('MY_PRODUCTS');
     const [selectedDirectoryMember, setSelectedDirectoryMember] = useState(null);
+    const [directorySearch, setDirectorySearch] = useState('');
+    const [targetMemberForModal, setTargetMemberForModal] = useState(null);
 
     // Contexts Data State
     const [myContexts, setMyContexts] = useState([]);
@@ -217,12 +219,6 @@ const KnowledgeAdmin = () => {
     // Version History Modal State
     const [historyModalOpen, setHistoryModalOpen] = useState(false);
     const [historyContext, setHistoryContext] = useState(null);
-
-    // Rejection Dialog State (Governor)
-    const [rejectModalOpen, setRejectModalOpen] = useState(false);
-    const [rejectTargetId, setRejectTargetId] = useState(null);
-    const [rejectionReason, setRejectionReason] = useState('');
-    const [submittingReject, setSubmittingReject] = useState(false);
 
     // Context Deletion / Withdrawal Modal State
     const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -260,7 +256,7 @@ const KnowledgeAdmin = () => {
                 await navigator.clipboard.writeText(promptText);
                 copied = true;
             }
-        } catch (err) {
+        } catch {
             // fallback below
         }
 
@@ -335,16 +331,12 @@ const KnowledgeAdmin = () => {
         socket.on('knowledge:sync', onSync);
         socket.on('knowledge:context:created', onSync);
         socket.on('knowledge:context:updated', onSync);
-        socket.on('knowledge:context:approved', onSync);
-        socket.on('knowledge:context:rejected', onSync);
         socket.on('knowledge:context:deleted', onSync);
 
         return () => {
             socket.off('knowledge:sync', onSync);
             socket.off('knowledge:context:created', onSync);
             socket.off('knowledge:context:updated', onSync);
-            socket.off('knowledge:context:approved', onSync);
-            socket.off('knowledge:context:rejected', onSync);
             socket.off('knowledge:context:deleted', onSync);
         };
     }, [socket, fetchContextData]);
@@ -355,11 +347,21 @@ const KnowledgeAdmin = () => {
             const empId = (selectedDirectoryMember.canonicalEmployeeId || selectedDirectoryMember.employeeId || '').toUpperCase();
             return allContexts.filter(c => (c.employeeId || '').toUpperCase() === empId);
         }
-        if (activeTab === 'GOVERNOR_QUEUE') {
-            return allContexts.filter(c => c.status === 'PENDING_APPROVAL');
-        }
         return myContexts;
-    }, [activeTab, myContexts, allContexts, selectedDirectoryMember]);
+    }, [myContexts, allContexts, selectedDirectoryMember]);
+
+    // Filtered directory members
+    const filteredDirectoryUsers = useMemo(() => {
+        const users = complianceData.users || [];
+        if (!directorySearch.trim()) return users;
+        const q = directorySearch.toLowerCase().trim();
+        return users.filter(u =>
+            (u.name || '').toLowerCase().includes(q) ||
+            (u.email || '').toLowerCase().includes(q) ||
+            (u.canonicalEmployeeId || u.employeeId || '').toLowerCase().includes(q) ||
+            (u.department || '').toLowerCase().includes(q)
+        );
+    }, [complianceData.users, directorySearch]);
 
     // Filter & Search
     const filteredContexts = useMemo(() => {
@@ -400,8 +402,9 @@ const KnowledgeAdmin = () => {
     }, [productFilter, statusFilter, searchQuery]);
 
     // Open Add / Update Context Modal
-    const handleOpenAddContext = (preselectedProductId = 'BHIV') => {
+    const handleOpenAddContext = (preselectedProductId = 'BHIV', targetMember = null) => {
         setEditingContext(null);
+        setTargetMemberForModal(targetMember || selectedDirectoryMember || null);
         setFormProductId(preselectedProductId);
         setFormCustomProductId('');
         const matched = STANDARD_PRODUCTS.find(p => p.id === preselectedProductId);
@@ -414,6 +417,7 @@ const KnowledgeAdmin = () => {
 
     const handleOpenUpdateContext = (ctx) => {
         setEditingContext(ctx);
+        setTargetMemberForModal(selectedDirectoryMember || null);
         const isStandard = STANDARD_PRODUCTS.some(p => p.id === ctx.productId);
         if (isStandard) {
             setFormProductId(ctx.productId);
@@ -468,6 +472,17 @@ const KnowledgeAdmin = () => {
                 summary: formSummary.trim() || formContent.trim().substring(0, 300)
             };
 
+            const targetMember = targetMemberForModal || selectedDirectoryMember;
+            if (isAdmin && targetMember) {
+                const targetEmpId = targetMember.canonicalEmployeeId || targetMember.employeeId;
+                if (targetEmpId && targetEmpId !== 'N/A') {
+                    payload.employeeId = targetEmpId;
+                }
+                if (targetMember._id || targetMember.id) {
+                    payload.targetUserId = targetMember._id || targetMember.id;
+                }
+            }
+
             // If updating an existing context via ID or posting new
             let res;
             if (editingContext) {
@@ -478,50 +493,18 @@ const KnowledgeAdmin = () => {
 
             if (res.data) {
                 setEditModalOpen(false);
+                setTargetMemberForModal(null);
+                toast({
+                    title: editingContext ? "Context Updated" : "Context Added",
+                    description: `Product context for ${effectiveId} is now ACTIVE.`,
+                    variant: "success"
+                });
                 await fetchContextData();
             }
         } catch (err) {
             setFormError(err.response?.data?.detail || err.response?.data?.error || "Failed to save product context.");
         } finally {
             setSavingContext(false);
-        }
-    };
-
-    // Governor Approval Action
-    const handleApprove = async (ctx) => {
-        try {
-            await axios.post(`${API_URL}/knowledge/contexts/${ctx.contextId}/approve`, {}, { headers: getAuthHeaders() });
-            await fetchContextData();
-        } catch (err) {
-            alert(`Approval failed: ${err.response?.data?.detail || err.message}`);
-        }
-    };
-
-    // Governor Rejection Action Trigger
-    const openRejectModal = (ctx) => {
-        setRejectTargetId(ctx.contextId);
-        setRejectionReason('');
-        setRejectModalOpen(true);
-    };
-
-    const handleConfirmReject = async () => {
-        if (!rejectionReason.trim()) {
-            alert("Please provide a rejection reason.");
-            return;
-        }
-        setSubmittingReject(true);
-        try {
-            await axios.post(
-                `${API_URL}/knowledge/contexts/${rejectTargetId}/reject`,
-                { rejectionReason: rejectionReason.trim() },
-                { headers: getAuthHeaders() }
-            );
-            setRejectModalOpen(false);
-            await fetchContextData();
-        } catch (err) {
-            alert(`Rejection failed: ${err.response?.data?.detail || err.message}`);
-        } finally {
-            setSubmittingReject(false);
         }
     };
 
@@ -571,18 +554,19 @@ const KnowledgeAdmin = () => {
     // Status Badge Component
     const renderStatusBadge = (status) => {
         switch (status) {
+            case 'ACTIVE':
             case 'APPROVED':
                 return (
                     <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/30 gap-1 font-semibold text-xs py-0.5">
                         <CheckCircle2 className="w-3.5 h-3.5" />
-                        APPROVED
+                        ACTIVE
                     </Badge>
                 );
             case 'PENDING_APPROVAL':
                 return (
-                    <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/30 gap-1 font-semibold text-xs py-0.5">
-                        <Clock className="w-3.5 h-3.5" />
-                        PENDING APPROVAL
+                    <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/30 gap-1 font-semibold text-xs py-0.5">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        ACTIVE
                     </Badge>
                 );
             case 'REJECTED':
@@ -602,7 +586,7 @@ const KnowledgeAdmin = () => {
             default:
                 return (
                     <Badge variant="outline" className="bg-sky-500/10 text-sky-400 border-sky-500/30 gap-1 font-semibold text-xs py-0.5">
-                        DRAFT
+                        {status || 'ACTIVE'}
                     </Badge>
                 );
         }
@@ -625,7 +609,7 @@ const KnowledgeAdmin = () => {
                             </Badge>
                         </h1>
                         <p className="text-xs text-muted-foreground mt-0.5">
-                            Multi-product technical specifications, version lineage, and Governor Akash Sir approval workflows.
+                            Multi-product technical specifications, version lineage, and direct product context management.
                         </p>
                     </div>
                 </div>
@@ -643,25 +627,6 @@ const KnowledgeAdmin = () => {
                         >
                             My Product Contexts
                         </button>
-
-                        {isGovernor && (
-                            <button
-                                onClick={() => { setSelectedDirectoryMember(null); setActiveTab('GOVERNOR_QUEUE'); }}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                                    activeTab === 'GOVERNOR_QUEUE'
-                                        ? 'bg-background text-foreground shadow-sm' 
-                                        : 'text-muted-foreground hover:text-foreground'
-                                }`}
-                            >
-                                <ShieldCheck className="w-3.5 h-3.5 text-amber-500" />
-                                Governor Approval Queue
-                                {stats.pendingApproval > 0 && (
-                                    <span className="bg-amber-500 text-black px-1.5 py-0.2 rounded-full text-[10px] font-bold">
-                                        {stats.pendingApproval}
-                                    </span>
-                                )}
-                            </button>
-                        )}
 
                         {isAdmin && (
                             <button
@@ -779,15 +744,14 @@ const KnowledgeAdmin = () => {
                                 </SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="ALL">All Statuses</SelectItem>
+                                    <SelectItem value="ACTIVE">Active</SelectItem>
                                     <SelectItem value="APPROVED">Approved</SelectItem>
-                                    <SelectItem value="PENDING_APPROVAL">Pending Approval</SelectItem>
-                                    <SelectItem value="REJECTED">Rejected</SelectItem>
                                     <SelectItem value="OUTDATED">Outdated</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>
 
-                        {!selectedDirectoryMember && (
+                        {(!selectedDirectoryMember || isAdmin) && (
                             <div className="flex items-center gap-2">
                                 <TooltipProvider>
                                     <Tooltip>
@@ -810,7 +774,7 @@ const KnowledgeAdmin = () => {
                                 </TooltipProvider>
 
                                 <Button
-                                    onClick={() => handleOpenAddContext()}
+                                    onClick={() => handleOpenAddContext(productFilter !== 'ALL' ? productFilter : 'BHIV', selectedDirectoryMember)}
                                     className="h-9 gap-1.5 text-xs font-semibold bg-primary text-primary-foreground shadow-sm hover:opacity-95"
                                 >
                                     <Plus className="w-4 h-4" />
@@ -832,10 +796,10 @@ const KnowledgeAdmin = () => {
                                     ? "No contexts matched your search filters. Try clearing filters to see all assigned products."
                                     : "You have not registered contexts for any product yet. Register your technical context to ground Parikshak task evaluations."}
                             </p>
-                            {!selectedDirectoryMember && (
-                                <Button size="sm" onClick={() => handleOpenAddContext()} className="gap-1.5 text-xs">
+                            {(!selectedDirectoryMember || isAdmin) && (
+                                <Button size="sm" onClick={() => handleOpenAddContext('BHIV', selectedDirectoryMember)} className="gap-1.5 text-xs">
                                     <Plus className="w-3.5 h-3.5" />
-                                    Add Your First Product Context
+                                    {selectedDirectoryMember ? `Add Context for ${selectedDirectoryMember.name}` : 'Add Your First Product Context'}
                                 </Button>
                             )}
                         </Card>
@@ -862,28 +826,12 @@ const KnowledgeAdmin = () => {
 
                                     <CardContent className="pt-3 pb-3 space-y-3 flex-1 text-xs">
                                         {/* Status Detail Banner */}
-                                        {ctx.status === 'APPROVED' && (
+                                        {(ctx.status === 'ACTIVE' || ctx.status === 'APPROVED') && (
                                             <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 flex items-center justify-between text-[11px]">
-                                                <span>✓ Approved by <strong>{ctx.approvedBy || 'Akash'}</strong></span>
+                                                <span>✓ Active & Ready for Parikshak</span>
                                                 <span className="text-muted-foreground font-mono">
-                                                    {ctx.approvedAt ? new Date(ctx.approvedAt).toLocaleDateString() : 'Active'}
+                                                    {ctx.updatedAt ? new Date(ctx.updatedAt).toLocaleDateString() : 'Active'}
                                                 </span>
-                                            </div>
-                                        )}
-
-                                        {ctx.status === 'REJECTED' && (
-                                            <div className="p-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-500 space-y-1 text-[11px]">
-                                                <div className="font-semibold flex items-center gap-1">
-                                                    <XCircle className="w-3.5 h-3.5" /> Rejection Notice
-                                                </div>
-                                                <p className="text-foreground/80">{ctx.rejectionReason || 'Requires revision per Governor review.'}</p>
-                                            </div>
-                                        )}
-
-                                        {ctx.status === 'PENDING_APPROVAL' && (
-                                            <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-500 flex items-center gap-1.5 text-[11px]">
-                                                <Clock className="w-3.5 h-3.5 flex-shrink-0" />
-                                                <span>Submitted for Akash Sir's Governor review.</span>
                                             </div>
                                         )}
 
@@ -924,28 +872,7 @@ const KnowledgeAdmin = () => {
                                         </Button>
 
                                         <div className="flex items-center gap-1.5">
-                                            {/* Governor Quick Actions */}
-                                            {isGovernor && ctx.status === 'PENDING_APPROVAL' && (
-                                                <>
-                                                    <Button
-                                                        size="sm"
-                                                        onClick={() => handleApprove(ctx)}
-                                                        className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
-                                                    >
-                                                        Approve
-                                                    </Button>
-                                                    <Button
-                                                        size="sm"
-                                                        variant="destructive"
-                                                        onClick={() => openRejectModal(ctx)}
-                                                        className="h-8 text-xs font-medium"
-                                                    >
-                                                        Reject
-                                                    </Button>
-                                                </>
-                                            )}
-
-                                            {(!selectedDirectoryMember || isGovernor) && (
+                                            {(!selectedDirectoryMember || isAdmin) && (
                                                 <>
                                                     <Button
                                                         size="sm"
@@ -961,7 +888,7 @@ const KnowledgeAdmin = () => {
                                                         variant="destructive"
                                                         onClick={() => handleOpenDeleteModal(ctx)}
                                                         className="h-8 text-xs gap-1 bg-red-600 hover:bg-red-700 text-white font-medium"
-                                                        title={ctx.status === 'APPROVED' && !isGovernor ? "Approved contexts require Governor approval for deletion" : "Delete / Withdraw Context"}
+                                                        title="Delete / Withdraw Context"
                                                     >
                                                         <Trash2 className="w-3.5 h-3.5" />
                                                         Delete
@@ -1008,108 +935,28 @@ const KnowledgeAdmin = () => {
             )}
 
             {/* ========================================================================= */}
-            {/* VIEW 2: GOVERNOR APPROVAL QUEUE (AKASH SIR DEDICATED TRIAGE)             */}
-            {/* ========================================================================= */}
-            {activeTab === 'GOVERNOR_QUEUE' && !selectedDirectoryMember && (
-                <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <h2 className="text-lg font-black text-foreground flex items-center gap-2">
-                                <ShieldCheck className="w-5 h-5 text-amber-500" />
-                                Governor Context Approval Queue
-                            </h2>
-                            <p className="text-xs text-muted-foreground">
-                                Pending technical context submissions awaiting Akash Sir's Governor authorization before active RAG injection.
-                            </p>
-                        </div>
-                        <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/30 text-xs font-mono">
-                            {filteredContexts.length} PENDING
-                        </Badge>
-                    </div>
-
-                    {filteredContexts.length === 0 ? (
-                        <Card className="border-dashed border-2 border-border p-12 text-center bg-card/50">
-                            <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto mb-2" />
-                            <h3 className="text-base font-bold text-foreground">All Clear! No Pending Approvals</h3>
-                            <p className="text-xs text-muted-foreground max-w-sm mx-auto mt-1">
-                                All employee technical contexts have been reviewed and approved.
-                            </p>
-                        </Card>
-                    ) : (
-                        <div className="space-y-3">
-                            {filteredContexts.map((ctx) => (
-                                <Card key={ctx.contextId} className="border-border bg-card p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm hover:border-amber-500/40 transition-colors">
-                                    <div className="space-y-2 flex-1">
-                                        <div className="flex items-center gap-2 flex-wrap">
-                                            <Badge className="bg-primary/10 text-primary border-primary/20 text-xs font-black">
-                                                {ctx.productId}
-                                            </Badge>
-                                            <span className="font-bold text-sm text-foreground">{ctx.productName}</span>
-                                            <Badge variant="secondary" className="font-mono text-xs">
-                                                {ctx.version || 'v1.0'}
-                                            </Badge>
-                                            <span className="text-xs text-muted-foreground">• Employee: <strong>{ctx.employeeId}</strong></span>
-                                        </div>
-
-                                        <p className="text-xs text-foreground/90 font-mono bg-muted/40 p-2.5 rounded-lg border border-border whitespace-pre-wrap max-h-32 overflow-y-auto">
-                                            {ctx.content}
-                                        </p>
-
-                                        <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-                                            <span>Submitted: {ctx.submittedAt ? new Date(ctx.submittedAt).toLocaleString() : 'Recent'}</span>
-                                            <span>History versions: {ctx.versionHistory?.length || 1}</span>
-                                        </div>
-                                    </div>
-
-                                    <div className="flex items-center gap-2 flex-shrink-0 self-end md:self-center">
-                                        <Button
-                                            size="sm"
-                                            variant="ghost"
-                                            onClick={() => { setHistoryContext(ctx); setHistoryModalOpen(true); }}
-                                            className="h-9 text-xs gap-1"
-                                        >
-                                            <History className="w-3.5 h-3.5" />
-                                            History
-                                        </Button>
-                                        <Button
-                                            size="sm"
-                                            onClick={() => handleApprove(ctx)}
-                                            className="h-9 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white gap-1"
-                                        >
-                                            <Check className="w-3.5 h-3.5" />
-                                            Approve Context
-                                        </Button>
-                                        <Button
-                                            size="sm"
-                                            variant="destructive"
-                                            onClick={() => openRejectModal(ctx)}
-                                            className="h-9 text-xs font-semibold gap-1"
-                                        >
-                                            <X className="w-3.5 h-3.5" />
-                                            Reject
-                                        </Button>
-                                    </div>
-                                </Card>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            )}
-
-            {/* ========================================================================= */}
-            {/* VIEW 3: GLOBAL ALL-MEMBERS DIRECTORY (ADMIN OVERVIEW)                    */}
+            {/* VIEW 2: GLOBAL ALL-MEMBERS DIRECTORY (ADMIN OVERVIEW & FULL CRUD)         */}
             {/* ========================================================================= */}
             {activeTab === 'DIRECTORY' && !selectedDirectoryMember && (
                 <div className="space-y-4">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <div>
                             <h2 className="text-lg font-black text-foreground flex items-center gap-2">
                                 <Users className="w-5 h-5 text-primary" />
-                                Employee Context Grounding Directory
+                                All Members Directory
                             </h2>
                             <p className="text-xs text-muted-foreground">
-                                Real-time context compliance audit across all departments and members.
+                                Lists every employee, their Parikshak context status, product IDs, and direct CRUD controls.
                             </p>
+                        </div>
+                        <div className="relative w-full sm:w-72">
+                            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                            <Input
+                                value={directorySearch}
+                                onChange={(e) => setDirectorySearch(e.target.value)}
+                                placeholder="Search employee name, ID, email..."
+                                className="pl-9 h-9 text-xs"
+                            />
                         </div>
                     </div>
 
@@ -1118,16 +965,16 @@ const KnowledgeAdmin = () => {
                             <table className="w-full text-xs text-left">
                                 <thead className="bg-muted/40 text-muted-foreground border-b border-border font-medium">
                                     <tr>
-                                        <th className="p-3">Canonical ID</th>
+                                        <th className="p-3">Employee ID</th>
                                         <th className="p-3">Employee Name</th>
                                         <th className="p-3">Department</th>
-                                        <th className="p-3">Products Covered</th>
-                                        <th className="p-3">Status</th>
+                                        <th className="p-3">Has Context</th>
+                                        <th className="p-3">Product IDs</th>
                                         <th className="p-3 text-right">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-border">
-                                    {complianceData.users?.map((u) => {
+                                    {filteredDirectoryUsers.map((u) => {
                                         const count = u.contextCount || 0;
                                         const prods = u.contextsByProduct ? Object.keys(u.contextsByProduct) : [];
                                         return (
@@ -1135,11 +982,23 @@ const KnowledgeAdmin = () => {
                                                 <td className="p-3 font-mono font-bold text-foreground">
                                                     {u.canonicalEmployeeId || u.employeeId}
                                                 </td>
-                                                <td className="p-3 font-medium text-foreground">
-                                                    {u.name}
+                                                <td className="p-3">
+                                                    <div className="font-medium text-foreground">{u.name}</div>
+                                                    {u.email && <div className="text-[11px] text-muted-foreground">{u.email}</div>}
                                                 </td>
                                                 <td className="p-3 text-muted-foreground">
                                                     {u.department}
+                                                </td>
+                                                <td className="p-3">
+                                                    {count > 0 ? (
+                                                        <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/30 text-[10px]">
+                                                            Yes ({count})
+                                                        </Badge>
+                                                    ) : (
+                                                        <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/30 text-[10px]">
+                                                            Missing
+                                                        </Badge>
+                                                    )}
                                                 </td>
                                                 <td className="p-3">
                                                     <div className="flex items-center gap-1 flex-wrap">
@@ -1154,27 +1013,27 @@ const KnowledgeAdmin = () => {
                                                         )}
                                                     </div>
                                                 </td>
-                                                <td className="p-3">
-                                                    {count > 0 ? (
-                                                        <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/30 text-[10px]">
-                                                            {count} Product{count > 1 ? 's' : ''} Grounded
-                                                        </Badge>
-                                                    ) : (
-                                                        <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/30 text-[10px]">
-                                                            Context Missing
-                                                        </Badge>
-                                                    )}
-                                                </td>
                                                 <td className="p-3 text-right">
-                                                    <Button
-                                                        size="xs"
-                                                        variant="outline"
-                                                        onClick={() => setSelectedDirectoryMember(u)}
-                                                        className="h-7 text-[11px] gap-1"
-                                                    >
-                                                        <Eye className="w-3 h-3" />
-                                                        Manage Products
-                                                    </Button>
+                                                    <div className="flex items-center justify-end gap-1.5">
+                                                        <Button
+                                                            size="xs"
+                                                            variant="default"
+                                                            onClick={() => handleOpenAddContext('BHIV', u)}
+                                                            className="h-7 text-[11px] gap-1"
+                                                        >
+                                                            <Plus className="w-3 h-3" />
+                                                            Add
+                                                        </Button>
+                                                        <Button
+                                                            size="xs"
+                                                            variant="outline"
+                                                            onClick={() => setSelectedDirectoryMember(u)}
+                                                            className="h-7 text-[11px] gap-1"
+                                                        >
+                                                            <Eye className="w-3 h-3" />
+                                                            Manage ({count})
+                                                        </Button>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         );
@@ -1194,12 +1053,16 @@ const KnowledgeAdmin = () => {
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2 text-base font-bold">
                             <FileText className="w-4 h-4 text-primary" />
-                            {editingContext ? `Update Context for ${editingContext.productId}` : "Register New Product Context"}
+                            {editingContext
+                                ? `Update Context for ${editingContext.productId}`
+                                : targetMemberForModal
+                                ? `Add Product Context for ${targetMemberForModal.name}`
+                                : "Register New Product Context"}
                         </DialogTitle>
                         <DialogDescription className="text-xs">
                             {editingContext 
-                                ? "Updating this specification will increment the version and reset status to PENDING_APPROVAL for Governor review."
-                                : "Add authoritative technical grounding for an authorized product."}
+                                ? "Updating this specification will increment the version and immediately set it to ACTIVE."
+                                : "Add authoritative technical grounding for an authorized product (activated immediately)."}
                         </DialogDescription>
                     </DialogHeader>
 
@@ -1445,54 +1308,6 @@ const KnowledgeAdmin = () => {
             </Dialog>
 
             {/* ========================================================================= */}
-            {/* MODAL 3: GOVERNOR REJECTION REASON PROMPT                                 */}
-            {/* ========================================================================= */}
-            <Dialog open={rejectModalOpen} onOpenChange={setRejectModalOpen}>
-                <DialogContent className="max-w-md">
-                    <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2 text-base font-bold text-rose-500">
-                            <XCircle className="w-5 h-5" />
-                            Reject Context Submission
-                        </DialogTitle>
-                        <DialogDescription className="text-xs">
-                            Provide explicit feedback explaining why this specification does not meet Governor standards.
-                        </DialogDescription>
-                    </DialogHeader>
-
-                    <div className="space-y-3 py-2 text-xs">
-                        <Label className="text-xs font-semibold">Rejection Reason</Label>
-                        <Textarea
-                            value={rejectionReason}
-                            onChange={(e) => setRejectionReason(e.target.value)}
-                            placeholder="e.g. Scope lacks specific API endpoints and error boundary definitions..."
-                            className="min-h-[100px] text-xs"
-                            required
-                        />
-                    </div>
-
-                    <DialogFooter>
-                        <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => setRejectModalOpen(false)}
-                            className="h-8 text-xs"
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            type="button"
-                            variant="destructive"
-                            onClick={handleConfirmReject}
-                            disabled={submittingReject}
-                            className="h-8 text-xs font-semibold"
-                        >
-                            {submittingReject ? "Rejecting..." : "Confirm Rejection"}
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-
-            {/* ========================================================================= */}
             {/* MODAL 4: CONTEXT DELETION & WITHDRAWAL CONFIRMATION DIALOG                */}
             {/* ========================================================================= */}
             <Dialog open={deleteModalOpen} onOpenChange={setDeleteModalOpen}>
@@ -1542,20 +1357,9 @@ const KnowledgeAdmin = () => {
                                     <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                                     <div className="space-y-1">
                                         <p className="font-semibold">Consequences of Deletion:</p>
-                                        {contextToDelete.status === 'APPROVED' ? (
-                                            <p>
-                                                This context is currently <strong>APPROVED</strong>. Removing it requires authorized Governor sign-off.
-                                                Future task submissions for this product will be blocked until a replacement context is submitted and approved.
-                                            </p>
-                                        ) : contextToDelete.status === 'PENDING_APPROVAL' ? (
-                                            <p>
-                                                This context will be withdrawn and immediately removed from the active Governor review queue.
-                                            </p>
-                                        ) : (
-                                            <p>
-                                                This draft/rejected context will be archived. You may register a new context for this product at any time.
-                                            </p>
-                                        )}
+                                        <p>
+                                            This product context will be archived and withdrawn from Parikshak. You may register a new context for this product at any time.
+                                        </p>
                                         <p className="text-[11px] opacity-80 pt-1">
                                             Historical context versions, review evidence, and audit logs are permanently preserved (soft deletion).
                                         </p>

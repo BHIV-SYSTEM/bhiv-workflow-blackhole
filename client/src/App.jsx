@@ -49,6 +49,7 @@ const AdminAimsView = lazy(() => import("./components/admin/AdminAimsView"));
 const UserManagement = lazy(() => import("./pages/UserManagement"));
 const LeaveRequest = lazy(() => import("./pages/LeaveRequest"));
 const KnowledgeAdmin = lazy(() => import("./pages/admin/KnowledgeAdmin"));
+const AllMembersDirectory = lazy(() => import("./pages/admin/AllMembersDirectory"));
 const EMSDashboard = lazy(() => import("./pages/EMSDashboard"));
 const ProcurementDashboard = lazy(() => import("./pages/ProcurementDashboard"));
 const EnhancedSalaryDashboard = lazy(() => import("./pages/EnhancedSalaryDashboard"));
@@ -433,6 +434,14 @@ function AppContent() {
                   element={
                     <ProtectedRoute>
                       <KnowledgeAdmin />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/all-members-directory"
+                  element={
+                    <ProtectedRoute>
+                      <AllMembersDirectory />
                     </ProtectedRoute>
                   }
                 />

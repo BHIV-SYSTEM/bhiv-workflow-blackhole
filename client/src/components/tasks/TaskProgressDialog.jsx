@@ -142,6 +142,9 @@ export function TaskProgressDialog({ open, onOpenChange, task, onProgressSaved }
                       {task.task_id}
                     </Badge>
                   )}
+                  <Badge variant="outline" className="text-xs border-sky-500/30 text-sky-600 dark:text-sky-400 bg-sky-500/10">
+                    Product: {task.product || task.productId || "BHIV"}
+                  </Badge>
                 </DialogTitle>
                 <DialogDescription className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
                   {task.title}

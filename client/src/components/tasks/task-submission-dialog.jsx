@@ -29,9 +29,10 @@ export function TaskSubmissionDialog({ open, onOpenChange, onSubmit, existingSub
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [errors, setErrors] = useState({})
 
-  // Context validation states (Milestone 4: Cases A, B, C, D)
+  // Context validation states (non-blocking warning)
   const [validatingContext, setValidatingContext] = useState(false)
   const [contextValidation, setContextValidation] = useState(null)
+  const [contextWarningOpen, setContextWarningOpen] = useState(false)
 
   // Target product ID grounding
   const targetProductId = useMemo(() => {
@@ -66,14 +67,16 @@ export function TaskSubmissionDialog({ open, onOpenChange, onSubmit, existingSub
       if (err.response?.data?.status) {
         setContextValidation(err.response.data)
       } else {
-        // Fallback default to Case A if backend cannot verify
+        // Fallback non-blocking warning if backend cannot verify
         setContextValidation({
           status: "MISSING",
-          canSubmit: false,
-          allowed: false,
+          hasContext: false,
+          canSubmit: true,
+          allowed: true,
+          contextWarning: true,
           case: "CASE_A",
           action: "ADD_CONTEXT",
-          message: "Product context is missing. Please add and obtain approval for the project context before submitting."
+          message: "Parikshak context has not been added for this product. The task evaluation will fail unless context is added."
         })
       }
     } finally {
@@ -155,26 +158,21 @@ export function TaskSubmissionDialog({ open, onOpenChange, onSubmit, existingSub
     const targetUrl = `/knowledge-admin?product=${encodeURIComponent(targetProductId)}&action=${action}`
     try {
       navigate(targetUrl)
-    } catch (e) {
+    } catch {
       window.location.href = targetUrl
     }
   }
 
-  // Pre-submission context validation submit guard
-  const canSubmitContext = contextValidation ? (contextValidation.canSubmit ?? contextValidation.allowed ?? false) : false
-  const isSubmitDisabled = isSubmitting || validatingContext || !canSubmitContext
+  // Pre-submission context validation (non-blocking: warns if context missing, never blocks)
+  const hasContextWarning = Boolean(
+    contextValidation &&
+    (contextValidation.contextWarning ||
+      contextValidation.hasContext === false ||
+      contextValidation.status === "MISSING")
+  )
+  const isSubmitDisabled = isSubmitting
 
-  const handleSubmit = async (e) => {
-    if (e) e.preventDefault()
-    if (!validateForm()) {
-      return
-    }
-
-    if (!canSubmitContext) {
-      toast.error(contextValidation?.message || "Product context validation failed. Please obtain approval first.")
-      return
-    }
-
+  const executeSubmit = async () => {
     try {
       const storedUser = localStorage.getItem("WorkflowUser")
       const userId = storedUser ? JSON.parse(storedUser).id : undefined
@@ -203,6 +201,20 @@ export function TaskSubmissionDialog({ open, onOpenChange, onSubmit, existingSub
     }
   }
 
+  const handleSubmit = async (e) => {
+    if (e) e.preventDefault()
+    if (!validateForm()) {
+      return
+    }
+
+    if (hasContextWarning) {
+      setContextWarningOpen(true)
+      return
+    }
+
+    await executeSubmit()
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[650px] max-h-[90vh] overflow-hidden bg-white dark:bg-gray-950 border-2 border-gray-200 dark:border-gray-800 shadow-2xl rounded-3xl p-0">
@@ -222,7 +234,7 @@ export function TaskSubmissionDialog({ open, onOpenChange, onSubmit, existingSub
                       {existingSubmission ? "Edit Submission" : "Submit Task"}
                     </h3>
                     <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">
-                      {existingSubmission ? "Update your submission details below." : "Provide your submission details. Product context must be approved."}
+                      {existingSubmission ? "Update your submission details below." : "Provide your submission details below."}
                     </p>
                     <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                       <span className="font-mono text-xs text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-2 py-0.5 rounded font-medium">
@@ -254,17 +266,17 @@ export function TaskSubmissionDialog({ open, onOpenChange, onSubmit, existingSub
               </div>
             )}
 
-            {/* Case A: Missing Context */}
-            {!validatingContext && contextValidation && (contextValidation.status === "MISSING" || contextValidation.case === "CASE_A") && (
+            {/* Case A: Missing Context (Non-Blocking Warning) */}
+            {!validatingContext && hasContextWarning && (
               <div className="p-4 bg-amber-50 dark:bg-amber-950/30 border-2 border-amber-300 dark:border-amber-700/60 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
                 <div className="flex items-start gap-3">
                   <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
                   <div>
                     <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
-                      Product Context Missing ({targetProductId})
+                      Parikshak Context Missing ({targetProductId})
                     </p>
                     <p className="text-xs text-amber-800 dark:text-amber-300 mt-0.5 leading-relaxed">
-                      Product context is missing. Please add and obtain approval for the project context before submitting.
+                      Parikshak context has not been added for this product. The task evaluation will fail unless context is added. You can still submit this task.
                     </p>
                   </div>
                 </div>
@@ -280,29 +292,14 @@ export function TaskSubmissionDialog({ open, onOpenChange, onSubmit, existingSub
               </div>
             )}
 
-            {/* Case B: Pending Approval / Draft */}
-            {!validatingContext && contextValidation && (contextValidation.status === "PENDING_APPROVAL" || contextValidation.status === "DRAFT" || contextValidation.case === "CASE_B") && (
-              <div className="p-4 bg-blue-50 dark:bg-blue-950/30 border-2 border-blue-300 dark:border-blue-700/60 rounded-2xl flex items-start gap-3 shadow-sm">
-                <Clock className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5 animate-pulse" />
-                <div>
-                  <p className="text-sm font-semibold text-blue-900 dark:text-blue-200">
-                    Product context is pending approval.
-                  </p>
-                  <p className="text-xs text-blue-800 dark:text-blue-300 mt-0.5 leading-relaxed">
-                    Product context for {targetProductId} is currently awaiting Governor approval from Akash Sir. Task submission will unlock automatically once approved.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* Case C: Approved Context */}
-            {!validatingContext && contextValidation && (contextValidation.status === "APPROVED" || contextValidation.case === "CASE_C") && (
+            {/* Case C: Active Context */}
+            {!validatingContext && contextValidation && !hasContextWarning && (
               <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-700/60 rounded-2xl flex items-center justify-between gap-3 shadow-sm">
                 <div className="flex items-center gap-2.5">
                   <CheckCircle className="h-5 w-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
                   <div>
                     <span className="text-xs font-semibold text-emerald-900 dark:text-emerald-200">
-                      Product context is approved.
+                      Product context is active.
                     </span>
                     <span className="text-xs text-emerald-700 dark:text-emerald-300 ml-1.5 font-mono">
                       ({targetProductId} • {contextValidation.version || contextValidation.context?.version || "v1.0"})
@@ -310,34 +307,8 @@ export function TaskSubmissionDialog({ open, onOpenChange, onSubmit, existingSub
                   </div>
                 </div>
                 <Badge className="bg-emerald-600/15 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800 text-[10px] font-semibold">
-                  Approved
+                  Active
                 </Badge>
-              </div>
-            )}
-
-            {/* Case D: Outdated or Rejected */}
-            {!validatingContext && contextValidation && (contextValidation.status === "OUTDATED" || contextValidation.status === "REJECTED" || contextValidation.case === "CASE_D") && (
-              <div className="p-4 bg-rose-50 dark:bg-rose-950/30 border-2 border-rose-300 dark:border-rose-700/60 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
-                <div className="flex items-start gap-3">
-                  <AlertTriangle className="h-5 w-5 text-rose-600 dark:text-rose-400 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-semibold text-rose-900 dark:text-rose-200">
-                      {contextValidation.status === "REJECTED" ? "Product Context Rejected" : "Product Context Outdated"} ({targetProductId})
-                    </p>
-                    <p className="text-xs text-rose-800 dark:text-rose-300 mt-0.5 leading-relaxed">
-                      Product context is outdated/rejected: {contextValidation.reason || contextValidation.message || "Please update and obtain approval for the product context before submitting."}
-                    </p>
-                  </div>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => handleRedirectToKnowledge("update")}
-                  className="self-end sm:self-auto flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white dark:bg-rose-500 dark:hover:bg-rose-600 font-semibold text-xs px-3.5 py-2 rounded-xl shadow-sm hover:scale-105 transition-all"
-                >
-                  <RefreshCw className="h-3.5 w-3.5" />
-                  Update Context
-                </Button>
               </div>
             )}
 
@@ -421,10 +392,10 @@ export function TaskSubmissionDialog({ open, onOpenChange, onSubmit, existingSub
 
         <DialogFooter className="px-6 py-4 border-t-2 border-gray-200 dark:border-gray-800 bg-gradient-to-t from-gray-50/50 dark:from-gray-900/50 to-transparent backdrop-blur-sm">
           <div className="flex items-center justify-between w-full">
-            {!validatingContext && !canSubmitContext && (
+            {!validatingContext && hasContextWarning && (
               <span className="text-xs text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1.5 mr-auto">
                 <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
-                Submit disabled: Product context must be approved
+                Warning: Parikshak context missing for {targetProductId}
               </span>
             )}
 
@@ -467,6 +438,51 @@ export function TaskSubmissionDialog({ open, onOpenChange, onSubmit, existingSub
           </div>
         </DialogFooter>
       </DialogContent>
+
+      {/* Non-blocking Parikshak Context Warning Pop-up */}
+      <Dialog open={contextWarningOpen} onOpenChange={setContextWarningOpen}>
+        <DialogContent className="sm:max-w-[480px] bg-white dark:bg-gray-950 border-2 border-amber-300 dark:border-amber-700 rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
+              <AlertTriangle className="h-5 w-5" />
+              Parikshak Context Missing ({targetProductId})
+            </DialogTitle>
+            <DialogDescription className="text-sm text-gray-700 dark:text-gray-300 pt-2">
+              Parikshak context has not been added for <strong>{targetProductId}</strong>. The task evaluation will fail unless context is added. Do you want to proceed with submission anyway?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex flex-col sm:flex-row gap-2 pt-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setContextWarningOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setContextWarningOpen(false)
+                handleRedirectToKnowledge("add")
+              }}
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              Add Context
+            </Button>
+            <Button
+              type="button"
+              onClick={async () => {
+                setContextWarningOpen(false)
+                await executeSubmit()
+              }}
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+            >
+              Proceed & Submit Anyway
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   )
 }
