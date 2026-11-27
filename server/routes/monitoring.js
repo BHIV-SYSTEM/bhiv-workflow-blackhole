@@ -311,19 +311,21 @@ router.get('/employees/:id/activity', async (req, res) => {
       productivity_score: evaluateSample(act).qualityScore
     }));
 
-    // Canonical day score for every date in the response, so range charts can
-    // plot the same numbers as the daily cards instead of raw sample averages.
-    const activitiesByDate = new Map();
-    normalizedActivities.forEach((act) => {
-      const key = getLocalDateKey(act.timestamp);
-      if (!key) return;
-      if (!activitiesByDate.has(key)) activitiesByDate.set(key, []);
-      activitiesByDate.get(key).push(act);
-    });
+    // Canonical day scores for range charts only. Today/default loads already
+    // send one summary score, so skip this extra pass on the hot path.
     const dayScoresByDate = {};
-    activitiesByDate.forEach((dayLogs, key) => {
-      dayScoresByDate[key] = dayProductivityFor(dayLogs).score;
-    });
+    if (startDate && endDate) {
+      const activitiesByDate = new Map();
+      normalizedActivities.forEach((act) => {
+        const key = getLocalDateKey(act.timestamp);
+        if (!key) return;
+        if (!activitiesByDate.has(key)) activitiesByDate.set(key, []);
+        activitiesByDate.get(key).push(act);
+      });
+      activitiesByDate.forEach((dayLogs, key) => {
+        dayScoresByDate[key] = dayProductivityFor(dayLogs).score;
+      });
+    }
 
     let summary = null;
     if (targetDateObj) {
