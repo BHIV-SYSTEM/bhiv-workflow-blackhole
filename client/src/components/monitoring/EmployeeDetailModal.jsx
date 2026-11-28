@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { dayScore, dayScoreStyle, dayZoneStyle, dayEfficiencyLabel } from '@/lib/dayProductivity';
+import { dayScore, dayScoreStyle, dayZoneStyle, dayEfficiencyLabel, getIstHour } from '@/lib/dayProductivity';
 import {
   X,
   User,
@@ -117,7 +117,7 @@ export function EmployeeDetailModal({ employee, onClose }) {
         totalIdleSec += idleVal;
         totalProdScore += Number(log.productivity_score || 0);
 
-        const hour = new Date(log.timestamp).getHours();
+        const hour = getIstHour(log.timestamp);
         const hourLabel = `${hour}:00`;
         if (!hourlyMap[hourLabel]) {
           hourlyMap[hourLabel] = { hour: hourLabel, keystrokes: 0, productivity: 0, count: 0 };
@@ -394,9 +394,9 @@ export function EmployeeDetailModal({ employee, onClose }) {
                       <LineChart data={timelineData}>
                         <CartesianGrid strokeDasharray="3 3" opacity={0.2} stroke="#333" />
                         <XAxis dataKey="hour" stroke="#888888" fontSize={12} />
-                        <YAxis stroke="#888888" fontSize={12} />
+                        <YAxis domain={[0, 100]} stroke="#888888" fontSize={12} />
                         <Tooltip contentStyle={{ backgroundColor: '#18181b', borderColor: '#27272a', color: '#fff' }} />
-                        <Line type="monotone" dataKey="productivity" name="Productivity %" stroke="#10b981" strokeWidth={2.5} />
+                        <Line type="monotone" dataKey="productivity" name="Productivity %" stroke={currentDayStyle.stroke || '#10b981'} strokeWidth={2.5} />
                       </LineChart>
                     </ResponsiveContainer>
                   ) : (
@@ -417,7 +417,7 @@ export function EmployeeDetailModal({ employee, onClose }) {
                   <div className="space-y-2.5 max-h-56 overflow-y-auto pr-1">
                     {activityLogs.length > 0 ? (
                       activityLogs.slice(0, 15).map((log, i) => {
-                        const hourKey = `${new Date(log.timestamp).getHours()}:00`;
+                        const hourKey = `${getIstHour(log.timestamp)}:00`;
                         const hourStyle = dayZoneStyle(
                           timelineData.find((h) => h.hour === hourKey)?.productivity ?? currentDayScore
                         );

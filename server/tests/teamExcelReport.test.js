@@ -251,6 +251,79 @@ describe('Team Excel Report (.xlsx) & Unified Telemetry', () => {
     expect(res.productivityEfficiency).toBe('Moderate Efficiency');
   });
 
+  test('deduplicates overlapping idle intervals and ignores background browser idle polls alongside desktop agent', () => {
+    const base = new Date('2026-11-28T06:30:00.000Z').getTime();
+    const res = summarizeActivitiesWithSession([
+      // Desktop agent active work sample
+      {
+        timestamp: new Date(base),
+        interval_seconds: 5,
+        keystroke_count: 10,
+        mouse_activity_score: 60,
+        idle_duration: 0,
+        active_application: { name: 'VS Code' },
+        metadata: { source: 'desktop_agent' }
+      },
+      // Background browser tab logging 0-input idle (>=300s) -> must NOT inflate desktop idle time
+      {
+        timestamp: new Date(base + 10000),
+        interval_seconds: 30,
+        keystroke_count: 0,
+        mouse_activity_score: 0,
+        mouse_event_count: 0,
+        idle_duration: 600,
+        active_application: { name: 'Browser' },
+        metadata: { source: 'browser' }
+      },
+      // Two overlapping desktop idle samples covering [base+20s..base+25s] and [base+22s..base+27s] -> union = 7s (not 10s)
+      {
+        timestamp: new Date(base + 25000),
+        interval_seconds: 5,
+        keystroke_count: 0,
+        mouse_activity_score: 0,
+        idle_duration: 350,
+        active_application: { name: 'VS Code' },
+        metadata: { source: 'desktop_agent' }
+      },
+      {
+        timestamp: new Date(base + 27000),
+        interval_seconds: 5,
+        keystroke_count: 0,
+        mouse_activity_score: 0,
+        idle_duration: 352,
+        active_application: { name: 'VS Code' },
+        metadata: { source: 'desktop_agent' }
+      }
+    ], null);
+
+    expect(res.totalIdleSeconds).toBe(7);
+  });
+
+  test('dayProductivity buckets hourly trend points in IST regardless of host timezone', () => {
+    const { computeDayProductivity } = require('../utils/dayProductivity');
+    // 03:58 UTC = 09:28 IST, 06:55 UTC = 12:25 IST
+    const dp = computeDayProductivity([
+      {
+        timestamp: new Date('2026-11-28T03:58:00.000Z'),
+        interval_seconds: 5,
+        keystroke_count: 10,
+        mouse_activity_score: 70,
+        idle_duration: 0,
+        active_application: { name: 'VS Code' }
+      },
+      {
+        timestamp: new Date('2026-11-28T06:55:00.000Z'),
+        interval_seconds: 5,
+        keystroke_count: 10,
+        mouse_activity_score: 70,
+        idle_duration: 0,
+        active_application: { name: 'VS Code' }
+      }
+    ]);
+
+    expect(dp.hourly.map((h) => h.hour)).toEqual([9, 12]);
+  });
+
   test('generateTeamReport builds a valid PDF with Idle Time, Rating, and Executive Summary', async () => {
     const reportGenerator = require('../services/reportGenerator');
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'niyantran-pdf-'));

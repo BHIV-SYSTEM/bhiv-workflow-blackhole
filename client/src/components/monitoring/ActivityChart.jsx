@@ -5,7 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Badge } from '@/components/ui/badge';
-import { dayZoneStyle } from '@/lib/dayProductivity';
+import { dayZoneStyle, getIstHour } from '@/lib/dayProductivity';
 import {
   LineChart,
   Line,
@@ -104,7 +104,7 @@ export function ActivityChart({ employee }) {
       // Group by hour for daily view
       const hourlyData = {};
       activities.forEach(activity => {
-        const hour = new Date(activity.timestamp).getHours();
+        const hour = getIstHour(activity.timestamp);
         const key = `${hour}:00`;
         
         if (!hourlyData[key]) {

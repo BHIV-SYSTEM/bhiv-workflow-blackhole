@@ -25,7 +25,7 @@
  * Zones (employee-confirmed): red < 70, yellow 70-79, green ≥ 80.
  */
 
-const { evaluateSample } = require('./telemetryMetrics');
+const { evaluateSample, IST_OFFSET_MS } = require('./telemetryMetrics');
 
 const ZONE = { RED: 'red', YELLOW: 'yellow', GREEN: 'green' };
 const ZONE_THRESHOLDS = { yellow: 70, green: 80 }; // red < 70, yellow 70-79, green >= 80
@@ -368,7 +368,7 @@ function computeDayProductivity(activities = [], options = {}) {
 
       if (Number.isFinite(ms)) {
         scoreTimeline.push({ ms, score: displayedScore });
-        const hour = new Date(ms).getHours();
+        const hour = new Date(ms + IST_OFFSET_MS).getUTCHours();
         hourlyMap.set(hour, { hour, score: displayedScore });
       }
     }

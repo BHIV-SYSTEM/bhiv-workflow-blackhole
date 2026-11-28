@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { dayScore, dayScoreStyle } from '@/lib/dayProductivity';
+import { dayScore, dayScoreStyle, getIstHour } from '@/lib/dayProductivity';
 import {
   Activity,
   Clock,
@@ -104,7 +104,7 @@ export function MonitoringDashboard({ employee, monitoringStatus }) {
     // Group activities by hour
     const hourlyData = {};
     activities.forEach(activity => {
-      const hour = new Date(activity.timestamp).getHours();
+      const hour = getIstHour(activity.timestamp);
       if (!hourlyData[hour]) {
         hourlyData[hour] = {
           hour: `${hour}:00`,

@@ -8,6 +8,7 @@ export const DAY_ZONE_STYLES = {
     zone: 'green',
     label: 'Green',
     dot: 'bg-emerald-500',
+    stroke: '#10b981',
     text: 'text-emerald-600 dark:text-emerald-400',
     bar: '[&>div]:bg-emerald-500',
     badge: 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
@@ -16,6 +17,7 @@ export const DAY_ZONE_STYLES = {
     zone: 'yellow',
     label: 'Yellow',
     dot: 'bg-amber-500',
+    stroke: '#f59e0b',
     text: 'text-amber-600 dark:text-amber-400',
     bar: '[&>div]:bg-amber-500',
     badge: 'border border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400',
@@ -24,11 +26,21 @@ export const DAY_ZONE_STYLES = {
     zone: 'red',
     label: 'Red',
     dot: 'bg-rose-500',
+    stroke: '#ef4444',
     text: 'text-rose-600 dark:text-rose-400',
     bar: '[&>div]:bg-rose-500',
     badge: 'border border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400',
   },
 };
+
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
+/** Hour of day (0-23) in IST so charts match backend dayProductivity.hourly buckets. */
+export function getIstHour(timestamp) {
+  const ms = new Date(timestamp).getTime();
+  if (!Number.isFinite(ms)) return 0;
+  return new Date(ms + IST_OFFSET_MS).getUTCHours();
+}
 
 /** Zone for a numeric score. */
 export function dayZone(score) {

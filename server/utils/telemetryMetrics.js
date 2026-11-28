@@ -170,6 +170,29 @@ function evaluateSample(act) {
 }
 
 /**
+ * Merge overlapping [startMs, endMs] intervals and return total covered seconds.
+ * Prevents duplicate/concurrent telemetry streams from double- or triple-counting idle time.
+ */
+function computeMergedIntervalSeconds(intervals = []) {
+  if (!Array.isArray(intervals) || intervals.length === 0) return 0;
+  const sorted = [...intervals].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  let totalMs = 0;
+  let [curStart, curEnd] = sorted[0];
+  for (let i = 1; i < sorted.length; i++) {
+    const [nextStart, nextEnd] = sorted[i];
+    if (nextStart <= curEnd) {
+      if (nextEnd > curEnd) curEnd = nextEnd;
+    } else {
+      totalMs += Math.max(0, curEnd - curStart);
+      curStart = nextStart;
+      curEnd = nextEnd;
+    }
+  }
+  totalMs += Math.max(0, curEnd - curStart);
+  return Math.round(totalMs / 1000);
+}
+
+/**
  * Aggregate a list of EmployeeActivity docs alongside authoritative Attendance/WorkSession seconds.
  */
 function summarizeActivitiesWithSession(activities = [], sessionInfo = null, evalCache = null) {
@@ -188,11 +211,14 @@ function summarizeActivitiesWithSession(activities = [], sessionInfo = null, eva
   let totalMouseScore = 0;
   let activeMouseSamples = 0;
   let totalTelemetrySec = 0;
-  let totalIdleSeconds = 0;
   let weightedScoreSum = 0;
   let nonBgTelemetrySec = 0;
   let nonBgWeightedSum = 0;
   let desktopSampleCount = 0;
+  const allIdleIntervals = [];
+  const nonBgIdleIntervals = [];
+  let allIdleUntimedSec = 0;
+  let nonBgIdleUntimedSec = 0;
   const appUsageMap = {};
 
   for (const act of logs) {
@@ -203,8 +229,23 @@ function summarizeActivitiesWithSession(activities = [], sessionInfo = null, eva
       activeMouseSamples++;
     }
     totalTelemetrySec += ev.sampleSec;
-    totalIdleSeconds += ev.idleSec;
     weightedScoreSum += ev.qualityScore * ev.sampleSec;
+
+    if (ev.idleSec > 0) {
+      const endMs = act?.timestamp ? new Date(act.timestamp).getTime() : NaN;
+      if (Number.isFinite(endMs)) {
+        const span = [endMs - (ev.idleSec * 1000), endMs];
+        allIdleIntervals.push(span);
+        if (!ev.isBgBrowserPoll) {
+          nonBgIdleIntervals.push(span);
+        }
+      } else {
+        allIdleUntimedSec += ev.idleSec;
+        if (!ev.isBgBrowserPoll) {
+          nonBgIdleUntimedSec += ev.idleSec;
+        }
+      }
+    }
 
     if (ev.isDesktopSample) {
       desktopSampleCount++;
@@ -218,7 +259,14 @@ function summarizeActivitiesWithSession(activities = [], sessionInfo = null, eva
     appUsageMap[appName] = (appUsageMap[appName] || 0) + ev.sampleSec;
   }
 
-  const telemetryActiveSeconds = Math.max(0, totalTelemetrySec - totalIdleSeconds);
+  // When Desktop Agent is active, exclude 0-input background browser polls from both productivity and idle time
+  const useNonBg = desktopSampleCount > 0 && nonBgTelemetrySec > 0;
+  const totalIdleSeconds = useNonBg
+    ? (computeMergedIntervalSeconds(nonBgIdleIntervals) + nonBgIdleUntimedSec)
+    : (computeMergedIntervalSeconds(allIdleIntervals) + allIdleUntimedSec);
+
+  const effectiveTelemetrySec = useNonBg ? nonBgTelemetrySec : totalTelemetrySec;
+  const telemetryActiveSeconds = Math.max(0, effectiveTelemetrySec - totalIdleSeconds);
   const sessionSec = Number(sessionInfo?.sessionSeconds || 0);
   const activeSeconds = sessionSec > 0 ? sessionSec : telemetryActiveSeconds;
 
@@ -228,8 +276,6 @@ function summarizeActivitiesWithSession(activities = [], sessionInfo = null, eva
 
   let avgProductivityScore = 0;
   if (hasTelemetry && totalTelemetrySec > 0) {
-    // When Desktop Agent is active, exclude 0-input background browser polls so they don't 6x dilute coding work
-    const useNonBg = desktopSampleCount > 0 && nonBgTelemetrySec > 0;
     const denom = useNonBg ? nonBgTelemetrySec : totalTelemetrySec;
     const numer = useNonBg ? nonBgWeightedSum : weightedScoreSum;
     avgProductivityScore = Math.min(100, Math.round(numer / denom));

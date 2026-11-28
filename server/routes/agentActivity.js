@@ -186,7 +186,7 @@ router.post('/activity/ingest', auth, async (req, res) => {
       });
     }
 
-    // Avoid double-counting & idle-0 overwrites when both desktop agent and browser tab run concurrently
+    // Avoid double-counting & idle-0 overwrites when desktop agent or multiple browser tabs run concurrently
     if (resolvedSource === 'browser') {
       const recentDesktopCutoff = new Date(Date.now() - 15000);
       const desktopActive = await EmployeeActivity.exists({
@@ -200,6 +200,22 @@ router.post('/activity/ingest', auth, async (req, res) => {
           deduplicated: true,
           message: 'Desktop agent active; skipped redundant browser sample'
         });
+      }
+
+      if (!keyboardEvents && !mouseEvents) {
+        const recentBrowserCutoff = new Date(Date.now() - 4000);
+        const dupBrowser = await EmployeeActivity.exists({
+          employee: req.user.id,
+          'metadata.source': 'browser',
+          timestamp: { $gte: recentBrowserCutoff }
+        });
+        if (dupBrowser) {
+          return res.json({
+            success: true,
+            deduplicated: true,
+            message: 'Duplicate browser tab poll skipped'
+          });
+        }
       }
     }
 
