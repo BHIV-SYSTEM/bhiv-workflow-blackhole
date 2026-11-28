@@ -195,8 +195,11 @@ function computeMergedIntervalSeconds(intervals = []) {
 /**
  * Aggregate a list of EmployeeActivity docs alongside authoritative Attendance/WorkSession seconds.
  */
-function summarizeActivitiesWithSession(activities = [], sessionInfo = null, evalCache = null) {
+function summarizeActivitiesWithSession(activities = [], sessionInfo = null, evalCache = null, options = {}) {
   const logs = Array.isArray(activities) ? activities : [];
+  // The live team grid never reads appDetails; skipping it avoids building and
+  // sorting an app-usage map for every employee on every poll.
+  const skipAppDetails = Boolean(options && options.skipAppDetails);
   // Shared with the day-score engine: one evaluateSample() per telemetry row.
   const evaluate = (act) => {
     if (!evalCache) return evaluateSample(act);
@@ -255,8 +258,10 @@ function summarizeActivitiesWithSession(activities = [], sessionInfo = null, eva
       nonBgWeightedSum += ev.qualityScore * ev.sampleSec;
     }
 
-    const appName = act?.active_application?.name || 'Other';
-    appUsageMap[appName] = (appUsageMap[appName] || 0) + ev.sampleSec;
+    if (!skipAppDetails) {
+      const appName = act?.active_application?.name || 'Other';
+      appUsageMap[appName] = (appUsageMap[appName] || 0) + ev.sampleSec;
+    }
   }
 
   // When Desktop Agent is active, exclude 0-input background browser polls from both productivity and idle time
@@ -289,7 +294,7 @@ function summarizeActivitiesWithSession(activities = [], sessionInfo = null, eva
 
   const productivityEfficiency = getEfficiencyLabel(avgProductivityScore, hasActivity);
 
-  const appDetails = Object.entries(appUsageMap)
+  const appDetails = skipAppDetails ? [] : Object.entries(appUsageMap)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 4)
     .map(([name, seconds]) => ({ name, count: Math.max(1, Math.round(seconds / 60)) || 1 }));
@@ -388,7 +393,12 @@ async function resolveSessionsMap(empIds, startDate, endDate, now = new Date()) 
         { date: { $gte: startDate, $lte: endDate } },
         { startTime: { $gte: startDate, $lte: endDate } }
       ]
-    }).sort({ updatedAt: -1, startTime: -1 }).lean(),
+    })
+      // Only fields used by getLocalDateKey()/computeRecordSessionSeconds()
+      // plus the sort keys. These attendance documents also carry locations,
+      // photos and metadata that the monitoring endpoints never read.
+      .select('employee date startTime status endTime totalBreakTime pausedAt updatedAt')
+      .sort({ updatedAt: -1, startTime: -1 }).lean(),
 
     Attendance.find({
       user: { $in: empIds },
@@ -396,7 +406,9 @@ async function resolveSessionsMap(empIds, startDate, endDate, now = new Date()) 
         { date: { $gte: startDate, $lte: endDate } },
         { startDayTime: { $gte: startDate, $lte: endDate } }
       ]
-    }).sort({ startDayTime: -1, createdAt: -1 }).lean(),
+    })
+      .select('user date startDayTime endDayTime totalHoursWorked hoursWorked breakTime createdAt')
+      .sort({ startDayTime: -1, createdAt: -1 }).lean(),
 
     DailyAttendance.find({
       user: { $in: empIds },
@@ -404,7 +416,9 @@ async function resolveSessionsMap(empIds, startDate, endDate, now = new Date()) 
         { date: { $gte: startDate, $lte: endDate } },
         { startDayTime: { $gte: startDate, $lte: endDate } }
       ]
-    }).sort({ startDayTime: -1, createdAt: -1 }).lean()
+    })
+      .select('user date startDayTime endDayTime totalHoursWorked hoursWorked breakTime createdAt')
+      .sort({ startDayTime: -1, createdAt: -1 }).lean()
   ]);
 
   const sessionsMap = new Map();

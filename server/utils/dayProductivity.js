@@ -143,7 +143,16 @@ function classifyPlatformCached(act) {
   const key = `${category}\u0000${name}\u0000${title}`;
   const cached = classificationCache.get(key);
   if (cached !== undefined) return cached;
-  if (classificationCache.size >= CLASSIFICATION_CACHE_LIMIT) classificationCache.clear();
+  if (classificationCache.size >= CLASSIFICATION_CACHE_LIMIT) {
+    // Evict the oldest quarter instead of clearing everything. Window titles
+    // repeat heavily within a day, so a full clear made the regex suite run
+    // again on every sample right after the cache filled up.
+    let toEvict = Math.floor(CLASSIFICATION_CACHE_LIMIT / 4);
+    for (const oldKey of classificationCache.keys()) {
+      classificationCache.delete(oldKey);
+      if (--toEvict <= 0) break;
+    }
+  }
   const value = classifyPlatform(act);
   classificationCache.set(key, value);
   return value;

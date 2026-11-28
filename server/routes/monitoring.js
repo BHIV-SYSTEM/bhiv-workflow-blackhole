@@ -44,6 +44,28 @@ const {
 const teamSummaryCache = new Map();
 const TEAM_SUMMARY_CACHE_TTL_MS = 10000;
 
+// Concurrent identical requests share one computation. Without this, a cold
+// cache plus the initial load, 15s poll and manual refresh all run the heavy
+// day-score pass in parallel and multiply the very latency we are reducing.
+const teamSummaryInflight = new Map();
+
+// Prune expired keys and bound the cache without discarding still-fresh
+// snapshots of other filters/tabs (the old clear() threw away everything).
+function pruneTeamSummaryCache() {
+  const now = Date.now();
+  for (const [key, entry] of teamSummaryCache) {
+    if (entry.expires <= now) teamSummaryCache.delete(key);
+  }
+  const MAX_CACHE_KEYS = 50;
+  if (teamSummaryCache.size > MAX_CACHE_KEYS) {
+    let excess = teamSummaryCache.size - MAX_CACHE_KEYS;
+    for (const key of teamSummaryCache.keys()) {
+      teamSummaryCache.delete(key);
+      if (--excess <= 0) break;
+    }
+  }
+}
+
 /**
  * Additive red/yellow/green day score for an employee's already-loaded samples.
  * Legacy productivity fields stay untouched; consumers that don't read
@@ -1561,6 +1583,8 @@ router.get('/employee-list', async (req, res) => {
 // 1. GET /api/monitoring/team-summary
 // Fetches real-time status and today's telemetry for all non-admin employees
 router.get('/team-summary', async (req, res) => {
+  let cacheKey = '';
+  let rejectInflight = null;
   try {
     const { statusTab = 'active', department = 'all', search = '' } = req.query;
     const User = require('../models/User');
@@ -1568,11 +1592,31 @@ router.get('/team-summary', async (req, res) => {
     // Short-lived response cache: the live view polls this endpoint every 15s
     // for the whole team, and recomputing every sample each time is what made
     // the monitoring page crawl (and time out on slow connections).
-    const cacheKey = `${statusTab}|${department}|${search}|${getLocalDateKey(new Date())}`;
+    cacheKey = `${statusTab}|${department}|${search}|${getLocalDateKey(new Date())}`;
     const cachedTeamSummary = teamSummaryCache.get(cacheKey);
     if (cachedTeamSummary && cachedTeamSummary.expires > Date.now()) {
       return res.json(cachedTeamSummary.body);
     }
+
+    // If another request is already computing this exact snapshot, wait for
+    // its result instead of starting a second full day-score pass.
+    const inflight = teamSummaryInflight.get(cacheKey);
+    if (inflight) {
+      try {
+        return res.json(await inflight);
+      } catch (error) {
+        return res.status(500).json({ success: false, error: 'Failed to fetch team summary' });
+      }
+    }
+    let resolveInflight;
+    const inflightPromise = new Promise((resolve, reject) => {
+      resolveInflight = resolve;
+      rejectInflight = reject;
+    });
+    // Attach a no-op handler so a rejected computation never becomes an
+    // unhandled rejection when no other request joined it.
+    inflightPromise.catch(() => {});
+    teamSummaryInflight.set(cacheKey, inflightPromise);
 
     // Base filter for non-admin users
     let baseUserQuery = { role: { $nin: ['admin', 'Admin'] } };
@@ -1580,12 +1624,13 @@ router.get('/team-summary', async (req, res) => {
       baseUserQuery.department = department;
     }
 
-    // Global counts independent of statusTab filter (executed in parallel)
-    const [totalEmployeesCount, globalActiveCount, globalExitedCount] = await Promise.all([
-      User.countDocuments(baseUserQuery),
-      User.countDocuments({ ...baseUserQuery, stillExist: 1 }),
-      User.countDocuments({ ...baseUserQuery, stillExist: 0 })
-    ]);
+    // Global counts independent of statusTab filter. A single cast-safe query
+    // (Mongoose applies the same casting as countDocuments) replaces three
+    // separate collection scans; only stillExist is materialized.
+    const countUsers = await User.find(baseUserQuery).select('stillExist').lean();
+    const totalEmployeesCount = countUsers.length;
+    const globalActiveCount = countUsers.filter((u) => u.stillExist === 1).length;
+    const globalExitedCount = countUsers.filter((u) => u.stillExist === 0).length;
 
     // Build user filter query for current statusTab view
     let userQuery = { ...baseUserQuery };
@@ -1618,11 +1663,15 @@ router.get('/team-summary', async (req, res) => {
       employee: { $in: empIds },
       timestamp: { $gte: startOfDay, $lte: endOfDay }
     })
-    .select('employee keystroke_count mouse_activity_score mouse_event_count idle_duration interval_seconds app_category productivity_score active_application.name active_application.title active_application.url metadata.source timestamp')
-    .sort({ timestamp: 1 })
+    .select('employee keystroke_count mouse_activity_score mouse_event_count idle_duration interval_seconds app_category active_application.name active_application.title active_application.url metadata.source timestamp')
+    // {employee:1,timestamp:-1} is an existing index; sorting by it avoids the
+    // blocking sort the old global {timestamp:1} required over every sample.
+    .sort({ employee: 1, timestamp: -1 })
     .lean();
 
-    // Group today's activities by employee string ID
+    // Group today's activities by employee string ID. Each group arrives
+    // newest-first from the index-friendly sort; reversing it is O(n) and
+    // restores the oldest-first order the day-score engine expects.
     const todayActivitiesByEmp = new Map();
     for (const act of allTodayActivities) {
       const empIdStr = act.employee.toString();
@@ -1631,6 +1680,7 @@ router.get('/team-summary', async (req, res) => {
       }
       todayActivitiesByEmp.get(empIdStr).push(act);
     }
+    for (const acts of todayActivitiesByEmp.values()) acts.reverse();
 
     // For active employees who have 0 logs today, fetch their single latest log using 1 aggregation
     const empsNeedingLatestLog = employees
@@ -1641,7 +1691,9 @@ router.get('/team-summary', async (req, res) => {
     if (empsNeedingLatestLog.length > 0) {
       const latestLogs = await EmployeeActivity.aggregate([
         { $match: { employee: { $in: empsNeedingLatestLog } } },
-        { $sort: { timestamp: -1 } },
+        // Sorting by the indexed (employee, timestamp) prefix lets MongoDB
+        // stream the groups instead of block-sorting all historical rows.
+        { $sort: { employee: 1, timestamp: -1 } },
         { $group: {
             _id: "$employee",
             // Only the fields the grid actually renders - avoids pulling the
@@ -1700,7 +1752,8 @@ router.get('/team-summary', async (req, res) => {
       }
 
       const evalCache = new Map();
-      const metrics = summarizeActivitiesWithSession(activities, sessionInfo, evalCache);
+      // The live grid never reads appDetails; skip building and sorting it.
+      const metrics = summarizeActivitiesWithSession(activities, sessionInfo, evalCache, { skipAppDetails: true });
 
       // Current status calculation
       let currentStatus = 'Away';
@@ -1804,14 +1857,18 @@ router.get('/team-summary', async (req, res) => {
       employees: teamData
     };
 
-    if (teamSummaryCache.size > 50) teamSummaryCache.clear();
+    pruneTeamSummaryCache();
     teamSummaryCache.set(cacheKey, {
       expires: Date.now() + TEAM_SUMMARY_CACHE_TTL_MS,
       body: responseBody
     });
+    teamSummaryInflight.delete(cacheKey);
+    resolveInflight(responseBody);
 
     res.json(responseBody);
   } catch (error) {
+    if (cacheKey) teamSummaryInflight.delete(cacheKey);
+    if (rejectInflight) rejectInflight(error);
     console.error('Error fetching team summary:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch team summary' });
   }
@@ -1851,8 +1908,9 @@ router.get('/daily-summary', async (req, res) => {
         employee: { $in: activeEmpIds },
         timestamp: { $gte: startOfDay, $lte: endOfDay }
       })
-      .select('employee keystroke_count mouse_activity_score mouse_event_count idle_duration interval_seconds app_category productivity_score active_application.name active_application.title metadata.source timestamp')
-      .sort({ timestamp: 1 })
+      .select('employee keystroke_count mouse_activity_score mouse_event_count idle_duration interval_seconds app_category active_application.name active_application.title metadata.source timestamp')
+      // Index-friendly sort (see /team-summary). Result order is restored below.
+      .sort({ employee: 1, timestamp: -1 })
       .lean(),
 
       // Synchronize working hours across WorkSession, Attendance, and DailyAttendance
@@ -1867,6 +1925,7 @@ router.get('/daily-summary', async (req, res) => {
       }
       activitiesByEmp.get(empIdStr).push(act);
     }
+    for (const acts of activitiesByEmp.values()) acts.reverse();
 
     let totalTeamKeystrokes = 0;
     let totalTeamActiveSeconds = 0;
