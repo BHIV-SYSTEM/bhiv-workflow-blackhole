@@ -90,7 +90,7 @@ const VOICE_PATTERNS = [
 const ASSISTIVE_PATTERNS = [
   /\bchatgpt\b/, /\bgpt-?\d\b/, /\bopenai\b/, /\bclaude\b/, /\bcopilot\b/,
   /\bgemini\b/, /\bperplexity\b/, /\bdeepseek\b/, /\bllama\b/, /\bchatbot\b/,
-  /\bai assistant\b/, /\bartificial intelligence\b/, /\bcursor\b/, /\bwindsurf\b/,
+  /\bai assistant\b/, /\bartificial intelligence\b/, /\bcursor\b/, /\bwindsurf\b/, /\bantigravity\b/,
   /\bcodeium\b/, /\btabnine\b/, /\bgrimoire\b/, /\bpoe\.com\b/, /\byou\.com\b/,
   /\bblackhole\s*agent\b/, /\bniyantran\b.*\bagent\b/,
 ];

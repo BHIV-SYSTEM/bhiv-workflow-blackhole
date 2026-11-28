@@ -54,6 +54,7 @@ const DEFAULT_APP_RULES = [
   { pattern: 'vs code', field: 'app', category: 'FOCUS', label: 'VS Code' },
   { pattern: 'code', field: 'app', category: 'FOCUS', label: 'Code Editor' },
   { pattern: 'cursor', field: 'app', category: 'FOCUS', label: 'Cursor' },
+  { pattern: 'antigravity', field: 'app', category: 'FOCUS', label: 'Antigravity' },
   { pattern: 'intellij', field: 'app', category: 'FOCUS', label: 'IntelliJ' },
   { pattern: 'pycharm', field: 'app', category: 'FOCUS', label: 'PyCharm' },
   { pattern: 'webstorm', field: 'app', category: 'FOCUS', label: 'WebStorm' },
