@@ -38,6 +38,12 @@ const {
   efficiencyLabelForDay,
 } = require('../utils/dayProductivity');
 
+// In-memory cache for /team-summary responses. The live dashboard polls this
+// endpoint every 15 seconds for every employee; serving a 10-second-old
+// snapshot keeps the database and CPU out of that polling loop.
+const teamSummaryCache = new Map();
+const TEAM_SUMMARY_CACHE_TTL_MS = 10000;
+
 /**
  * Additive red/yellow/green day score for an employee's already-loaded samples.
  * Legacy productivity fields stay untouched; consumers that don't read
@@ -1518,6 +1524,15 @@ router.get('/team-summary', async (req, res) => {
     const { statusTab = 'active', department = 'all', search = '' } = req.query;
     const User = require('../models/User');
 
+    // Short-lived response cache: the live view polls this endpoint every 15s
+    // for the whole team, and recomputing every sample each time is what made
+    // the monitoring page crawl (and time out on slow connections).
+    const cacheKey = `${statusTab}|${department}|${search}|${getLocalDateKey(new Date())}`;
+    const cachedTeamSummary = teamSummaryCache.get(cacheKey);
+    if (cachedTeamSummary && cachedTeamSummary.expires > Date.now()) {
+      return res.json(cachedTeamSummary.body);
+    }
+
     // Base filter for non-admin users
     let baseUserQuery = { role: { $nin: ['admin', 'Admin'] } };
     if (department && department !== 'all') {
@@ -1562,7 +1577,7 @@ router.get('/team-summary', async (req, res) => {
       employee: { $in: empIds },
       timestamp: { $gte: startOfDay, $lte: endOfDay }
     })
-    .select('employee keystroke_count mouse_activity_score mouse_event_count idle_duration interval_seconds app_category productivity_score active_application metadata timestamp')
+    .select('employee keystroke_count mouse_activity_score mouse_event_count idle_duration interval_seconds app_category productivity_score active_application.name active_application.title active_application.url metadata.source timestamp')
     .sort({ timestamp: 1 })
     .lean();
 
@@ -1588,7 +1603,13 @@ router.get('/team-summary', async (req, res) => {
         { $sort: { timestamp: -1 } },
         { $group: {
             _id: "$employee",
-            latestLog: { $first: "$$ROOT" }
+            // Only the fields the grid actually renders - avoids pulling the
+            // full document for every employee with no activity today.
+            latestLog: { $first: {
+                timestamp: "$timestamp",
+                idle_duration: "$idle_duration",
+                active_application: "$active_application"
+            } }
         }}
       ]);
 
@@ -1723,7 +1744,7 @@ router.get('/team-summary', async (req, res) => {
       ? Math.round(validDayScores.reduce((acc, curr) => acc + curr.dayProductivity.score, 0) / validDayScores.length)
       : 0;
 
-    res.json({
+    const responseBody = {
       success: true,
       counts: {
         totalEmployees: totalEmployeesCount,
@@ -1740,7 +1761,15 @@ router.get('/team-summary', async (req, res) => {
         avgDayProductivity
       },
       employees: teamData
+    };
+
+    if (teamSummaryCache.size > 50) teamSummaryCache.clear();
+    teamSummaryCache.set(cacheKey, {
+      expires: Date.now() + TEAM_SUMMARY_CACHE_TTL_MS,
+      body: responseBody
     });
+
+    res.json(responseBody);
   } catch (error) {
     console.error('Error fetching team summary:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch team summary' });

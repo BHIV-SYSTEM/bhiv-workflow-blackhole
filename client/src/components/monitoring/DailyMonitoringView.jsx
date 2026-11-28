@@ -73,7 +73,7 @@ export function DailyMonitoringView({
           {
             headers: { Authorization: `Bearer ${token}` },
             signal: controller.signal,
-            timeout: 20000
+            timeout: 60000
           }
         );
 

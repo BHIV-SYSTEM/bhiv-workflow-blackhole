@@ -74,7 +74,7 @@ export function EmployeeDetailModal({ employee, onClose }) {
         `${API_URL}/monitoring/employees/${empId}/activity?date=${targetDate}`,
         {
           headers: { Authorization: `Bearer ${token}` },
-          timeout: 20000
+          timeout: 45000
         }
       );
       setFetchError(null);

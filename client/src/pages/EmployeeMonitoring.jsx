@@ -61,16 +61,26 @@ export function EmployeeMonitoring() {
   const [filterDepartment, setFilterDepartment] = useState('all');
   const [departments, setDepartments] = useState([]);
 
-  // Live Summary State with cached counts to eliminate 0-active / 0-exited flash
+  // Live Summary State with cached counts/employees so the dropdown is never
+  // blank while the first (slow) team-summary request is in flight or fails.
   const [teamSummaryData, setTeamSummaryData] = useState(() => {
     try {
       const cached = sessionStorage.getItem('niyantran_monitoring_counts');
+      const cachedEmployees = sessionStorage.getItem('niyantran_monitoring_employees');
+      const employees = cachedEmployees ? JSON.parse(cachedEmployees) : [];
       if (cached) {
         const parsed = JSON.parse(cached);
         return {
           counts: parsed,
           summary: { totalEmployees: parsed.totalEmployees || 0, activeCount: parsed.activeCount || 0, idleCount: 0, awayCount: 0, avgTeamProductivity: 0 },
-          employees: []
+          employees: Array.isArray(employees) ? employees : []
+        };
+      }
+      if (Array.isArray(employees) && employees.length > 0) {
+        return {
+          counts: {},
+          summary: { totalEmployees: employees.length, activeCount: 0, idleCount: 0, awayCount: 0, avgTeamProductivity: 0 },
+          employees
         };
       }
     } catch (e) {}
@@ -142,18 +152,29 @@ export function EmployeeMonitoring() {
     try {
       const token = localStorage.getItem('WorkflowToken') || localStorage.getItem('token');
       const selectedBranch = localStorage.getItem('selectedBranch') || localStorage.getItem('branch');
-      const response = await axios.get(
-        `${API_URL}/monitoring/team-summary?statusTab=${statusTab}&department=${filterDepartment}&search=${encodeURIComponent(debouncedSearch)}`,
-        {
-          headers: {
-            'x-auth-token': token,
-            Authorization: `Bearer ${token}`,
-            ...(selectedBranch && selectedBranch !== 'all' ? { 'x-branch': selectedBranch } : {})
-          },
-          signal: controller.signal,
-          timeout: 20000
-        }
-      );
+      const requestConfig = {
+        headers: {
+          'x-auth-token': token,
+          Authorization: `Bearer ${token}`,
+          ...(selectedBranch && selectedBranch !== 'all' ? { 'x-branch': selectedBranch } : {})
+        },
+        signal: controller.signal,
+        timeout: 60000
+      };
+      const url = `${API_URL}/monitoring/team-summary?statusTab=${statusTab}&department=${filterDepartment}&search=${encodeURIComponent(debouncedSearch)}`;
+
+      let response;
+      try {
+        response = await axios.get(url, requestConfig);
+      } catch (requestError) {
+        // One automatic retry for dropped connections / cold-start timeouts
+        const retryable = !requestError.response
+          && (requestError.code === 'ECONNABORTED' || requestError.code === 'ERR_NETWORK' || requestError.message === 'Network Error');
+        if (!retryable || controller.signal.aborted) throw requestError;
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        if (controller.signal.aborted) throw requestError;
+        response = await axios.get(url, requestConfig);
+      }
 
       if (response.data.success) {
         setSummaryError(null);
@@ -163,6 +184,7 @@ export function EmployeeMonitoring() {
           if (counts && typeof counts.activeCount === 'number') {
             sessionStorage.setItem('niyantran_monitoring_counts', JSON.stringify(counts));
           }
+          sessionStorage.setItem('niyantran_monitoring_employees', JSON.stringify(fetchedEmployees));
         } catch (e) {}
 
         setTeamSummaryData({

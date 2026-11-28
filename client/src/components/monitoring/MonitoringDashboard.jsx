@@ -59,7 +59,7 @@ export function MonitoringDashboard({ employee, monitoringStatus }) {
         {
           headers: { Authorization: `Bearer ${getAuthToken()}` },
           signal,
-          timeout: 20000
+          timeout: 45000
         }
       );
 
@@ -69,7 +69,7 @@ export function MonitoringDashboard({ employee, monitoringStatus }) {
         {
           headers: { Authorization: `Bearer ${getAuthToken()}` },
           signal,
-          timeout: 20000
+          timeout: 45000
         }
       );
 
