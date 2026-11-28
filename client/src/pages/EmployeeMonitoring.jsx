@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -80,6 +80,17 @@ export function EmployeeMonitoring() {
     };
   });
   const [loadingTeamSummary, setLoadingTeamSummary] = useState(true);
+  const [summaryError, setSummaryError] = useState(null);
+  const [reloadSummaryKey, setReloadSummaryKey] = useState(0);
+
+  // Debounce search so typing doesn't fire a team-summary request per keystroke
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery), 350);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  const summaryControllerRef = useRef(null);
 
   // Employee Selection for 1-Click Detail View Modal
   const [detailEmployee, setDetailEmployee] = useState(null);
@@ -107,35 +118,45 @@ export function EmployeeMonitoring() {
 
   useEffect(() => {
     fetchTeamSummary();
-  }, [statusTab, filterDepartment, searchQuery]);
+  }, [statusTab, filterDepartment, debouncedSearch, reloadSummaryKey]);
 
   useEffect(() => {
     // Auto-refresh real-time summary every 15 seconds when on live view mode
-    if (viewMode === 'live' && !searchQuery) {
+    if (viewMode === 'live' && !debouncedSearch) {
       const interval = setInterval(() => fetchTeamSummary(true), 15000);
       return () => clearInterval(interval);
     }
-  }, [viewMode, statusTab, filterDepartment, searchQuery]);
+  }, [viewMode, statusTab, filterDepartment, debouncedSearch]);
 
   const fetchTeamSummary = async (isBackgroundRefresh = false) => {
     if (!isBackgroundRefresh) {
       setLoadingTeamSummary(true);
     }
+    // Cancel any still-running request so stale responses never overwrite new ones
+    if (summaryControllerRef.current) {
+      summaryControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    summaryControllerRef.current = controller;
+
     try {
       const token = localStorage.getItem('WorkflowToken') || localStorage.getItem('token');
       const selectedBranch = localStorage.getItem('selectedBranch') || localStorage.getItem('branch');
       const response = await axios.get(
-        `${API_URL}/monitoring/team-summary?statusTab=${statusTab}&department=${filterDepartment}&search=${encodeURIComponent(searchQuery)}`,
+        `${API_URL}/monitoring/team-summary?statusTab=${statusTab}&department=${filterDepartment}&search=${encodeURIComponent(debouncedSearch)}`,
         {
           headers: {
             'x-auth-token': token,
             Authorization: `Bearer ${token}`,
             ...(selectedBranch && selectedBranch !== 'all' ? { 'x-branch': selectedBranch } : {})
-          }
+          },
+          signal: controller.signal,
+          timeout: 20000
         }
       );
 
       if (response.data.success) {
+        setSummaryError(null);
         const fetchedEmployees = response.data.employees || [];
         const counts = response.data.counts || {};
         try {
@@ -176,9 +197,14 @@ export function EmployeeMonitoring() {
         }
       }
     } catch (error) {
+      if (controller.signal.aborted || error.code === 'ERR_CANCELED') return;
       console.error('Error fetching team monitoring summary:', error);
+      setSummaryError(
+        error.response?.data?.error
+        || 'Could not load monitoring data. Please try again.'
+      );
     } finally {
-      if (!isBackgroundRefresh) {
+      if (!controller.signal.aborted) {
         setLoadingTeamSummary(false);
       }
     }
@@ -437,6 +463,19 @@ export function EmployeeMonitoring() {
       </div>
 
       {/* ========== SECTION 2: VIEW MODE TABS NAVIGATION ========== */}
+      {summaryError && !loadingTeamSummary && (
+        <div className="mb-4 p-3 rounded-xl border border-rose-500/30 bg-rose-500/10 text-rose-300 text-sm flex items-center justify-between gap-3">
+          <span>{summaryError}</span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setReloadSummaryKey((key) => key + 1)}
+          >
+            Try Again
+          </Button>
+        </div>
+      )}
+
       <Tabs value={viewMode} onValueChange={setViewMode} className="w-full">
         <TabsList className="h-auto p-1.5 bg-zinc-950/90 border border-zinc-800 flex flex-wrap gap-1.5 rounded-2xl shadow-inner">
           <TabsTrigger
@@ -619,11 +658,16 @@ export function EmployeeMonitoring() {
             </div>
 
             <div className="flex-1 min-w-0 w-full">
-              {selectedEmployee ? (
-                <MonitoringDashboard employee={selectedEmployee} monitoringStatus={monitoringStatus} />
+              {(selectedEmployee || filteredEmployeesList[0]) ? (
+                <MonitoringDashboard
+                  employee={selectedEmployee || filteredEmployeesList[0]}
+                  monitoringStatus={monitoringStatus}
+                />
               ) : (
                 <Card className="p-12 text-center">
-                  <p className="text-muted-foreground">Select an employee from the top bar above</p>
+                  <p className="text-muted-foreground">
+                    {loadingTeamSummary ? 'Loading employees...' : 'No employees found. Select an employee from the top bar above.'}
+                  </p>
                 </Card>
               )}
             </div>

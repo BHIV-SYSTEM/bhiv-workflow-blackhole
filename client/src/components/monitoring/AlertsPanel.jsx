@@ -23,7 +23,7 @@ import {
   Calendar
 } from 'lucide-react';
 import axios from 'axios';
-import { API_URL } from '@/lib/api';
+import { API_URL, getAuthToken } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 
 export function AlertsPanel({ employee }) {
@@ -60,7 +60,7 @@ export function AlertsPanel({ employee }) {
       }
 
       const response = await axios.get(url, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        headers: { Authorization: `Bearer ${getAuthToken()}` }
       });
 
       setAlerts(response.data.alerts || []);
@@ -78,7 +78,7 @@ export function AlertsPanel({ employee }) {
       await axios.put(`${API_URL}/monitoring/alerts/${alertId}/acknowledge`, {
         notes: resolutionNotes
       }, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        headers: { Authorization: `Bearer ${getAuthToken()}` }
       });
 
       toast({
@@ -107,7 +107,7 @@ export function AlertsPanel({ employee }) {
       await axios.put(`${API_URL}/monitoring/alerts/${alertId}/resolve`, {
         notes: resolutionNotes
       }, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        headers: { Authorization: `Bearer ${getAuthToken()}` }
       });
 
       toast({

@@ -34,7 +34,7 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import axios from 'axios';
-import { API_URL } from '@/lib/api';
+import { API_URL, getAuthToken } from '@/lib/api';
 
 export function ActivityChart({ employee }) {
   const [activityData, setActivityData] = useState([]);
@@ -70,7 +70,7 @@ export function ActivityChart({ employee }) {
       }
 
       const response = await axios.get(url, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        headers: { Authorization: `Bearer ${getAuthToken()}` }
       });
 
       const processedData = processActivityData(

@@ -30,6 +30,21 @@ if (import.meta.env.VITE_API_URL) {
 console.log('✅ Final API_URL:', API_URL);
 export { API_URL };
 
+// Single source of truth for the bearer token. Login stores "WorkflowToken";
+// the legacy auth callback stores "token". Reading only one of them made some
+// monitoring tabs send "Bearer null" and fail with 401.
+export function getAuthToken() {
+  try {
+    return (
+      localStorage.getItem('WorkflowToken') ||
+      localStorage.getItem('token') ||
+      ''
+    );
+  } catch (e) {
+    return '';
+  }
+}
+
 
 //-----------------------------------------------------
 // Helper function for API requests

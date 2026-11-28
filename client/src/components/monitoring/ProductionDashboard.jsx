@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart as RechartsPieChart, Cell, BarChart, Bar } from 'recharts';
 import axios from 'axios';
-import { API_URL } from '@/lib/api';
+import { API_URL, getAuthToken } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 
 export function ProductionDashboard({ employee }) {
@@ -71,15 +71,15 @@ export function ProductionDashboard({ employee }) {
       const [screenshotsRes, activitiesRes, alertsRes] = await Promise.all([
         axios.get(`${API_URL}/monitoring/screenshots/${employee._id}`, {
           params: { startDate: startDate.toISOString(), endDate: endDate.toISOString() },
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+          headers: { Authorization: `Bearer ${getAuthToken()}` }
         }),
         axios.get(`${API_URL}/monitoring/activity/${employee._id}`, {
           params: { startDate: startDate.toISOString(), endDate: endDate.toISOString() },
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+          headers: { Authorization: `Bearer ${getAuthToken()}` }
         }),
         axios.get(`${API_URL}/monitoring/alerts/${employee._id}`, {
           params: { startDate: startDate.toISOString(), endDate: endDate.toISOString() },
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+          headers: { Authorization: `Bearer ${getAuthToken()}` }
         })
       ]);
 
@@ -108,7 +108,7 @@ export function ProductionDashboard({ employee }) {
 
       const response = await axios.get(`${API_URL}/monitoring/keystroke/${employee._id}`, {
         params: { startDate: startDate.toISOString(), endDate: endDate.toISOString() },
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        headers: { Authorization: `Bearer ${getAuthToken()}` }
       });
 
       setKeystrokeData(response.data.analytics || []);
@@ -125,7 +125,7 @@ export function ProductionDashboard({ employee }) {
 
       const response = await axios.get(`${API_URL}/monitoring/productivity/${employee._id}`, {
         params: { startDate: startDate.toISOString(), endDate: endDate.toISOString() },
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        headers: { Authorization: `Bearer ${getAuthToken()}` }
       });
 
       setProductivitySummary(response.data.summary || {});
@@ -137,7 +137,7 @@ export function ProductionDashboard({ employee }) {
   const fetchOCRStatus = async () => {
     try {
       const response = await axios.get(`${API_URL}/monitoring/ocr/status`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        headers: { Authorization: `Bearer ${getAuthToken()}` }
       });
 
       setOcrStatus(response.data.stats || {});
@@ -158,7 +158,7 @@ export function ProductionDashboard({ employee }) {
         endDate: endDate.toISOString(),
         options: { includeCharts: true, includeOCR: true }
       }, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        headers: { Authorization: `Bearer ${getAuthToken()}` }
       });
 
       if (response.data.success) {
@@ -193,7 +193,7 @@ export function ProductionDashboard({ employee }) {
         endDate: endDate.toISOString(),
         dataType
       }, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        headers: { Authorization: `Bearer ${getAuthToken()}` }
       });
 
       if (response.data.success) {

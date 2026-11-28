@@ -85,6 +85,7 @@ export function MonthlyMonitoringView({
 
   // Data states
   const [loadingTeam, setLoadingTeam] = useState(true);
+  const [teamError, setTeamError] = useState(null);
   const [teamMonthlyData, setTeamMonthlyData] = useState({
     overallSummary: {
       totalActiveHours: '0h 0m',
@@ -125,10 +126,13 @@ export function MonthlyMonitoringView({
     }
   }, [initialSelectedEmployee]);
 
-  // Fetch direct employees list to ensure employee combobox is always populated
+  // The parent page already fetches team-summary for the employee combobox;
+  // only fetch it here when no list was provided (this avoids loading the
+  // heaviest monitoring endpoint twice just to open the Monthly tab).
   useEffect(() => {
+    if (Array.isArray(propEmployees) && propEmployees.length > 0) return;
     fetchDirectEmployees();
-  }, [statusTab, departmentFilter]);
+  }, [statusTab, departmentFilter, propEmployees]);
 
   const fetchDirectEmployees = async () => {
     try {
@@ -163,10 +167,11 @@ export function MonthlyMonitoringView({
       const token = localStorage.getItem('WorkflowToken') || localStorage.getItem('token');
       const response = await axios.get(
         `${API_URL}/monitoring/monthly-summary?month=${selectedMonth}&department=${departmentFilter}&statusTab=${statusTab}`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` }, timeout: 30000 }
       );
 
       if (response.data.success) {
+        setTeamError(null);
         const perf = response.data.employeePerformance || [];
         setTeamMonthlyData({
           overallSummary: response.data.overallSummary || {},
@@ -187,6 +192,10 @@ export function MonthlyMonitoringView({
       }
     } catch (error) {
       console.error('Error fetching monthly summary:', error);
+      setTeamError(
+        error.response?.data?.error
+        || 'Could not load monthly data. Please try again.'
+      );
     } finally {
       setLoadingTeam(false);
     }
@@ -206,7 +215,7 @@ export function MonthlyMonitoringView({
       const token = localStorage.getItem('WorkflowToken') || localStorage.getItem('token');
       const response = await axios.get(
         `${API_URL}/monitoring/monthly-employee-breakdown?employeeId=${empId}&month=${selectedMonth}`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` }, timeout: 30000 }
       );
 
       if (response.data.success) {
@@ -438,6 +447,14 @@ export function MonthlyMonitoringView({
 
   return (
     <div className="space-y-6">
+      {teamError && !loadingTeam && (
+        <div className="p-3 rounded-xl border border-rose-500/30 bg-rose-500/10 text-rose-300 text-sm flex items-center justify-between gap-3">
+          <span>{teamError}</span>
+          <Button variant="outline" size="sm" onClick={() => fetchTeamMonthlySummary()}>
+            Try Again
+          </Button>
+        </div>
+      )}
       {/* =========================================================================
           TOP BAR: MONTH SELECTOR & VIEW MODE TOGGLE (INDIVIDUAL VS TEAM)
          ========================================================================= */}

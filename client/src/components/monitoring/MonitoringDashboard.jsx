@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { dayScore, dayScoreStyle } from '@/lib/dayProductivity';
 import {
@@ -17,7 +18,7 @@ import {
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import axios from 'axios';
-import { API_URL } from '@/lib/api';
+import { API_URL, getAuthToken } from '@/lib/api';
 
 
 export function MonitoringDashboard({ employee, monitoringStatus }) {
@@ -25,31 +26,51 @@ export function MonitoringDashboard({ employee, monitoringStatus }) {
   const [dailyMetrics, setDailyMetrics] = useState(null);
   const [recentAlerts, setRecentAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const controllerRef = useRef(null);
 
   useEffect(() => {
-    if (employee) {
-      fetchDashboardData();
-      // Set up real-time updates - more frequent for better real-time experience
-      const interval = setInterval(fetchDashboardData, 10000); // Update every 10 seconds
-      return () => clearInterval(interval);
-    }
-  }, [employee]);
+    if (!employee) return undefined;
+    const controller = new AbortController();
+    controllerRef.current = controller;
 
-  const fetchDashboardData = async () => {
+    fetchDashboardData(controller.signal);
+    // Real-time updates every 10 seconds (stale requests are aborted first)
+    const interval = setInterval(() => fetchDashboardData(controller.signal, true), 10000);
+    return () => {
+      controller.abort();
+      clearInterval(interval);
+    };
+  }, [employee, reloadKey]);
+
+  const fetchDashboardData = useCallback(async (signal, silent = false) => {
+    if (!employee?._id && !employee?.employeeId) return;
+    const empId = employee._id || employee.employeeId;
+    if (!silent) setLoading(true);
     try {
-      const now = new Date();
-      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-      
+      // Same IST calendar day the backend uses for the daily summary
+      const istNow = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+      const today = istNow.toISOString().slice(0, 10);
+
       // Fetch today's activity data
       const activityResponse = await axios.get(
-        `${API_URL}/monitoring/employees/${employee._id}/activity?date=${today}`,
-        { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
+        `${API_URL}/monitoring/employees/${empId}/activity?date=${today}`,
+        {
+          headers: { Authorization: `Bearer ${getAuthToken()}` },
+          signal,
+          timeout: 20000
+        }
       );
 
       // Fetch recent alerts
       const alertsResponse = await axios.get(
-        `${API_URL}/monitoring/alerts?employeeId=${employee._id}&limit=5`,
-        { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
+        `${API_URL}/monitoring/alerts?employeeId=${empId}&limit=5`,
+        {
+          headers: { Authorization: `Bearer ${getAuthToken()}` },
+          signal,
+          timeout: 20000
+        }
       );
 
       // Process activity data for charts
@@ -63,13 +84,19 @@ export function MonitoringDashboard({ employee, monitoringStatus }) {
       const metrics = calculateDailyMetrics(activityResponse.data.activities, activityResponse.data.summary);
       setDailyMetrics(metrics);
 
-      setRecentAlerts(alertsResponse.data.alerts);
+      setRecentAlerts(alertsResponse.data.alerts || []);
+      setLoadError(null);
       setLoading(false);
     } catch (error) {
+      if (signal?.aborted || error.code === 'ERR_CANCELED') return;
       console.error('Error fetching dashboard data:', error);
+      setLoadError(
+        error.response?.data?.error
+        || 'Could not load this dashboard. Please try again.'
+      );
       setLoading(false);
     }
-  };
+  }, [employee]);
 
   const processActivityData = (activities, canonicalHourly = null) => {
     if (!activities || activities.length === 0) return [];
@@ -200,6 +227,14 @@ export function MonitoringDashboard({ employee, monitoringStatus }) {
 
   return (
     <div className="space-y-6">
+      {loadError && (
+        <div className="p-3 rounded-xl border border-rose-500/30 bg-rose-500/10 text-rose-300 text-sm flex items-center justify-between gap-3">
+          <span>{loadError}</span>
+          <Button variant="outline" size="sm" onClick={() => setReloadKey((k) => k + 1)}>
+            Try Again
+          </Button>
+        </div>
+      )}
       {/* Real-Time Activity Display */}
       <Card className="neo-card border-primary/30 bg-gradient-to-r from-primary/5 to-accent/5">
         <CardHeader>

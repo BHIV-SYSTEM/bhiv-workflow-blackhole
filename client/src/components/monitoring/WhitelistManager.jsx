@@ -23,7 +23,7 @@ import {
   Clock
 } from 'lucide-react';
 import axios from 'axios';
-import { API_URL } from '@/lib/api';
+import { API_URL, getAuthToken } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { formatDate } from '@/lib/dateFormat';
 
@@ -94,7 +94,7 @@ export function WhitelistManager() {
           status: statusFilter,
           category: categoryFilter !== 'all' ? categoryFilter : undefined
         },
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        headers: { Authorization: `Bearer ${getAuthToken()}` }
       });
       setWhitelist(response.data.whitelist || []);
     } catch (error) {
@@ -129,7 +129,7 @@ export function WhitelistManager() {
       if (editingEntry) {
         // Update existing entry
         await axios.put(`${API_URL}/monitoring/whitelist/${editingEntry._id}`, payload, {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+          headers: { Authorization: `Bearer ${getAuthToken()}` }
         });
         toast({
           title: 'Success',
@@ -138,7 +138,7 @@ export function WhitelistManager() {
       } else {
         // Create new entry
         await axios.post(`${API_URL}/monitoring/whitelist`, payload, {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+          headers: { Authorization: `Bearer ${getAuthToken()}` }
         });
         toast({
           title: 'Success',
@@ -223,7 +223,7 @@ export function WhitelistManager() {
 
     try {
       await axios.delete(`${API_URL}/monitoring/whitelist/${entryId}`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        headers: { Authorization: `Bearer ${getAuthToken()}` }
       });
       toast({
         title: 'Success',
