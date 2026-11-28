@@ -29,6 +29,7 @@ import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianG
 
 export function EmployeeDetailModal({ employee, onClose }) {
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(null);
   const [activityLogs, setActivityLogs] = useState([]);
   const [metrics, setMetrics] = useState({
     activeHours: employee?.totalActiveHours || employee?.activeHours || '0h 0m',
@@ -64,28 +65,28 @@ export function EmployeeDetailModal({ employee, onClose }) {
     try {
       const token = localStorage.getItem('WorkflowToken') || localStorage.getItem('token');
       
-      // Target date for activity telemetry (defaults to today in local calendar date YYYY-MM-DD)
-      const now = new Date();
-      const localTodayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-      const targetDate = employee.selectedDate || employee.date || localTodayStr;
+      // Target date for activity telemetry (defaults to today's IST calendar date)
+      const istNow = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+      const istTodayStr = istNow.toISOString().slice(0, 10);
+      const targetDate = employee.selectedDate || employee.date || istTodayStr;
 
       const response = await axios.get(
         `${API_URL}/monitoring/employees/${empId}/activity?date=${targetDate}`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          timeout: 20000
+        }
       );
+      setFetchError(null);
 
       const logs = response.data.activities || [];
       const backendSummary = response.data.summary || null;
       setActivityLogs(logs);
       setDayProductivity(backendSummary?.dayProductivity || null);
 
-      // Only count logs matching target date for active hours and timeline graph
-      const dayLogs = logs.filter((log) => {
-        if (!log.timestamp) return false;
-        const d = new Date(log.timestamp);
-        const logDateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        return logDateStr === targetDate;
-      });
+      // The endpoint already returns only the selected IST day, so use the logs
+      // as returned instead of re-filtering them with the browser's timezone.
+      const dayLogs = logs;
 
       // Process logs for timeline & fallback metrics
       let totalKeystrokes = 0;
@@ -215,6 +216,10 @@ export function EmployeeDetailModal({ employee, onClose }) {
       });
     } catch (error) {
       console.error('Error fetching employee detailed monitoring:', error);
+      setFetchError(
+        error.response?.data?.error
+        || 'Could not load employee details. Please try again.'
+      );
     } finally {
       if (!silent) setLoading(false);
     }
@@ -272,6 +277,21 @@ export function EmployeeDetailModal({ employee, onClose }) {
 
         {/* Content Area */}
         <div className="p-6 overflow-y-auto space-y-5 flex-1">
+          {loading && (
+            <div className="p-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-sm animate-pulse">
+              Loading employee details...
+            </div>
+          )}
+
+          {fetchError && (
+            <div className="p-3 rounded-xl border border-rose-500/30 bg-rose-500/10 text-rose-300 text-sm flex items-center justify-between gap-3">
+              <span>{fetchError}</span>
+              <Button variant="outline" size="sm" onClick={() => fetchEmployeeDetails()}>
+                Retry
+              </Button>
+            </div>
+          )}
+
           {/* Real-time Current Activity Highlight Card */}
           <Card className="border-l-4 border-l-emerald-500 bg-zinc-900/80 border-zinc-800 shadow-sm">
             <CardHeader className="pb-2 pt-4">

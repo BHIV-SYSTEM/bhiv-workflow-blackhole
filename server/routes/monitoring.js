@@ -25,7 +25,9 @@ const fs = require('fs').promises;
 const { getViolationScreenshots, generateOptimizedScreenshotUrl } = require('../utils/cloudinary');
 const {
   getLocalDateKey,
-  parseLocalDateParam,
+  getIstDayBounds,
+  getIstRangeBounds,
+  eachIstDateKey,
   evaluateSample,
   summarizeActivitiesWithSession,
   resolveSessionsMap
@@ -279,21 +281,31 @@ router.get('/employees/:id/activity', async (req, res) => {
   try {
     const { id: employeeId } = req.params;
     const { date, startDate, endDate, limit = 20000 } = req.query;
+    const requestedLimit = Number.parseInt(limit, 10);
+    const safeLimit = Number.isFinite(requestedLimit) && requestedLimit > 0
+      ? Math.min(requestedLimit, 50000)
+      : 20000;
 
     let activities = [];
-    let targetDateObj = null;
+    let dayStart = null;
+    let dayEnd = null;
+    let dayKey = null;
+
     if (date) {
-      targetDateObj = parseLocalDateParam(date);
-      const start = new Date(targetDateObj.getFullYear(), targetDateObj.getMonth(), targetDateObj.getDate(), 0, 0, 0, 0);
-      const end = new Date(targetDateObj.getFullYear(), targetDateObj.getMonth(), targetDateObj.getDate(), 23, 59, 59, 999);
-      
+      // Use the same IST day window as the daily summary so the detail modal
+      // never shows "no activity" for a day the summary can see.
+      const bounds = getIstDayBounds(date);
+      dayStart = bounds.start;
+      dayEnd = bounds.end;
+      dayKey = bounds.dateKey;
+
       activities = await EmployeeActivity.find({
         employee: employeeId,
-        timestamp: { $gte: start, $lte: end }
+        timestamp: { $gte: dayStart, $lte: dayEnd }
       })
+      .select('timestamp keystroke_count mouse_activity_score mouse_event_count idle_duration interval_seconds app_category productivity_score active_application.name active_application.title metadata.source')
       .sort({ timestamp: -1 })
-      .limit(parseInt(limit))
-      .populate('employee', 'name email')
+      .limit(safeLimit)
       .lean();
     } else if (startDate && endDate) {
       // Get activities for date range
@@ -301,30 +313,35 @@ router.get('/employees/:id/activity', async (req, res) => {
         employeeId, 
         startDate, 
         endDate, 
-        parseInt(limit)
+        safeLimit
       );
     } else {
-      // Default to today's activities (calendar day 00:00:00 to 23:59:59.999)
-      const now = new Date();
-      targetDateObj = now;
-      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-      const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-      
+      // Default to today's activities in IST
+      const bounds = getIstDayBounds();
+      dayStart = bounds.start;
+      dayEnd = bounds.end;
+      dayKey = bounds.dateKey;
+
       activities = await EmployeeActivity.find({
         employee: employeeId,
-        timestamp: { $gte: start, $lte: end }
+        timestamp: { $gte: dayStart, $lte: dayEnd }
       })
+      .select('timestamp keystroke_count mouse_activity_score mouse_event_count idle_duration interval_seconds app_category productivity_score active_application.name active_application.title metadata.source')
       .sort({ timestamp: -1 })
-      .limit(parseInt(limit))
-      .populate('employee', 'name email')
+      .limit(safeLimit)
       .lean();
     }
 
-    // Recompute normalized productivity score on returned samples + unified day summary
-    const normalizedActivities = (activities || []).map(act => ({
-      ...act,
-      productivity_score: evaluateSample(act).qualityScore
-    }));
+    // Recompute normalized productivity score on returned samples + unified day summary.
+    // One evaluateSample() per row, reused by both the summary and the day score.
+    const evalCache = new Map();
+    const normalizedActivities = (activities || []).map(act => {
+      const normalized = { ...act };
+      const evaluated = evaluateSample(normalized);
+      evalCache.set(normalized, evaluated);
+      normalized.productivity_score = evaluated.qualityScore;
+      return normalized;
+    });
 
     // Canonical day scores for range charts only. Today/default loads already
     // send one summary score, so skip this extra pass on the hot path.
@@ -338,19 +355,20 @@ router.get('/employees/:id/activity', async (req, res) => {
         activitiesByDate.get(key).push(act);
       });
       activitiesByDate.forEach((dayLogs, key) => {
-        dayScoresByDate[key] = dayProductivityFor(dayLogs).score;
+        dayScoresByDate[key] = dayProductivityFor(dayLogs, { reverseInput: true, evalCache }).score;
       });
     }
 
     let summary = null;
-    if (targetDateObj) {
-      const start = new Date(targetDateObj.getFullYear(), targetDateObj.getMonth(), targetDateObj.getDate(), 0, 0, 0, 0);
-      const end = new Date(targetDateObj.getFullYear(), targetDateObj.getMonth(), targetDateObj.getDate(), 23, 59, 59, 999);
-      const dateKey = getLocalDateKey(targetDateObj);
-      const sessionsMap = await resolveSessionsMap([employeeId], start, end);
-      const sessionInfo = sessionsMap.get(`${employeeId}_${dateKey}`) || null;
-      summary = summarizeActivitiesWithSession(normalizedActivities, sessionInfo);
-      summary.dayProductivity = dayProductivityFor(normalizedActivities);
+    if (dayStart && dayEnd && dayKey) {
+      const sessionsMap = await resolveSessionsMap([employeeId], dayStart, dayEnd);
+      const sessionInfo = sessionsMap.get(`${employeeId}_${dayKey}`) || null;
+      summary = summarizeActivitiesWithSession(normalizedActivities, sessionInfo, evalCache);
+      // Samples arrive newest-first, so reverse instead of re-sorting them.
+      summary.dayProductivity = dayProductivityFor(normalizedActivities, {
+        reverseInput: true,
+        evalCache
+      });
       summary.productivityEfficiency = efficiencyLabelForDay(
         summary.dayProductivity.score,
         summary.hasActivity || summary.dayProductivity.score > 0
@@ -1755,14 +1773,21 @@ router.get('/daily-summary', async (req, res) => {
 
     const activeEmpIds = employees.filter(e => e.stillExist !== 0).map(e => e._id);
 
-    // Single batch query for all activities across active employees for this date
-    const allActivities = await EmployeeActivity.find({
-      employee: { $in: activeEmpIds },
-      timestamp: { $gte: startOfDay, $lte: endOfDay }
-    })
-    .select('employee keystroke_count mouse_activity_score mouse_event_count idle_duration interval_seconds app_category productivity_score active_application metadata timestamp')
-    .sort({ timestamp: 1 })
-    .lean();
+    // Load this date's telemetry and all work-session records together so the
+    // daily view does not wait on two separate database round trips.
+    const targetDateKey = getLocalDateKey(startOfDay);
+    const [allActivities, sessionsMap] = await Promise.all([
+      EmployeeActivity.find({
+        employee: { $in: activeEmpIds },
+        timestamp: { $gte: startOfDay, $lte: endOfDay }
+      })
+      .select('employee keystroke_count mouse_activity_score mouse_event_count idle_duration interval_seconds app_category productivity_score active_application.name active_application.title metadata.source timestamp')
+      .sort({ timestamp: 1 })
+      .lean(),
+
+      // Synchronize working hours across WorkSession, Attendance, and DailyAttendance
+      resolveSessionsMap(activeEmpIds, startOfDay, endOfDay)
+    ]);
 
     const activitiesByEmp = new Map();
     for (const act of allActivities) {
@@ -1772,10 +1797,6 @@ router.get('/daily-summary', async (req, res) => {
       }
       activitiesByEmp.get(empIdStr).push(act);
     }
-
-    // Synchronize working hours across WorkSession, Attendance, and DailyAttendance
-    const targetDateKey = getLocalDateKey(startOfDay);
-    const sessionsMap = await resolveSessionsMap(activeEmpIds, startOfDay, endOfDay);
 
     let totalTeamKeystrokes = 0;
     let totalTeamActiveSeconds = 0;
@@ -1874,7 +1895,7 @@ router.get('/daily-summary', async (req, res) => {
 
     const overallEfficiency = efficiencyLabelForDay(avgDayProductivity, activeEmployeeCount > 0);
 
-    const responseDateStr = date || `${startOfDay.getFullYear()}-${String(startOfDay.getMonth() + 1).padStart(2, '0')}-${String(startOfDay.getDate()).padStart(2, '0')}`;
+    const responseDateStr = date || getLocalDateKey(startOfDay);
     res.json({
       success: true,
       date: responseDateStr,

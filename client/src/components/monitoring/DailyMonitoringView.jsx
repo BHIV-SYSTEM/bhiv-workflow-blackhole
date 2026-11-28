@@ -40,6 +40,8 @@ export function DailyMonitoringView({
   });
 
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [dailyData, setDailyData] = useState({
     teamMetrics: {
       totalActiveHours: '0h 0m',
@@ -59,30 +61,45 @@ export function DailyMonitoringView({
   }, [initialSearch]);
 
   useEffect(() => {
-    fetchDailySummary();
-  }, [selectedDate, departmentFilter, statusTab]);
+    const controller = new AbortController();
 
-  const fetchDailySummary = async () => {
-    setLoading(true);
-    try {
-      const token = localStorage.getItem('WorkflowToken') || localStorage.getItem('token');
-      const response = await axios.get(
-        `${API_URL}/monitoring/daily-summary?date=${selectedDate}&department=${departmentFilter}&statusTab=${statusTab}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+    const loadDailySummary = async () => {
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const token = localStorage.getItem('WorkflowToken') || localStorage.getItem('token');
+        const response = await axios.get(
+          `${API_URL}/monitoring/daily-summary?date=${selectedDate}&department=${departmentFilter}&statusTab=${statusTab}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: controller.signal,
+            timeout: 20000
+          }
+        );
 
-      if (response.data.success) {
-        setDailyData({
-          teamMetrics: response.data.teamMetrics || {},
-          employees: response.data.employees || []
-        });
+        if (response.data.success) {
+          setDailyData({
+            teamMetrics: response.data.teamMetrics || {},
+            employees: response.data.employees || []
+          });
+        } else {
+          setLoadError(response.data.error || 'Could not load activity data.');
+        }
+      } catch (error) {
+        if (controller.signal.aborted || error.code === 'ERR_CANCELED') return;
+        console.error('Error fetching daily summary:', error);
+        setLoadError(
+          error.response?.data?.error
+          || 'Could not load activity data. Please try again.'
+        );
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
       }
-    } catch (error) {
-      console.error('Error fetching daily summary:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
+
+    loadDailySummary();
+    return () => controller.abort();
+  }, [selectedDate, departmentFilter, statusTab, reloadKey]);
 
   const filteredEmployees = React.useMemo(() => {
     const list = dailyData.employees.filter((emp) => {
@@ -248,8 +265,23 @@ export function DailyMonitoringView({
         <CardContent className="p-0 overflow-x-auto">
           {loading ? (
             <div className="p-8 text-center text-muted-foreground animate-pulse">Loading daily summary data...</div>
+          ) : loadError ? (
+            <div className="p-8 text-center space-y-3">
+              <p className="text-sm text-rose-400">{loadError}</p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setReloadKey((key) => key + 1)}
+              >
+                Try Again
+              </Button>
+            </div>
           ) : filteredEmployees.length === 0 ? (
-            <div className="p-8 text-center text-muted-foreground">No employee activity recorded for this date.</div>
+            <div className="p-8 text-center text-muted-foreground">
+              {dailyData.employees.length === 0
+                ? 'No employee records available for this date.'
+                : 'No employees match the selected filters.'}
+            </div>
           ) : (
             <table className="w-full text-left text-sm">
               <thead className="bg-muted/50 text-xs font-semibold uppercase text-muted-foreground border-b border-border">
