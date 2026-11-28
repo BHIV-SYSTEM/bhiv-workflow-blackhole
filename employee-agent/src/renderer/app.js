@@ -417,7 +417,6 @@ function setupEventListeners() {
         dailySummaryState.baseActiveSeconds = 0;
         dailySummaryState.syncedAtMs = Date.now();
         dailySummaryState.latestSummary = null;
-        dailySummaryState.productivityScore = 0;
         const mouseCountEl = document.getElementById('mouseCount');
         const keyCountEl = document.getElementById('keyCount');
         if (mouseCountEl) mouseCountEl.textContent = '0';
@@ -654,8 +653,6 @@ async function handleSaveProgressAndEndDay() {
       const el = document.getElementById(id);
       if (el) el.value = '';
     });
-    // Show the saved progress immediately instead of waiting for the next poll.
-    await refreshDailySummary();
     await handleEndDayClick();
   } finally {
     if (saveBtn) {
