@@ -1517,6 +1517,47 @@ router.post('/work-session/end', async (req, res) => {
 // NEW ENHANCED TEAM MONITORING ENDPOINTS
 // =========================================================
 
+// GET /api/monitoring/employee-list
+// Lightweight identity-only list for the monitoring dropdown. It deliberately
+// does no telemetry/day-score work, so it cannot time out the way team-summary
+// can and always returns every employee regardless of the active status tab.
+router.get('/employee-list', async (req, res) => {
+  try {
+    const cached = teamSummaryCache.get('employee-list');
+    if (cached && cached.expires > Date.now()) {
+      return res.json(cached.body);
+    }
+
+    const baseQuery = { role: { $nin: ['admin', 'Admin'] } };
+    const employees = await User.find(baseQuery)
+      .select('_id name email department stillExist role')
+      .populate('department', 'name')
+      .sort({ name: 1 })
+      .lean();
+
+    const body = {
+      success: true,
+      employees: employees.map((emp) => ({
+        _id: emp._id,
+        name: emp.name,
+        email: emp.email,
+        department: emp.department?.name || 'General',
+        stillExist: emp.stillExist,
+        role: emp.role
+      }))
+    };
+
+    teamSummaryCache.set('employee-list', {
+      expires: Date.now() + TEAM_SUMMARY_CACHE_TTL_MS,
+      body
+    });
+    res.json(body);
+  } catch (error) {
+    console.error('Error fetching monitoring employee list:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch employee list' });
+  }
+});
+
 // 1. GET /api/monitoring/team-summary
 // Fetches real-time status and today's telemetry for all non-admin employees
 router.get('/team-summary', async (req, res) => {

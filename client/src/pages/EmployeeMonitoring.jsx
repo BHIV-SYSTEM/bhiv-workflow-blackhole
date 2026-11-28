@@ -93,6 +93,11 @@ export function EmployeeMonitoring() {
   const [summaryError, setSummaryError] = useState(null);
   const [reloadSummaryKey, setReloadSummaryKey] = useState(0);
 
+  // Identity-only fallback list. The team-summary request computes a full day
+  // score for every employee and can time out; this lightweight list keeps the
+  // employee selector populated even when that happens.
+  const [employeeList, setEmployeeList] = useState([]);
+
   // Debounce search so typing doesn't fire a team-summary request per keystroke
   const [debouncedSearch, setDebouncedSearch] = useState('');
   useEffect(() => {
@@ -125,6 +130,7 @@ export function EmployeeMonitoring() {
 
   useEffect(() => {
     fetchDepartments();
+    fetchEmployeeList();
   }, []);
 
   useEffect(() => {
@@ -138,6 +144,24 @@ export function EmployeeMonitoring() {
       return () => clearInterval(interval);
     }
   }, [viewMode, statusTab, filterDepartment, debouncedSearch]);
+
+  const fetchEmployeeList = async () => {
+    try {
+      const token = localStorage.getItem('WorkflowToken') || localStorage.getItem('token');
+      const response = await axios.get(`${API_URL}/monitoring/employee-list`, {
+        headers: {
+          'x-auth-token': token,
+          Authorization: `Bearer ${token}`
+        },
+        timeout: 20000
+      });
+      if (response.data?.success && Array.isArray(response.data.employees)) {
+        setEmployeeList(response.data.employees);
+      }
+    } catch (error) {
+      console.error('Error fetching monitoring employee list:', error);
+    }
+  };
 
   const fetchTeamSummary = async (isBackgroundRefresh = false) => {
     // A 15-second background refresh must not cancel a slower first load;
@@ -317,10 +341,15 @@ export function EmployeeMonitoring() {
     }
   };
 
-  // Filter and sort employees client-side for unified search & selector
+  // Filter and sort employees client-side for unified search & selector.
+  // When team-summary fails or is still loading, fall back to the lightweight
+  // employee list so the dropdown is never empty just because telemetry is slow.
   const filteredEmployeesList = useMemo(() => {
     const q = searchQuery.toLowerCase();
-    const list = teamSummaryData.employees.filter((emp) => {
+    const source = teamSummaryData.employees.length > 0
+      ? teamSummaryData.employees
+      : employeeList;
+    const list = source.filter((emp) => {
       const matchesSearch =
         (emp.name || '').toLowerCase().includes(q) ||
         (emp.email || '').toLowerCase().includes(q);
@@ -338,7 +367,7 @@ export function EmployeeMonitoring() {
 
       return (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
     });
-  }, [teamSummaryData.employees, searchQuery]);
+  }, [teamSummaryData.employees, employeeList, searchQuery]);
 
   // Filter counts from global backend counts if available
   const visibleTeamEmployees = useMemo(() => {
@@ -500,7 +529,7 @@ export function EmployeeMonitoring() {
       </div>
 
       {/* ========== SECTION 2: VIEW MODE TABS NAVIGATION ========== */}
-      {summaryError && !loadingTeamSummary && (
+      {summaryError && !loadingTeamSummary && teamSummaryData.employees.length === 0 && employeeList.length === 0 && (
         <div className="mb-4 p-3 rounded-xl border border-rose-500/30 bg-rose-500/10 text-rose-300 text-sm flex items-center justify-between gap-3">
           <span>{summaryError}</span>
           <Button
