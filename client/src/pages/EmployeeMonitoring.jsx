@@ -101,6 +101,7 @@ export function EmployeeMonitoring() {
   }, [searchQuery]);
 
   const summaryControllerRef = useRef(null);
+  const summaryInFlightRef = useRef(false);
 
   // Employee Selection for 1-Click Detail View Modal
   const [detailEmployee, setDetailEmployee] = useState(null);
@@ -139,15 +140,21 @@ export function EmployeeMonitoring() {
   }, [viewMode, statusTab, filterDepartment, debouncedSearch]);
 
   const fetchTeamSummary = async (isBackgroundRefresh = false) => {
+    // A 15-second background refresh must not cancel a slower first load;
+    // otherwise every request is aborted before it can return, leaving the
+    // employee dropdown permanently at zero.
+    if (summaryInFlightRef.current && isBackgroundRefresh) return;
+
     if (!isBackgroundRefresh) {
       setLoadingTeamSummary(true);
     }
-    // Cancel any still-running request so stale responses never overwrite new ones
+    // Only a user-driven change supersedes an in-flight request.
     if (summaryControllerRef.current) {
       summaryControllerRef.current.abort();
     }
     const controller = new AbortController();
     summaryControllerRef.current = controller;
+    summaryInFlightRef.current = true;
 
     try {
       const token = localStorage.getItem('WorkflowToken') || localStorage.getItem('token');
@@ -226,8 +233,12 @@ export function EmployeeMonitoring() {
         || 'Could not load monitoring data. Please try again.'
       );
     } finally {
-      if (!controller.signal.aborted) {
-        setLoadingTeamSummary(false);
+      // An aborted request must not clear the in-flight flag of the newer one.
+      if (summaryControllerRef.current === controller) {
+        summaryInFlightRef.current = false;
+        if (!controller.signal.aborted) {
+          setLoadingTeamSummary(false);
+        }
       }
     }
   };
@@ -467,10 +478,14 @@ export function EmployeeMonitoring() {
             }}
           >
             <SelectTrigger className="w-full sm:w-56 h-10 text-xs sm:text-sm bg-background border-border rounded-xl font-medium">
-              <SelectValue placeholder="All Employees" />
+              <SelectValue placeholder={loadingTeamSummary && filteredEmployeesList.length === 0 ? 'Loading employees…' : 'All Employees'} />
             </SelectTrigger>
             <SelectContent className="max-h-72">
-              <SelectItem value="all">All Employees ({filteredEmployeesList.length})</SelectItem>
+              <SelectItem value="all">
+                {loadingTeamSummary && filteredEmployeesList.length === 0
+                  ? 'Loading employees…'
+                  : `All Employees (${filteredEmployeesList.length})`}
+              </SelectItem>
               {filteredEmployeesList.map((emp) => {
                 const id = String(emp._id || emp.employeeId);
                 return (
