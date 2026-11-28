@@ -49,6 +49,7 @@ import { WhitelistManager } from '@/components/monitoring/WhitelistManager';
 import { ProductionDashboard } from '@/components/monitoring/ProductionDashboard';
 import { TrinetraConsole } from '@/components/monitoring/TrinetraConsole';
 import { MissedProgressReasonsPanel } from '@/components/monitoring/MissedProgressReasonsPanel';
+import { getIstDateKey } from '@/lib/dayProductivity';
 
 export function EmployeeMonitoring() {
   const { user } = useAuth();
@@ -67,7 +68,13 @@ export function EmployeeMonitoring() {
     try {
       const cached = sessionStorage.getItem('niyantran_monitoring_counts');
       const cachedEmployees = sessionStorage.getItem('niyantran_monitoring_employees');
-      const employees = cachedEmployees ? JSON.parse(cachedEmployees) : [];
+      const cachedDay = sessionStorage.getItem('niyantran_monitoring_day');
+      let employees = cachedEmployees ? JSON.parse(cachedEmployees) : [];
+      // A new IST day starts at zero. Keep the cached names for the dropdown,
+      // but never show yesterday's relative progress as today's.
+      if (cachedDay && cachedDay !== getIstDateKey() && Array.isArray(employees)) {
+        employees = employees.map((emp) => ({ ...emp, dayProgress: 0 }));
+      }
       if (cached) {
         const parsed = JSON.parse(cached);
         return {
@@ -216,6 +223,7 @@ export function EmployeeMonitoring() {
             sessionStorage.setItem('niyantran_monitoring_counts', JSON.stringify(counts));
           }
           sessionStorage.setItem('niyantran_monitoring_employees', JSON.stringify(fetchedEmployees));
+          sessionStorage.setItem('niyantran_monitoring_day', getIstDateKey());
         } catch (e) {}
 
         setTeamSummaryData({

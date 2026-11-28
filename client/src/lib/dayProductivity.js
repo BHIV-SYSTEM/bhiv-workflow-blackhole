@@ -35,6 +35,17 @@ export const DAY_ZONE_STYLES = {
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 
+/** YYYY-MM-DD in IST, matching the server's day key. */
+export function getIstDateKey(date = new Date()) {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit'
+    }).format(date);
+  } catch (e) {
+    return new Date(date).toISOString().slice(0, 10);
+  }
+}
+
 /** Hour of day (0-23) in IST so charts match backend dayProductivity.hourly buckets. */
 export function getIstHour(timestamp) {
   const ms = new Date(timestamp).getTime();
@@ -76,4 +87,27 @@ export function dayScore(source) {
 /** Zone styles for a progress payload (employee / team summary row). */
 export function dayScoreStyle(source) {
   return dayZoneStyle(dayScore(source));
+}
+
+/**
+ * Daily relative progress supplied by the server (0-100).
+ *
+ * The server derives it from today's team scores: the top worker is 100, the
+ * least active is 0, and an employee who has not started the day stays at 0.
+ * Falls back to the raw day score for older cached payloads that predate the
+ * new field.
+ */
+export function workProgress(source) {
+  const value = source?.dayProgress;
+  if (value === undefined || value === null || Number.isNaN(Number(value))) {
+    return dayScore(source);
+  }
+  return Math.max(0, Math.min(100, Number(value)));
+}
+
+/** Zone styles for the daily relative progress bar (thirds, not fixed scores). */
+export function workProgressStyle(source) {
+  const value = workProgress(source);
+  const zone = value >= 67 ? 'green' : value >= 34 ? 'yellow' : 'red';
+  return DAY_ZONE_STYLES[zone];
 }

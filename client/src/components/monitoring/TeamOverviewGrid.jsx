@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { dayScore, dayScoreStyle, dayZoneStyle, dayEfficiencyLabel } from '@/lib/dayProductivity';
+import { dayScore, dayZoneStyle, dayEfficiencyLabel, workProgress, workProgressStyle } from '@/lib/dayProductivity';
 import {
   Users,
   Activity,
@@ -288,20 +288,20 @@ export function TeamOverviewGrid({
                 </CardHeader>
 
                 <CardContent className="space-y-4 px-5 pt-4 pb-4 text-sm">
-                  {/* Productivity Score Bar */}
+                  {/* Daily Progress Bar — relative to today's team target */}
                   <div className="space-y-2 bg-zinc-900/60 p-3 rounded-xl border border-zinc-800">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
                         <TrendingUp className="h-3.5 w-3.5 text-emerald-400" />
-                        Productivity Score
+                        Daily Progress
                       </span>
-                      <span className={`font-extrabold text-sm flex items-center gap-1.5 ${dayScoreStyle(emp).text}`}>
-                        {dayScore(emp)}%
-                        <span className={`h-2 w-2 rounded-full ${dayScoreStyle(emp).dot}`} />
-                        <span className="font-semibold text-[10px]">{dayScoreStyle(emp).label}</span>
+                      <span className={`font-extrabold text-sm flex items-center gap-1.5 ${workProgressStyle(emp).text}`}>
+                        {workProgress(emp)}%
+                        <span className={`h-2 w-2 rounded-full ${workProgressStyle(emp).dot}`} />
+                        <span className="font-semibold text-[10px]">{workProgressStyle(emp).label}</span>
                       </span>
                     </div>
-                    <Progress value={dayScore(emp)} className={`h-2 bg-zinc-800 ${dayScoreStyle(emp).bar}`} />
+                    <Progress value={workProgress(emp)} className={`h-2 bg-zinc-800 ${workProgressStyle(emp).bar}`} />
                     <div className="flex items-center justify-between pt-1">
                       {getEfficiencyBadge(emp)}
                       <span className="text-[11px] text-zinc-400 font-medium">

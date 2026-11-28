@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
-import { dayScore, dayScoreStyle, dayZoneStyle, dayEfficiencyLabel } from '@/lib/dayProductivity';
+import { dayScore, dayZoneStyle, dayEfficiencyLabel, workProgress, workProgressStyle } from '@/lib/dayProductivity';
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -289,7 +289,7 @@ export function DailyMonitoringView({
                   <th className="p-4">Employee</th>
                   <th className="p-4">Active Hours</th>
                   <th className="p-4">Idle Time</th>
-                  <th className="p-4">Productivity</th>
+                  <th className="p-4">Daily Progress</th>
                   <th className="p-4">Keystrokes</th>
                   <th className="p-4">Mouse Score</th>
                   <th className="p-4">Activity Details (Top Apps)</th>
@@ -317,10 +317,10 @@ export function DailyMonitoringView({
                     <td className="p-4 font-semibold text-amber-600 dark:text-amber-400">{emp.totalIdleTime}</td>
                     <td className="p-4 font-bold">
                       <div className="flex items-center gap-2">
-                        <span className={`w-8 ${dayScoreStyle(emp).text}`}>{dayScore(emp)}%</span>
-                        <Progress value={dayScore(emp)} className={`h-1.5 w-16 ${dayScoreStyle(emp).bar}`} />
-                        <span className={`h-2 w-2 rounded-full ${dayScoreStyle(emp).dot}`} />
-                        <span className={`text-[10px] font-semibold ${dayScoreStyle(emp).text}`}>{dayScoreStyle(emp).label}</span>
+                        <span className={`w-8 ${workProgressStyle(emp).text}`}>{workProgress(emp)}%</span>
+                        <Progress value={workProgress(emp)} className={`h-1.5 w-16 ${workProgressStyle(emp).bar}`} />
+                        <span className={`h-2 w-2 rounded-full ${workProgressStyle(emp).dot}`} />
+                        <span className={`text-[10px] font-semibold ${workProgressStyle(emp).text}`}>{workProgressStyle(emp).label}</span>
                       </div>
                     </td>
                     <td className="p-4">{emp.keystrokes ? emp.keystrokes.toLocaleString() : 0}</td>

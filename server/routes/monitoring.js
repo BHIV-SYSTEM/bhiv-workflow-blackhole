@@ -37,6 +37,7 @@ const {
   classifyZone,
   efficiencyLabelForDay,
 } = require('../utils/dayProductivity');
+const { applyDailyProgress } = require('../utils/dailyProgress');
 
 // In-memory cache for /team-summary responses. The live dashboard polls this
 // endpoint every 15 seconds for every employee; serving a 10-second-old
@@ -1823,6 +1824,9 @@ router.get('/team-summary', async (req, res) => {
       return (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
     });
 
+    // Daily relative target: recomputed from today's scores on every request.
+    applyDailyProgress(teamData);
+
     // Calculate aggregated team statistics
     const totalActiveCount = teamData.filter(d => d.currentStatus === 'Active').length;
     const totalIdleCount = teamData.filter(d => d.currentStatus === 'Idle').length;
@@ -2014,6 +2018,9 @@ router.get('/daily-summary', async (req, res) => {
 
       return (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
     });
+
+    // Same daily relative target for the Daily view (per selected date).
+    applyDailyProgress(employeeDailyData);
 
     const avgTeamProductivity = activeEmployeeCount > 0
       ? Math.round(teamProductivitySum / activeEmployeeCount)
