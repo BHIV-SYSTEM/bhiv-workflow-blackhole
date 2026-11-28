@@ -105,9 +105,11 @@ export function workProgress(source) {
   return Math.max(0, Math.min(100, Number(value)));
 }
 
-/** Zone styles for the daily relative progress bar (thirds, not fixed scores). */
+/**
+ * Zone styles for the daily relative progress bar.
+ * Uses the standard thresholds on the displayed number:
+ *   < 70 red, < 80 yellow, >= 80 green.
+ */
 export function workProgressStyle(source) {
-  const value = workProgress(source);
-  const zone = value >= 67 ? 'green' : value >= 34 ? 'yellow' : 'red';
-  return DAY_ZONE_STYLES[zone];
+  return dayZoneStyle(workProgress(source));
 }
